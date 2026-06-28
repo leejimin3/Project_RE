@@ -1,0 +1,29 @@
+# Unreal Engine generated
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+Build/
+
+# Visual Studio
+.vs/
+*.sln
+*.slnx
+*.vsconfig
+
+# UE generated project files
+Intermediate/ProjectFiles/
+
+# Large template assets (UE5 third-person template — not used in project)
+Content/Characters/Mannequins/
+
+# Developer-local content
+Content/Developers/
+Content/Collections/
+
+# Claude Code local data
+.claude/
+
+# Knowledge graph output
+graphify-out/
+Obsidian/graphify-out/
