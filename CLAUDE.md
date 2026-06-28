@@ -50,6 +50,31 @@ For multi-step tasks, state a brief plan:
 3. [Step] → verify: [check]
 Strong success criteria let the LLM loop independently. Weak criteria ("make it work") require constant clarification.
 
+5. Ask Before Implementing
+**모호한 것이 하나라도 있으면 절대 구현하지 말고 질문할 것.**
+**코드 작성 전 반드시 허락을 받을 것.**
+
+- 요구사항이 불명확하면 → 질문
+- 구현 방법이 여러 개라면 → 질문
+- 기존 코드 패턴과 충돌 가능성이 있으면 → 질문
+- 데이터 구조/API 사용법이 확실하지 않으면 → 질문
+
+6. Git Branching: Gitflow
+브랜치 전략: **Gitflow** 사용.
+
+| 브랜치 | 용도 |
+|--------|------|
+| `main` | 릴리즈 태그 전용 (Tag 0.1, 0.2, 1.0 ...) |
+| `develop` | 통합 브랜치. feature → develop 머지. |
+| `feature/*` | 기능 개발. develop에서 분기, develop으로 머지. |
+| `release/*` | 릴리즈 준비. develop에서 분기, bugfix만. main + develop 양쪽 머지. |
+| `hotfix/*` | 프로덕션 긴급 수정. main에서 분기, main + develop 양쪽 머지. |
+
+규칙:
+- feature 브랜치명: `feature/M1-mass-bullet`, `feature/M2-player-loop` 등 마일스톤 접두어
+- main 직접 커밋 금지 — 반드시 PR 경유
+- release 브랜치에서는 bugfix 커밋만 허용
+
 <!-- ## graphify
 
 This project has a graphify knowledge graph at graphify-out/.
