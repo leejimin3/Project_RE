@@ -227,6 +227,12 @@ void AREPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
 
+	// 입력은 로컬 컨트롤러에만 배선 (M4 데디 대비)
+	if (!IsLocalPlayerController())
+	{
+		return;
+	}
+
 	// uasset 없이 코드로 IA/IMC 생성 (transient — 매 실행 생성)
 	ClickMoveAction = NewObject<UInputAction>(this, TEXT("IA_ClickMove"));
 	ClickMoveAction->ValueType = EInputActionValueType::Boolean;
@@ -243,6 +249,11 @@ void AREPlayerController::SetupInputComponent()
 void AREPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (!IsLocalPlayerController())
+	{
+		return;
+	}
 
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
 			ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))

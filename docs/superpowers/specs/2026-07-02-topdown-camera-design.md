@@ -47,10 +47,10 @@ Project_RE는 UE5 MassEntity 기반 탑뷰 보스 탄막 게임(면접 포트폴
 ### `AREPlayerController : APlayerController`
 입력 뼈대. 우클릭을 받을 준비만.
 
-- `BeginPlay()`: `NewObject<UInputAction>`(ValueType=Boolean) + `NewObject<UInputMappingContext>` 생성 → `IMC->MapKey(ClickMoveAction, EKeys::RightMouseButton)` → `EnhancedInputLocalPlayerSubsystem::AddMappingContext`.
-- `SetupInputComponent()`: `UEnhancedInputComponent::BindAction(ClickMoveAction, ETriggerEvent::Triggered, this, &OnClickMove)`.
+- `SetupInputComponent()`: `NewObject<UInputAction>`(ValueType=Boolean) + `NewObject<UInputMappingContext>` 생성 → `IMC->MapKey(ClickMoveAction, EKeys::RightMouseButton)` → `UEnhancedInputComponent::BindAction(ClickMoveAction, ETriggerEvent::Triggered, this, &OnClickMove)`. (`SetupInputComponent()`가 `BeginPlay()`보다 먼저 호출되므로 IA/IMC 생성·바인딩은 여기서 수행.)
+- `BeginPlay()`: `EnhancedInputLocalPlayerSubsystem::AddMappingContext`로 IMC 등록.
 - `OnClickMove()`: `UE_LOG`만 출력. 주석 `// TODO M2: 커서 히트 → Server RPC 이동 요청`.
-- IA/IMC/InputComponent 관련은 `IsLocalPlayerController()` 가드 안에서 처리.
+- 입력 처리는 로컬 컨트롤러에만 적용 — `SetupInputComponent()`/`BeginPlay()` 모두 `IsLocalPlayerController()` 가드 안에서 처리(M4 데디 대비).
 
 ### `AREGameMode : AGameModeBase`
 - 생성자: `DefaultPawnClass = ARECharacterBase::StaticClass()`, `PlayerControllerClass = AREPlayerController::StaticClass()`.
@@ -70,7 +70,7 @@ PIE 시작 → AREGameMode가 ARECharacterBase 스폰 + AREPlayerController 소�
 - 편집: `Config/DefaultEngine.ini`
   - `GameDefaultMap` / `EditorStartupMap` = `/Game/Level/Main`
   - `GlobalDefaultGameMode` = `/Script/Project_RE.REGameMode`
-- 편집: `Source/Project_RE/Project_RE.Build.cs` — `EnhancedInput` 모듈 의존 확인/추가
+- 편집: `Source/Project_RE/Project_RE.Build.cs` — `PublicIncludePaths`에 `Project_RE/Core` 추가. (`EnhancedInput` 모듈은 이미 의존에 존재 — 확인만.)
 
 ## 참고 (기존 패턴 재사용)
 
