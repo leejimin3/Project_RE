@@ -25,6 +25,7 @@ public class Project_RE : ModuleRules
 
 		PublicIncludePaths.AddRange(new string[] {
 			"Project_RE",
+			"Project_RE/Core",
 			"Project_RE/Variant_Platforming",
 			"Project_RE/Variant_Platforming/Animation",
 			"Project_RE/Variant_Combat",
