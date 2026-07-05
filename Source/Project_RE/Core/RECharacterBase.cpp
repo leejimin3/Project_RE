@@ -8,6 +8,7 @@
 #include "Animation/AnimInstance.h"
 #include "Engine/SkeletalMesh.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Net/UnrealNetwork.h"
 
 ARECharacterBase::ARECharacterBase()
 {
@@ -17,6 +18,9 @@ ARECharacterBase::ARECharacterBase()
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationRoll = false;
+
+	// 체력 초기화 — MaxHealth 조정 시 정합 유지
+	Health = MaxHealth;
 
 	// 이동 방향으로 캐릭터가 회전 (탑뷰 클릭 이동 시 진행 방향을 바라봄)
 	GetCharacterMovement()->bOrientRotationToMovement = true;
@@ -56,4 +60,25 @@ ARECharacterBase::ARECharacterBase()
 	{
 		GetMesh()->SetAnimInstanceClass(AnimAsset.Class);
 	}
+}
+
+float ARECharacterBase::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent,
+                                   AController* EventInstigator, AActor* DamageCauser)
+{
+	// 서버 권위 가드 — 게임상태(Health) 변경은 서버에서만
+	if (!HasAuthority())
+	{
+		return 0.f;
+	}
+
+	const float Applied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+	Health = FMath::Clamp(Health - Applied, 0.f, MaxHealth);
+	// TODO M5: 서버권위 피격 판정/이펙트, 사망 처리
+	return Applied;
+}
+
+void ARECharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ARECharacterBase, Health);
 }

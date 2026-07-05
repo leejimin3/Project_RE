@@ -28,6 +28,10 @@ protected:
 	/** 우클릭 핸들러: 커서 아래 지점을 이동 목표로 설정 */
 	void OnClickMove(const FInputActionValue& Value);
 
+	/** 이동 요청 서버 RPC 뼈대. 실배선(NavMesh)은 M2. */
+	UFUNCTION(Server, Reliable)
+	void Server_RequestMove(FVector Target);
+
 	UPROPERTY()
 	UInputAction* ClickMoveAction;
 
