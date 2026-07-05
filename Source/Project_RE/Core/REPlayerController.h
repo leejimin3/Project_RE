@@ -11,8 +11,9 @@ class UInputMappingContext;
 struct FInputActionValue;
 
 /**
- *  탑뷰 PlayerController. 우클릭 입력을 받을 뼈대만 세운다.
- *  IA/IMC는 uasset 없이 코드로 생성(transient). 실제 이동은 M2.
+ *  탑뷰 PlayerController. 우클릭으로 커서 아래 지점으로 폰을 이동시킨다.
+ *  IA/IMC는 uasset 없이 코드로 생성(transient).
+ *  현재는 평평한 바닥용 직접 이동 — NavMesh 패스파인딩 + Server RPC는 M2.
  */
 UCLASS()
 class AREPlayerController : public APlayerController

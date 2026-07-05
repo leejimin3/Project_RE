@@ -14,9 +14,9 @@
 |---|---|---|
 | #1 빌드 성공 (에러 0) | ✅ **완료** | `Build.bat Project_REEditor` → `Result: Succeeded`, 21s, 에러 0 |
 | #2 PIE 마네킹 탑뷰 쿼터뷰 표시 | ✅ **완료** | 유저 PIE 스크린샷서 그리드 바닥 위 마네킹 쿼터뷰 확인 |
-| #3 우클릭 → `[RE] OnClickMove triggered` 로그 | ⏳ **미검증** | 유저가 Chrome Remote Desktop 환경이라 **우클릭 입력 테스트 불가** → 다음 세션서 확인 필요 |
+| #3 우클릭 → 커서 지점 이동 + 커서 표시 + `[RE] OnClickMove triggered` 로그 | ✅ **완료** | 로컬 머신 PIE 관측: 커서 보임 + 마네킹 클릭 지점 이동 + 로그 출력 확인 |
 
-**진행률 2/3.** 코드·빌드·맵·커밋 전부 완료. 남은 건 #3 런타임 관측 하나.
+**진행률 3/3.** 전부 완료. 후속 세션서 `OnClickMove`를 로그 스텁 → 실제 click-to-move 이동으로 구현(`PlayerTick`+`AddMovementInput`, `bShowMouseCursor`), PIE 검증 후 PR #7(→`dev`) 생성.
 
 ---
 
@@ -33,7 +33,7 @@ ac220e2 feat(M0): add AREPlayerController right-click input skeleton
 
 ### 생성/수정 파일
 - `Source/Project_RE/Core/RECharacterBase.{h,cpp}` — 탑뷰 폰. SpringArm(−50°/길이1500/충돌테스트off) + Camera(FOV90). 생성자 ConstructorHelpers로 `SKM_Manny_Simple` 메시 + `ABP_Unarmed` 애님BP 로드.
-- `Source/Project_RE/Core/REPlayerController.{h,cpp}` — 우클릭 입력 뼈대. IA/IMC를 uasset 없이 `NewObject`로 코드 생성. `SetupInputComponent()`서 IA/IMC 생성+BindAction(RightMouseButton→OnClickMove), `BeginPlay()`서 MappingContext 등록. `OnClickMove`는 M0선 `UE_LOG(LogTemp, Log, TEXT("[RE] OnClickMove triggered"))`만.
+- `Source/Project_RE/Core/REPlayerController.{h,cpp}` — 우클릭 입력 뼈대. IA/IMC를 uasset 없이 `NewObject`로 코드 생성. `SetupInputComponent()`서 IA/IMC 생성+BindAction(RightMouseButton→OnClickMove), `BeginPlay()`서 MappingContext 등록 + `bShowMouseCursor=true`. `OnClickMove`는 로그 출력 + 커서 아래 히트 지점을 이동 목표로 저장, `PlayerTick`서 `AddMovementInput`으로 접근 이동(`AcceptanceRadius` 도달 시 정지). NavMesh 패스파인딩 + Server RPC 이동은 M2.
 - `Source/Project_RE/Core/REGameMode.{h,cpp}` — `DefaultPawnClass=ARECharacterBase`, `PlayerControllerClass=AREPlayerController`.
 - `Source/Project_RE/Project_RE.Build.cs` — `PublicIncludePaths`에 `"Project_RE/Core"` 추가.
 - `Config/DefaultEngine.ini` — 2~4행: `GameDefaultMap`/`EditorStartupMap`=`/Game/Level/Main.Main`, `GlobalDefaultGameMode`=`/Script/Project_RE.REGameMode`.
