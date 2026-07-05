@@ -60,7 +60,7 @@ void AREPlayerController::OnClickMove(const FInputActionValue& Value)
 	UE_LOG(LogTemp, Log, TEXT("[RE] OnClickMove triggered"));
 
 	// 커서 아래 월드 지점을 이동 목표로 설정
-	// TODO M2: 로컬 이동을 Server RPC 이동 요청 + NavMesh 패스파인딩으로 교체
+	// TODO M2: 로컬 이동을 Server_RequestMove RPC + NavMesh 패스파인딩으로 교체
 	FHitResult Hit;
 	if (GetHitResultUnderCursor(ECC_Visibility, false, Hit) && Hit.bBlockingHit)
 	{
@@ -95,4 +95,10 @@ void AREPlayerController::PlayerTick(float DeltaTime)
 	}
 
 	ControlledPawn->AddMovementInput(ToTarget.GetSafeNormal());
+}
+
+void AREPlayerController::Server_RequestMove_Implementation(FVector Target)
+{
+	// TODO M2: 서버권위 이동 — NavMesh 패스파인딩 목표 설정.
+	// 현재는 뼈대만. 클라 로컬 이동(OnClickMove)이 싱글 경로를 담당.
 }
