@@ -18,7 +18,9 @@ public class Project_RE : ModuleRules
 			"StateTreeModule",
 			"GameplayStateTreeModule",
 			"UMG",
-			"Slate"
+			"Slate",
+			"MassEntity",
+			"MassCore"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
