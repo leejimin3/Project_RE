@@ -22,8 +22,9 @@ class AREPlayerController : public APlayerController
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
+	virtual void PlayerTick(float DeltaTime) override;
 
-	/** 우클릭 핸들러 (M0에선 로그만) */
+	/** 우클릭 핸들러: 커서 아래 지점을 이동 목표로 설정 */
 	void OnClickMove(const FInputActionValue& Value);
 
 	UPROPERTY()
@@ -31,4 +32,13 @@ protected:
 
 	UPROPERTY()
 	UInputMappingContext* TopDownMappingContext;
+
+	/** 이동 목표 지점 (월드) */
+	FVector MoveTarget = FVector::ZeroVector;
+
+	/** 목표를 향해 이동 중인지 */
+	bool bMoveToTarget = false;
+
+	/** 목표 도달로 간주하는 반경 */
+	float AcceptanceRadius = 120.f;
 };
