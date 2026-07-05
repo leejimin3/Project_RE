@@ -5,6 +5,8 @@
 #include "REPlayerController.h"
 #include "MassEntitySubsystem.h"
 #include "MassEntityManager.h"
+#include "REBulletSimProcessor.h"
+#include "REBulletRenderProcessor.h"
 
 AREGameMode::AREGameMode()
 {
@@ -29,4 +31,9 @@ void AREGameMode::BeginPlay()
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[RE] UMassEntitySubsystem NULL"));
 	}
+
+	// #4 검증: 두 Processor CDO의 ExecutionFlags 확인. Sim=7(AllNetModes), Render=5(Standalone|Client).
+	const uint8 SimFlags    = (uint8)GetDefault<UREBulletSimProcessor>()->GetExecutionFlags();
+	const uint8 RenderFlags = (uint8)GetDefault<UREBulletRenderProcessor>()->GetExecutionFlags();
+	UE_LOG(LogTemp, Log, TEXT("[RE] SimProcessor flags=%d  RenderProcessor flags=%d"), SimFlags, RenderFlags);
 }
