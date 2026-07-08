@@ -25,4 +25,10 @@ public:
 	 *  Seed/StartTime은 M5 데디에서 서버→클라 동일 시드 시뮬용 — M0에서는 저장/미사용.
 	 */
 	void TriggerBulletPattern(EBulletPattern Pattern, int32 Seed, float StartTime);
+
+private:
+	/** Spiral 호출마다 누적되는 시작각. 연속 트리거 시 링이 회전한다. */
+	float SpiralBaseAngleDeg = 0.f;
+	/** Spiral 호출당 BaseAngle 증가량(deg). */
+	static constexpr float SpiralRotationStepDeg = 15.f;
 };

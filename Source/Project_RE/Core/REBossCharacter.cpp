@@ -2,12 +2,7 @@
 
 #include "REBossCharacter.h"
 #include "REBulletSpawnSubsystem.h"
-
-namespace
-{
-	/** M0 placeholder 스폰 개수. 실제 패턴별 탄 수는 M1. */
-	constexpr int32 BulletsPerPattern = 16;
-}
+#include "REBulletPatternGenerator.h"
 
 AREBossCharacter::AREBossCharacter()
 {
@@ -26,28 +21,32 @@ void AREBossCharacter::TriggerBulletPattern(EBulletPattern Pattern, int32 Seed, 
 		return;
 	}
 
+	TArray<FBulletSpawnParams> Params;
 	switch (Pattern)
 	{
 	case EBulletPattern::Spiral:
-		// TODO M1(#16): 나선 — 각도 증분으로 Velocity 세팅.
-		break;
-	case EBulletPattern::Fan:
-		// TODO M1(#16): 부채꼴 — 중심각 기준 좌우 분산 Velocity.
-		break;
-	case EBulletPattern::Homing:
-		// TODO M1(#16): 호밍 — 타깃 방향 Velocity + 추적 플래그.
+	{
+		REBulletPattern::FSpiralParams SP;
+		SP.BaseAngleDeg = SpiralBaseAngleDeg;
+		Params = REBulletPattern::GenerateSpiral(GetActorLocation(), SP);
+		UE_LOG(LogTemp, Log, TEXT("[RE] Boss Spiral: BaseAngle=%.1f -> N=%d"), SpiralBaseAngleDeg, Params.Num());
+		SpiralBaseAngleDeg += SpiralRotationStepDeg;  // 다음 호출 시 회전
 		break;
 	}
-
-	// #14: 보스 위치에서 N발 스폰. Velocity=0/Lifetime=0 (패턴 수학은 #16, 이동은 #15).
-	TArray<FBulletSpawnParams> Params;
-	Params.Reserve(BulletsPerPattern);
-	for (int32 i = 0; i < BulletsPerPattern; ++i)
+	case EBulletPattern::Fan:
 	{
-		Params.Add({ GetActorLocation(), FVector::ZeroVector, 0.f });
+		REBulletPattern::FFanParams FP;
+		Params = REBulletPattern::GenerateFan(GetActorLocation(), FP);
+		UE_LOG(LogTemp, Log, TEXT("[RE] Boss Fan: Spread=%.1f -> N=%d"), FP.SpreadDeg, Params.Num());
+		break;
+	}
+	case EBulletPattern::Homing:
+		// M1 범위 밖 — 슬롯만 유지, 미구현. 스폰 없이 종료.
+		UE_LOG(LogTemp, Warning, TEXT("[RE] Boss: Homing 미구현 (M1 범위 밖)"));
+		return;
 	}
 	Spawner->SpawnBulletBatch(Params);
 
 	UE_LOG(LogTemp, Log, TEXT("[RE] Boss::TriggerBulletPattern: Pattern=%d Seed=%d Start=%.2f -> spawned %d entities at %s"),
-		(int32)Pattern, Seed, StartTime, BulletsPerPattern, *GetActorLocation().ToString());
+		(int32)Pattern, Seed, StartTime, Params.Num(), *GetActorLocation().ToString());
 }
