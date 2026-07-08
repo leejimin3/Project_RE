@@ -8,11 +8,14 @@
 #include "REBulletSimProcessor.h"
 #include "REBulletRenderProcessor.h"
 #include "REBossCharacter.h"
+#include "REBulletSpawnSubsystem.h"
+#include "Mass/EntityFragments.h"  // FTransformFragment
 
 AREGameMode::AREGameMode()
 {
 	DefaultPawnClass = ARECharacterBase::StaticClass();
 	PlayerControllerClass = AREPlayerController::StaticClass();
+	PrimaryActorTick.bCanEverTick = true;
 }
 
 void AREGameMode::BeginPlay()
@@ -46,5 +49,43 @@ void AREGameMode::BeginPlay()
 			AREBossCharacter::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, BossSpawnParams))
 	{
 		Boss->TriggerBulletPattern(EBulletPattern::Spiral, 12345, 0.f);
+	}
+
+	// #15 프로브: nonzero velocity/lifetime 탄환 1발 → SimProcessor 이동/파괴 관측용.
+	// MassGameplay 플러그인의 페이즈 매니저가 SimProcessor를 매 프레임 자동 구동(PrePhysics).
+	if (UREBulletSpawnSubsystem* Spawner = GetWorld()->GetSubsystem<UREBulletSpawnSubsystem>())
+	{
+		ProbeBullet = Spawner->SpawnBullet(FVector::ZeroVector, FVector(100.f, 0.f, 0.f), 0.5f);
+		UE_LOG(LogTemp, Log, TEXT("[RE] SimProbe spawn: Vel=(100,0,0) Life=0.50"));
+	}
+}
+
+void AREGameMode::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (!ProbeBullet.IsSet())
+	{
+		return;
+	}
+
+	ProbeElapsed += DeltaSeconds;
+
+	UMassEntitySubsystem* Mass = GetWorld()->GetSubsystem<UMassEntitySubsystem>();
+	if (!Mass)
+	{
+		return;
+	}
+	FMassEntityManager& EM = Mass->GetMutableEntityManager();
+
+	if (EM.IsEntityValid(ProbeBullet))
+	{
+		const FVector Loc = EM.GetFragmentDataChecked<FTransformFragment>(ProbeBullet).GetTransform().GetLocation();
+		UE_LOG(LogTemp, Log, TEXT("[RE] SimProbe: t=%.2f Loc=%s Alive=1"), ProbeElapsed, *Loc.ToString());
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("[RE] SimProbe: t=%.2f Alive=0 (destroyed)"), ProbeElapsed);
+		ProbeBullet.Reset();  // 파괴 확인 후 로그 종료.
 	}
 }

@@ -3,6 +3,7 @@
 #include "REBulletSimProcessor.h"
 #include "REBulletFragments.h"
 #include "MassExecutionContext.h"
+#include "Mass/EntityFragments.h"  // FTransformFragment
 
 UREBulletSimProcessor::UREBulletSimProcessor()
 	: EntityQuery(*this)
@@ -12,11 +13,29 @@ UREBulletSimProcessor::UREBulletSimProcessor()
 
 void UREBulletSimProcessor::ConfigureQueries(const TSharedRef<FMassEntityManager>& EntityManager)
 {
+	EntityQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddRequirement<FBulletSimFragment>(EMassFragmentAccess::ReadWrite);
+	EntityQuery.AddTagRequirement<FBulletTag>(EMassFragmentPresence::All);
 }
 
 void UREBulletSimProcessor::Execute(FMassEntityManager& EntityManager, FMassExecutionContext& Context)
 {
-	// M0: 구조만. 실제 이동/수명 계산은 M1.
-	UE_LOG(LogTemp, Verbose, TEXT("[RE] SimProcessor::Execute"));
+	EntityQuery.ForEachEntityChunk(Context, [](FMassExecutionContext& Context)
+	{
+		const float Dt = Context.GetDeltaTimeSeconds();
+		const int32 Num = Context.GetNumEntities();
+		const TArrayView<FTransformFragment> Transforms = Context.GetMutableFragmentView<FTransformFragment>();
+		const TArrayView<FBulletSimFragment> Sims       = Context.GetMutableFragmentView<FBulletSimFragment>();
+
+		for (int32 i = 0; i < Num; ++i)
+		{
+			FBulletSimFragment& Sim = Sims[i];
+			Transforms[i].GetMutableTransform().AddToTranslation(Sim.Velocity * Dt);
+			Sim.Lifetime -= Dt;
+			if (Sim.Lifetime <= 0.f)
+			{
+				Context.Defer().DestroyEntity(Context.GetEntity(i));
+			}
+		}
+	});
 }

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
 #include "MassEntityTypes.h"
+#include "Mass/EntityHandle.h"  // FMassEntityHandle (MassCore; 5.8 IWYU: not transitively pulled by MassEntityTypes.h)
 #include "REGameMode.generated.h"
 
 /**
@@ -34,4 +35,10 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
+
+private:
+	// #15 프로브 전용: 이동/수명 관측용 테스트 탄환. #17 데모 씬에서 제거 예정.
+	FMassEntityHandle ProbeBullet;
+	float ProbeElapsed = 0.f;
 };
