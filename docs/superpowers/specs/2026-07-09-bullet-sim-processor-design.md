@@ -107,4 +107,6 @@ Headless 프로브(`-game -nullrhi`), PIE 없이. `[[headless-runtime-probe]]` �
 - ISM 인스턴스 갱신/InstanceIndex → #17
 - 병렬 순회(`ParallelForEachEntityChunk`) → 필요 시 M3
 - 화면 밖(경계) 컬링 파괴 → 미요청, Lifetime만으로 충분
-- 헤더(.h) / Build.cs / .uproject 변경 → 불필요
+- 헤더(.h) / Build.cs 변경 → 불필요 (FTransformFragment는 MassCore)
+
+> **구현 중 정정:** `.uproject`는 변경됨 — **MassGameplay 플러그인 활성화 필요**. 프로세서를 틱하는 페이즈 드라이버가 없으면 `Execute`가 한 번도 실행되지 않는 dead code였음(구현 중 발견). FTransformFragment 자체는 플러그인 불요라는 위 판단은 유효하나, 프로세서 구동에는 MassGameplay가 필요.

@@ -19,7 +19,7 @@ UE 5.8 C++ 탑뷰 탄막(bullet-hell) 프로젝트. MassEntity ECS로 탄막을 
 ## 전역 제약
 
 - 엔진 빌드: `"/e/UE_5.8/Engine/Build/BatchFiles/Build.bat" Project_REEditor Win64 Development -Project="E:\UnrealProjects\Project_RE\Project_RE.uproject" -WaitMutex -NoHotReload`
-- **Build.cs / .uproject 변경 금지** — `FTransformFragment`는 MassCore(`Mass/EntityFragments.h`)에 있고 이미 의존.
+- **Build.cs 변경 금지** — `FTransformFragment`는 MassCore(`Mass/EntityFragments.h`)에 있고 이미 의존. (**구현 중 정정:** `.uproject`는 **MassGameplay 플러그인 활성화로 변경됨** — 프로세서 페이즈 드라이버 도입. 미활성 시 `Execute` 미실행 dead code였음.)
 - 자동화 테스트 인프라 없음 → 게이트는 **빌드 성공** + **headless 프로브 로그 관측**.
 - 로그 접두어 `[RE]` 고정. 클래스/타입명 스펙과 동일.
 - YAGNI: 패턴 수학(#16), ISM 렌더(#17), 병렬 순회, 경계 컬링 전부 스코프 밖.
@@ -321,5 +321,5 @@ git commit -m "test(M1): add SimProcessor move/lifetime headless probe in GameMo
 - ISM 인스턴스 갱신/InstanceIndex → #17
 - 병렬 순회(`ParallelForEachEntityChunk`) → 필요 시 M3
 - 화면 밖(경계) 컬링 파괴 → 미요청, Lifetime만으로 충분
-- SimProcessor 헤더(.h) / Build.cs / .uproject 변경 → 불필요
+- SimProcessor 헤더(.h) / Build.cs 변경 → 불필요. (**구현 중 정정:** `.uproject`는 MassGameplay 활성화로 변경됨 — 페이즈 드라이버.)
 - GameMode 프로브 스캐폴딩 지금 제거 → M1 마감(#17)까지 존치 (회귀 검증 수단)
