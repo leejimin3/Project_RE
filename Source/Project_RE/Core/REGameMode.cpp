@@ -10,8 +10,6 @@
 #include "REBossCharacter.h"
 #include "REBulletSpawnSubsystem.h"
 #include "Mass/EntityFragments.h"  // FTransformFragment
-#include "MassExecutor.h"          // UE::Mass::Executor::Run (수동 Processor 구동)
-#include "MassProcessingContext.h" // UE::Mass::FProcessingContext
 
 AREGameMode::AREGameMode()
 {
@@ -53,15 +51,8 @@ void AREGameMode::BeginPlay()
 		Boss->TriggerBulletPattern(EBulletPattern::Spiral, 12345, 0.f);
 	}
 
-	// #15 프로브: SimProcessor 인스턴스 생성 + 초기화(ConfigureQueries 호출됨).
-	// MassSimulation 페이즈가 없으므로 Tick에서 수동 구동한다.
-	if (UMassEntitySubsystem* Mass = GetWorld()->GetSubsystem<UMassEntitySubsystem>())
-	{
-		SimProcessor = NewObject<UREBulletSimProcessor>(this);
-		SimProcessor->CallInitialize(this, Mass->GetMutableEntityManager().AsShared());
-	}
-
 	// #15 프로브: nonzero velocity/lifetime 탄환 1발 → SimProcessor 이동/파괴 관측용.
+	// MassGameplay 플러그인의 페이즈 매니저가 SimProcessor를 매 프레임 자동 구동(PrePhysics).
 	if (UREBulletSpawnSubsystem* Spawner = GetWorld()->GetSubsystem<UREBulletSpawnSubsystem>())
 	{
 		ProbeBullet = Spawner->SpawnBullet(FVector::ZeroVector, FVector(100.f, 0.f, 0.f), 0.5f);
@@ -86,14 +77,6 @@ void AREGameMode::Tick(float DeltaSeconds)
 		return;
 	}
 	FMassEntityManager& EM = Mass->GetMutableEntityManager();
-
-	// #15 프로브: SimProcessor 수동 구동 → Execute 실제 호출(이동/수명/지연파괴).
-	// FProcessingContext 기본 bFlushCommandBuffer=true → Defer된 DestroyEntity가 이 프레임에 반영됨.
-	if (SimProcessor)
-	{
-		UE::Mass::FProcessingContext ProcContext(EM, DeltaSeconds);
-		UE::Mass::Executor::Run(*SimProcessor, ProcContext);
-	}
 
 	if (EM.IsEntityValid(ProbeBullet))
 	{

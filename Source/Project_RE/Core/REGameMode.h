@@ -8,8 +8,6 @@
 #include "Mass/EntityHandle.h"  // FMassEntityHandle (MassCore; 5.8 IWYU: not transitively pulled by MassEntityTypes.h)
 #include "REGameMode.generated.h"
 
-class UREBulletSimProcessor;
-
 /**
  *  Mass 스모크 테스트용 throwaway 프래그먼트.
  *  M0 #2 프로브 전용 — M1에서 실제 탄막 프래그먼트로 교체·이동한다.
@@ -43,10 +41,4 @@ private:
 	// #15 프로브 전용: 이동/수명 관측용 테스트 탄환. #17 데모 씬에서 제거 예정.
 	FMassEntityHandle ProbeBullet;
 	float ProbeElapsed = 0.f;
-
-	// #15 프로브 전용: 이 프로젝트는 MassSimulation 플러그인이 없어 Processor 자동 실행 페이즈가 없다.
-	// SimProcessor를 매 Tick 수동 구동해 Execute를 실제로 호출한다(진짜 이동/파괴 로직 검증).
-	// 프로덕션 파이프라인 구동은 후속 이슈. #17 데모 씬에서 이 스캐폴딩 제거.
-	UPROPERTY(Transient)
-	TObjectPtr<UREBulletSimProcessor> SimProcessor;
 };
