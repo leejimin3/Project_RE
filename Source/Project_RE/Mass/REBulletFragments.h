@@ -23,3 +23,10 @@ struct FBulletRenderFragment : public FMassFragment
 
 	int32 InstanceIndex = INDEX_NONE;
 };
+
+/** 탄환 식별 태그. Query 필터 전용(데이터 없음). 후속 Processor가 이 태그로 탄환만 선별. */
+USTRUCT()
+struct FBulletTag : public FMassTag
+{
+	GENERATED_BODY()
+};
