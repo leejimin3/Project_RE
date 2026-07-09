@@ -12,8 +12,8 @@ struct FInputActionValue;
 
 /**
  *  탑뷰 PlayerController. 우클릭으로 커서 아래 지점으로 폰을 이동시킨다.
+ *  클릭 검출은 로컬, 이동 권위는 서버(Server_RequestMove RPC → NavMesh 패스팔로잉).
  *  IA/IMC는 uasset 없이 코드로 생성(transient).
- *  현재는 평평한 바닥용 직접 이동 — NavMesh 패스파인딩 + Server RPC는 M2.
  */
 UCLASS()
 class AREPlayerController : public APlayerController
@@ -23,12 +23,11 @@ class AREPlayerController : public APlayerController
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
-	virtual void PlayerTick(float DeltaTime) override;
 
-	/** 우클릭 핸들러: 커서 아래 지점을 이동 목표로 설정 */
+	/** 우클릭 핸들러: 커서 아래 지점을 서버로 이동 요청 */
 	void OnClickMove(const FInputActionValue& Value);
 
-	/** 이동 요청 서버 RPC 뼈대. 실배선(NavMesh)은 M2. */
+	/** 이동 요청 서버 RPC. 서버가 nav 검증 후 SimpleMoveToLocation 구동. */
 	UFUNCTION(Server, Reliable)
 	void Server_RequestMove(FVector Target);
 
@@ -38,12 +37,11 @@ protected:
 	UPROPERTY()
 	UInputMappingContext* TopDownMappingContext;
 
-	/** 이동 목표 지점 (월드) */
-	FVector MoveTarget = FVector::ZeroVector;
+private:
+	/** 헤드리스(-unattended) 자기이동 프로브. 서버 권위에서만 발동. */
+	void RunHeadlessMoveProbe();
 
-	/** 목표를 향해 이동 중인지 */
-	bool bMoveToTarget = false;
-
-	/** 목표 도달로 간주하는 반경 */
-	float AcceptanceRadius = 120.f;
+	FTimerHandle ProbeMoveTimer;
+	FTimerHandle ProbeLogTimer;
+	FVector ProbeTarget = FVector::ZeroVector;
 };

@@ -8,6 +8,10 @@
 #include "InputActionValue.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/Pawn.h"
+#include "Blueprint/AIBlueprintHelperLibrary.h"
+#include "NavigationSystem.h"
+#include "Misc/App.h"
+#include "TimerManager.h"
 
 void AREPlayerController::SetupInputComponent()
 {
@@ -36,69 +40,87 @@ void AREPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (!IsLocalPlayerController())
+	if (IsLocalPlayerController())
 	{
-		return;
+		// 탑뷰 클릭 이동 — 마우스 커서 표시
+		bShowMouseCursor = true;
+		DefaultMouseCursor = EMouseCursor::Default;
+
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
+				ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
+		{
+			if (TopDownMappingContext)
+			{
+				Subsystem->AddMappingContext(TopDownMappingContext, 0);
+			}
+		}
 	}
 
-	// 탑뷰 클릭 이동 — 마우스 커서 표시
-	bShowMouseCursor = true;
-	DefaultMouseCursor = EMouseCursor::Default;
-
-	if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
-			ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
+	// 헤드리스(-unattended) 서버권위 이동 프로브. 실플레이(PIE/에디터)엔 무발동.
+	if (HasAuthority() && FApp::IsUnattended())
 	{
-		if (TopDownMappingContext)
-		{
-			Subsystem->AddMappingContext(TopDownMappingContext, 0);
-		}
+		RunHeadlessMoveProbe();
 	}
 }
 
 void AREPlayerController::OnClickMove(const FInputActionValue& Value)
 {
-	UE_LOG(LogTemp, Log, TEXT("[RE] OnClickMove triggered"));
-
-	// 커서 아래 월드 지점을 이동 목표로 설정
-	// TODO M2: 로컬 이동을 Server_RequestMove RPC + NavMesh 패스파인딩으로 교체
+	// 클릭 검출은 로컬(커서/카메라는 로컬 전용). 해석된 월드 좌표만 서버로.
 	FHitResult Hit;
 	if (GetHitResultUnderCursor(ECC_Visibility, false, Hit) && Hit.bBlockingHit)
 	{
-		MoveTarget = Hit.ImpactPoint;
-		bMoveToTarget = true;
+		Server_RequestMove(Hit.ImpactPoint);
 	}
-}
-
-void AREPlayerController::PlayerTick(float DeltaTime)
-{
-	Super::PlayerTick(DeltaTime);
-
-	if (!bMoveToTarget)
-	{
-		return;
-	}
-
-	APawn* ControlledPawn = GetPawn();
-	if (!ControlledPawn)
-	{
-		bMoveToTarget = false;
-		return;
-	}
-
-	FVector ToTarget = MoveTarget - ControlledPawn->GetActorLocation();
-	ToTarget.Z = 0.f; // 수평 이동만
-
-	if (ToTarget.SizeSquared() <= AcceptanceRadius * AcceptanceRadius)
-	{
-		bMoveToTarget = false; // 도달
-		return;
-	}
-
-	ControlledPawn->AddMovementInput(ToTarget.GetSafeNormal());
 }
 
 void AREPlayerController::Server_RequestMove_Implementation(FVector Target)
 {
-	// TODO M2: 서버권위 이동 — NavMesh 패스파인딩 목표 설정.
-	// 현재는 뼈대만. 클라 로컬 이동(OnClickMove)이 싱글 경로를 담당.
+	// 서버 권위 — nav 검증 후 패스팔로잉 구동.
+	UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld());
+	FNavLocation NavLoc;
+	if (!NavSys || !NavSys->ProjectPointToNavigation(Target, NavLoc))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Move] rejected: off-navmesh %s"), *Target.ToString());
+		return;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[Move] Server_RequestMove recv target=%s"), *NavLoc.Location.ToString());
+	UAIBlueprintHelperLibrary::SimpleMoveToLocation(this, NavLoc.Location);
+}
+
+void AREPlayerController::RunHeadlessMoveProbe()
+{
+	// 폰 possess 완료(BeginPlay 직후 possess 타이밍 여유) 후 1.0s에 자기이동 1회 + 오프메시 거부 1회.
+	FTimerDelegate MoveDel = FTimerDelegate::CreateLambda([this]()
+	{
+		APawn* P = GetPawn();
+		if (!P)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Move] probe: no pawn"));
+			return;
+		}
+		// 시작점에서 +X 500 만큼 떨어진 목표(nav 위 예상).
+		ProbeTarget = P->GetActorLocation() + FVector(500.f, 0.f, 0.f);
+		UE_LOG(LogTemp, Log, TEXT("[Move] probe start: pawn=%s target=%s"),
+			*P->GetActorLocation().ToString(), *ProbeTarget.ToString());
+
+		// 정상 이동 요청.
+		Server_RequestMove(ProbeTarget);
+
+		// 오프메시 거부 검증: 맵 밖 좌표 1회.
+		Server_RequestMove(FVector(100000.f, 100000.f, 0.f));
+
+		// 0.5s마다 목표까지 거리 로그(수렴 관측), 5s간.
+		FTimerDelegate LogDel = FTimerDelegate::CreateLambda([this]()
+		{
+			if (APawn* Pn = GetPawn())
+			{
+				const float Dist = FVector::Dist2D(Pn->GetActorLocation(), ProbeTarget);
+				UE_LOG(LogTemp, Log, TEXT("[Move] probe dist=%.1f loc=%s"),
+					Dist, *Pn->GetActorLocation().ToString());
+			}
+		});
+		GetWorld()->GetTimerManager().SetTimer(ProbeLogTimer, LogDel, 0.5f, /*bLoop=*/true);
+	});
+	GetWorld()->GetTimerManager().SetTimer(ProbeMoveTimer, MoveDel, 1.0f, /*bLoop=*/false);
 }
