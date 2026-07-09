@@ -9,6 +9,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Net/UnrealNetwork.h"
+#include "AbilitySystemComponent.h"
 
 ARECharacterBase::ARECharacterBase()
 {
@@ -21,6 +22,11 @@ ARECharacterBase::ARECharacterBase()
 
 	// 체력 초기화 — MaxHealth 조정 시 정합 유지
 	Health = MaxHealth;
+
+	// GAS: ASC 부착 — Pawn 소유, 복제 켜고 Mixed 모드(오너 클라만 GE 복제).
+	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	AbilitySystemComponent->SetIsReplicated(true);
+	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
 
 	// 이동 방향으로 캐릭터가 회전 (탑뷰 클릭 이동 시 진행 방향을 바라봄)
 	GetCharacterMovement()->bOrientRotationToMovement = true;
@@ -81,4 +87,30 @@ void ARECharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ARECharacterBase, Health);
+}
+
+UAbilitySystemComponent* ARECharacterBase::GetAbilitySystemComponent() const
+{
+	return AbilitySystemComponent;
+}
+
+void ARECharacterBase::InitASCActorInfo()
+{
+	// OwnerActor=AvatarActor=this (Pawn 소유). 오너 클라 판정은 Pawn→Controller 소유 체인으로 엔진이 처리.
+	AbilitySystemComponent->InitAbilityActorInfo(this, this);
+	UE_LOG(LogTemp, Log, TEXT("[GAS] ASC ActorInfo set (role=%s)"), *UEnum::GetValueAsString(GetLocalRole()));
+}
+
+void ARECharacterBase::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+	// 서버 권위 경로 — Possess 즉시 ActorInfo 세팅.
+	InitASCActorInfo();
+}
+
+void ARECharacterBase::OnRep_PlayerState()
+{
+	Super::OnRep_PlayerState();
+	// 클라 경로 — PlayerState 복제 도착 후 ActorInfo 세팅.
+	InitASCActorInfo();
 }

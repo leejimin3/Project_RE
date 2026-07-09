@@ -20,7 +20,10 @@ public class Project_RE : ModuleRules
 			"UMG",
 			"Slate",
 			"MassEntity",
-			"MassCore"
+			"MassCore",
+			"GameplayAbilities",
+			"GameplayTags",
+			"GameplayTasks"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

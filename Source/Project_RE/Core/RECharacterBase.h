@@ -4,10 +4,12 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "AbilitySystemInterface.h"
 #include "RECharacterBase.generated.h"
 
 class USpringArmComponent;
 class UCameraComponent;
+class UAbilitySystemComponent;
 
 /**
  *  탑뷰 쿼터뷰 플레이어 폰 베이스.
@@ -15,12 +17,21 @@ class UCameraComponent;
  *  HP는 서버 권위(Replicated) — 데미지 적용은 TakeDamage HasAuthority 가드 경유.
  */
 UCLASS()
-class ARECharacterBase : public ACharacter
+class ARECharacterBase : public ACharacter, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
 
 public:
 	ARECharacterBase();
+
+	//~ IAbilitySystemInterface — GAS가 ASC를 찾는 진입점.
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+
+	//~ 서버: Possess 시점 ASC ActorInfo 세팅.
+	virtual void PossessedBy(AController* NewController) override;
+
+	//~ 클라: PlayerState 복제 도착 시 ASC ActorInfo 세팅.
+	virtual void OnRep_PlayerState() override;
 
 	//~ 서버 권위 데미지 진입점. 서버에서만 Health 차감.
 	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent,
@@ -29,6 +40,13 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:
+	/** 게임플레이 어빌리티 시스템 컴포넌트. Pawn 소유, Mixed 복제. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Abilities", meta = (AllowPrivateAccess = "true"))
+	UAbilitySystemComponent* AbilitySystemComponent;
+
+	/** ASC ActorInfo 초기화 공용 헬퍼 (서버/클라 양쪽에서 호출). */
+	void InitASCActorInfo();
+
 	/** 현재 체력. 서버 권위, 클라 복제. */
 	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
 	float Health = 100.f;
