@@ -15,7 +15,7 @@
 - `PlayerTick`: `MoveTarget`으로 **직선** `AddMovementInput` (평면 전용, `bMoveToTarget`/`AcceptanceRadius`).
 - `Server_RequestMove(FVector)`: **빈 뼈대**.
 - `Main.umap`: 거의 빈 레벨 (19KB, 외부 액터 0). `NavMeshBoundsVolume` **없음**.
-- `Build.cs`: `NavigationSystem`/`AIModule` 의존 **없음**.
+- `Build.cs`: `AIModule`는 **이미 있음**(line 17). `NavigationSystem`만 **없음** → 이것만 추가.
 
 ## 설계 결정 (사용자 확정)
 
@@ -58,12 +58,13 @@
 
 ### 1. `Project_RE.Build.cs` — 모듈 의존
 
-`PublicDependencyModuleNames`에 2종 추가:
+`AIModule`은 이미 존재(line 17). `PublicDependencyModuleNames`에 1종만 추가:
 
 ```csharp
-"NavigationSystem",   // UNavigationSystemV1::ProjectPointToNavigation
-"AIModule"            // UAIBlueprintHelperLibrary::SimpleMoveToLocation, UPathFollowingComponent
+"NavigationSystem",   // UNavigationSystemV1::ProjectPointToNavigation, FNavLocation
 ```
+
+- `UAIBlueprintHelperLibrary::SimpleMoveToLocation` / `UPathFollowingComponent`는 기존 `AIModule`로 커버.
 
 ### 2. `Main.umap` — NavMesh 볼륨 (에디터 수작업)
 
@@ -132,7 +133,7 @@ void AREPlayerController::Server_RequestMove_Implementation(FVector Target)
 
 ## 파일 요약
 
-- Modify: `Source/Project_RE/Project_RE.Build.cs` (`NavigationSystem`/`AIModule` 의존 추가)
+- Modify: `Source/Project_RE/Project_RE.Build.cs` (`NavigationSystem` 의존 추가 — `AIModule`은 기존)
 - Modify: `Content/Level/Main.umap` (에디터 — `NavMeshBoundsVolume` 배치, nav 베이크)
 - Modify: `Source/Project_RE/Core/REPlayerController.h` (직선 이동 상태·`PlayerTick` 제거, RPC 선언 유지)
 - Modify: `Source/Project_RE/Core/REPlayerController.cpp` (`OnClickMove`→RPC, `Server_RequestMove` 실구현, `PlayerTick`/직선 루프 제거, nav/AI include)
