@@ -6,7 +6,10 @@
 #include "GameFramework/GameModeBase.h"
 #include "MassEntityTypes.h"
 #include "Mass/EntityHandle.h"  // FMassEntityHandle (MassCore; 5.8 IWYU: not transitively pulled by MassEntityTypes.h)
+#include "Engine/TimerHandle.h"
 #include "REGameMode.generated.h"
+
+class AREBossCharacter;
 
 /**
  *  Mass 스모크 테스트용 throwaway 프래그먼트.
@@ -41,4 +44,10 @@ private:
 	// #15 프로브 전용: 이동/수명 관측용 테스트 탄환. #17 데모 씬에서 제거 예정.
 	FMassEntityHandle ProbeBullet;
 	float ProbeElapsed = 0.f;
+
+	/** 데모: 주기적 Spiral 발사로 지속 탄막(영상 소스). */
+	FTimerHandle DemoFireTimer;
+
+	UPROPERTY()
+	TObjectPtr<AREBossCharacter> DemoBoss = nullptr;
 };

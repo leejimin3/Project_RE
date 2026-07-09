@@ -11,6 +11,7 @@
 #include "REBulletSpawnSubsystem.h"
 #include "REBulletPatternGenerator.h"
 #include "Mass/EntityFragments.h"  // FTransformFragment
+#include "TimerManager.h"
 
 AREGameMode::AREGameMode()
 {
@@ -51,6 +52,17 @@ void AREGameMode::BeginPlay()
 	{
 		Boss->TriggerBulletPattern(EBulletPattern::Spiral, 12345, 0.f);
 		Boss->TriggerBulletPattern(EBulletPattern::Spiral, 12345, 0.f);  // #16 프로브: BaseAngle 누적 확인
+
+		// #17 데모: 0.1초마다 Spiral 발사 → 회전 나선 탄막 지속(영상 소스 + ISM 카운트 추종 검증).
+		DemoBoss = Boss;
+		FTimerDelegate FireDel = FTimerDelegate::CreateLambda([this]()
+		{
+			if (DemoBoss)
+			{
+				DemoBoss->TriggerBulletPattern(EBulletPattern::Spiral, 12345, 0.f);
+			}
+		});
+		GetWorld()->GetTimerManager().SetTimer(DemoFireTimer, FireDel, 0.1f, /*bLoop=*/true);
 	}
 
 	// #15 프로브: nonzero velocity/lifetime 탄환 1발 → SimProcessor 이동/파괴 관측용.
