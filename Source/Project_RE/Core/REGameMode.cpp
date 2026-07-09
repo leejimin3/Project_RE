@@ -44,11 +44,12 @@ void AREGameMode::BeginPlay()
 	UE_LOG(LogTemp, Log, TEXT("[RE] SimProcessor flags=%d  RenderProcessor flags=%d"), SimFlags, RenderFlags);
 
 	// #5 검증: 보스 스폰 후 탄막 트리거 → 싱글 경로 스폰 카운트 실증.
-	// AlwaysSpawn: 원점 캡슐 충돌로 스폰 실패하는 것 방지 (검증용 보스라 위치 무관).
+	// AlwaysSpawn: 원점 캡슐 충돌로 스폰 실패하는 것 방지.
+	// Z=90: 탄환이 보스 위치에서 스폰되므로 바닥(Z=0) 위로 띄워 매몰/z-fighting 방지 (#17 데모 가시성).
 	FActorSpawnParameters BossSpawnParams;
 	BossSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	if (AREBossCharacter* Boss = GetWorld()->SpawnActor<AREBossCharacter>(
-			AREBossCharacter::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, BossSpawnParams))
+			AREBossCharacter::StaticClass(), FVector(0.f, 0.f, 90.f), FRotator::ZeroRotator, BossSpawnParams))
 	{
 		Boss->TriggerBulletPattern(EBulletPattern::Spiral, 12345, 0.f);
 		Boss->TriggerBulletPattern(EBulletPattern::Spiral, 12345, 0.f);  // #16 프로브: BaseAngle 누적 확인

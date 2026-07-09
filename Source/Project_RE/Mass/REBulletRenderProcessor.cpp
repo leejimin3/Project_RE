@@ -10,8 +10,8 @@
 
 namespace
 {
-	/** 탄환 인스턴스 스케일 — 엔진 Sphere(반경 50cm)를 반경 ~10cm로 축소. */
-	constexpr float BulletScale = 0.2f;
+	/** 탄환 인스턴스 스케일 — 엔진 Sphere(반경 50cm)를 반경 ~25cm로 축소. #17: 0.2는 카메라 거리서 sub-pixel이라 0.5로 상향. */
+	constexpr float BulletScale = 0.5f;
 }
 
 UREBulletRenderProcessor::UREBulletRenderProcessor()
