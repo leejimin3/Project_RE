@@ -2,7 +2,17 @@
 
 #include "REBulletRenderProcessor.h"
 #include "REBulletFragments.h"
+#include "REBulletRenderSubsystem.h"
 #include "MassExecutionContext.h"
+#include "Mass/EntityFragments.h"  // FTransformFragment
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Engine/World.h"
+
+namespace
+{
+	/** 탄환 인스턴스 스케일 — 엔진 Sphere(반경 50cm)를 반경 ~10cm로 축소. */
+	constexpr float BulletScale = 0.2f;
+}
 
 UREBulletRenderProcessor::UREBulletRenderProcessor()
 	: EntityQuery(*this)
@@ -13,12 +23,51 @@ UREBulletRenderProcessor::UREBulletRenderProcessor()
 
 void UREBulletRenderProcessor::ConfigureQueries(const TSharedRef<FMassEntityManager>& EntityManager)
 {
-	EntityQuery.AddRequirement<FBulletSimFragment>(EMassFragmentAccess::ReadOnly);       // sim 위치 읽기
-	EntityQuery.AddRequirement<FBulletRenderFragment>(EMassFragmentAccess::ReadWrite);   // 인스턴스 쓰기
+	EntityQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadOnly);  // 위치 읽기
+	EntityQuery.AddTagRequirement<FBulletTag>(EMassFragmentPresence::All);          // 탄환만 선별
 }
 
 void UREBulletRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassExecutionContext& Context)
 {
-	// M0: 구조만. 실제 ISM 트랜스폼 갱신은 M1.
-	UE_LOG(LogTemp, Verbose, TEXT("[RE] RenderProcessor::Execute"));
+	UWorld* World = EntityManager.GetWorld();
+	UREBulletRenderSubsystem* RS = World ? World->GetSubsystem<UREBulletRenderSubsystem>() : nullptr;
+	UInstancedStaticMeshComponent* ISM = RS ? RS->GetISM() : nullptr;
+	if (!ISM)
+	{
+		return;  // 데디서버 등 ISM 없으면 no-op
+	}
+
+	// 1) live 탄환 트랜스폼 수집 (청크를 가로질러 누적 → 전역 인스턴스 인덱스 연속).
+	TArray<FTransform> Xf;
+	EntityQuery.ForEachEntityChunk(Context, [&Xf](FMassExecutionContext& Ctx)
+	{
+		const int32 Num = Ctx.GetNumEntities();
+		const TConstArrayView<FTransformFragment> T = Ctx.GetFragmentView<FTransformFragment>();
+		for (int32 i = 0; i < Num; ++i)
+		{
+			FTransform B = T[i].GetTransform();
+			B.SetScale3D(FVector(BulletScale));  // 탄환 크기 통일
+			Xf.Add(B);
+		}
+	});
+
+	// 2) 인스턴스 수를 M에 맞춤 (꼬리에서 add/remove → 타 인덱스 불변, swap 없음).
+	const int32 M = Xf.Num();
+	int32 Count = ISM->GetInstanceCount();
+	while (Count < M) { ISM->AddInstance(FTransform::Identity, /*bWorldSpace=*/true); ++Count; }
+	while (Count > M) { ISM->RemoveInstance(Count - 1);                               --Count; }
+
+	// 3) i번째 인스턴스 = i번째 live 탄환. dirty flush는 마지막 1회만.
+	for (int32 i = 0; i < M; ++i)
+	{
+		ISM->UpdateInstanceTransform(i, Xf[i], /*bWorldSpace=*/true,
+			/*bMarkRenderStateDirty=*/(i == M - 1), /*bTeleport=*/true);
+	}
+
+	// 프로브: 인스턴스 수 == live 탄환 수 추종 확인 (매 30틱 1회, 로그 과다 방지).
+	static int32 ProbeTick = 0;
+	if (((ProbeTick++) % 30) == 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[RE] RenderProbe: live=%d ISM.Count=%d"), M, ISM->GetInstanceCount());
+	}
 }
