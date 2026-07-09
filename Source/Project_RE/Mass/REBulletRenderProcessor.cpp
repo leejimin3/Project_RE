@@ -19,6 +19,10 @@ UREBulletRenderProcessor::UREBulletRenderProcessor()
 {
 	// 5: 데디서버(Server) skip, 싱글/클라만 렌더
 	ExecutionFlags = (int32)(EProcessorExecutionFlags::Standalone | EProcessorExecutionFlags::Client);
+
+	// ISM(씬 컴포넌트) 변형은 게임 스레드 전용 — AddInstance가 물리 바디를 만들어
+	// 워커 스레드에서 실행 시 BodyInstance 어서션 크래시. Execute를 GT에 고정.
+	bRequiresGameThreadExecution = true;
 }
 
 void UREBulletRenderProcessor::ConfigureQueries(const TSharedRef<FMassEntityManager>& EntityManager)
