@@ -3,14 +3,23 @@
 #include "REBossCharacter.h"
 #include "REBulletSpawnSubsystem.h"
 #include "REBulletPatternGenerator.h"
+#include "Net/UnrealNetwork.h"
 
 AREBossCharacter::AREBossCharacter()
 {
 	PrimaryActorTick.bCanEverTick = false;
+
+	// 체력 초기화 — MaxHealth 조정 시 정합 유지 (RECharacterBase 동일 패턴)
+	Health = MaxHealth;
 }
 
 void AREBossCharacter::TriggerBulletPattern(EBulletPattern Pattern, int32 Seed, float StartTime)
 {
+	if (bIsDead)
+	{
+		return;
+	}
+
 	// TODO M5: Multicast_TriggerPattern RPC로 교체 (서버→클라 시드 브로드캐스트, 총알 자체는 미전송).
 	//          현재는 싱글 로컬 직접 스폰 경로.
 
@@ -49,4 +58,31 @@ void AREBossCharacter::TriggerBulletPattern(EBulletPattern Pattern, int32 Seed, 
 
 	UE_LOG(LogTemp, Log, TEXT("[RE] Boss::TriggerBulletPattern: Pattern=%d Seed=%d Start=%.2f -> spawned %d entities at %s"),
 		(int32)Pattern, Seed, StartTime, Params.Num(), *GetActorLocation().ToString());
+}
+
+float AREBossCharacter::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent,
+                                    AController* EventInstigator, AActor* DamageCauser)
+{
+	// 서버 권위 가드 — 게임상태(Health) 변경은 서버에서만
+	if (!HasAuthority())
+	{
+		return 0.f;
+	}
+
+	const float Applied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+	Health = FMath::Clamp(Health - Applied, 0.f, MaxHealth);
+
+	if (Health <= 0.f && !bIsDead)
+	{
+		bIsDead = true;
+		UE_LOG(LogTemp, Log, TEXT("[RE] Boss died (Health<=0)"));
+	}
+
+	return Applied;
+}
+
+void AREBossCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(AREBossCharacter, Health);
 }
