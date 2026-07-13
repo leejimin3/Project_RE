@@ -8,6 +8,7 @@
 #include "InputActionValue.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/Pawn.h"
+#include "Core/RECharacterBase.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "NavigationSystem.h"
 #include "Misc/App.h"
@@ -30,9 +31,15 @@ void AREPlayerController::SetupInputComponent()
 	TopDownMappingContext = NewObject<UInputMappingContext>(this, TEXT("IMC_TopDown"));
 	TopDownMappingContext->MapKey(ClickMoveAction, EKeys::RightMouseButton);
 
+	// 스페이스 대쉬 IA (코드생성, transient)
+	DashAction = NewObject<UInputAction>(this, TEXT("IA_Dash"));
+	DashAction->ValueType = EInputActionValueType::Boolean;
+	TopDownMappingContext->MapKey(DashAction, EKeys::SpaceBar);
+
 	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent))
 	{
 		EIC->BindAction(ClickMoveAction, ETriggerEvent::Triggered, this, &AREPlayerController::OnClickMove);
+		EIC->BindAction(DashAction, ETriggerEvent::Started, this, &AREPlayerController::OnDash);
 	}
 }
 
@@ -70,6 +77,31 @@ void AREPlayerController::OnClickMove(const FInputActionValue& Value)
 	if (GetHitResultUnderCursor(ECC_Visibility, false, Hit) && Hit.bBlockingHit)
 	{
 		Server_RequestMove(Hit.ImpactPoint);
+	}
+}
+
+void AREPlayerController::OnDash(const FInputActionValue& Value)
+{
+	// 커서 아래 지점 방향을 로컬에서 계산(폰→커서 XY). 서버로 방향만 전달.
+	APawn* P = GetPawn();
+	FHitResult Hit;
+	if (!P || !GetHitResultUnderCursor(ECC_Visibility, false, Hit) || !Hit.bBlockingHit)
+	{
+		return;
+	}
+	const FVector Dir = (Hit.ImpactPoint - P->GetActorLocation()).GetSafeNormal2D();
+	if (!Dir.IsNearlyZero())
+	{
+		Server_Dash(Dir);
+	}
+}
+
+void AREPlayerController::Server_Dash_Implementation(FVector Dir)
+{
+	// 서버 권위 — 폰의 대쉬 어빌리티 활성(쿨다운은 어빌리티가 검사).
+	if (ARECharacterBase* Char = Cast<ARECharacterBase>(GetPawn()))
+	{
+		Char->TryDash(Dir);
 	}
 }
 

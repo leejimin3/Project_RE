@@ -31,8 +31,18 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void Server_RequestMove(FVector Target);
 
+	/** 스페이스 핸들러: 커서 방향을 계산해 서버로 대쉬 요청 */
+	void OnDash(const FInputActionValue& Value);
+
+	/** 대쉬 요청 서버 RPC. 서버가 폰의 대쉬 어빌리티를 Dir 방향으로 활성. */
+	UFUNCTION(Server, Reliable)
+	void Server_Dash(FVector Dir);
+
 	UPROPERTY()
 	UInputAction* ClickMoveAction;
+
+	UPROPERTY()
+	UInputAction* DashAction;
 
 	UPROPERTY()
 	UInputMappingContext* TopDownMappingContext;
