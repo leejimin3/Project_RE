@@ -51,6 +51,12 @@ private:
 	/** 헤드리스(-unattended) 자기이동 프로브. 서버 권위에서만 발동. */
 	void RunHeadlessMoveProbe();
 
+	/** 헤드리스(-unattended) 대쉬 프로브. 서버 권위에서만 발동. */
+	void RunHeadlessDashProbe();
+
+	FTimerHandle ProbeDashTimer;
+	FVector ProbeDashStart = FVector::ZeroVector;
+
 	FTimerHandle ProbeMoveTimer;
 	FTimerHandle ProbeLogTimer;
 	FVector ProbeTarget = FVector::ZeroVector;

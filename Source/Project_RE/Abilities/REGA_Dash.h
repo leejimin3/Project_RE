@@ -33,7 +33,7 @@ private:
 	void OnDashFinished();
 
 	/** 대쉬 속도(uu/s). 거리≈Strength*Duration. 프로브 실측으로 600uu에 맞춰 조정. */
-	float DashStrength = 3000.f;
+	float DashStrength = 3390.f;
 
 	/** 대쉬 지속(s). */
 	float DashDuration = 0.2f;

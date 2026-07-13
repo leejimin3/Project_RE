@@ -13,6 +13,10 @@
 #include "NavigationSystem.h"
 #include "Misc/App.h"
 #include "TimerManager.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemGlobals.h"
+#include "Abilities/REGameplayTags.h"
+#include "HAL/PlatformMisc.h"
 
 void AREPlayerController::SetupInputComponent()
 {
@@ -67,6 +71,7 @@ void AREPlayerController::BeginPlay()
 	if (HasAuthority() && FApp::IsUnattended())
 	{
 		RunHeadlessMoveProbe();
+		RunHeadlessDashProbe();
 	}
 }
 
@@ -155,4 +160,58 @@ void AREPlayerController::RunHeadlessMoveProbe()
 		GetWorld()->GetTimerManager().SetTimer(ProbeLogTimer, LogDel, 0.5f, /*bLoop=*/true);
 	});
 	GetWorld()->GetTimerManager().SetTimer(ProbeMoveTimer, MoveDel, 1.0f, /*bLoop=*/false);
+}
+
+void AREPlayerController::RunHeadlessDashProbe()
+{
+	// t=2.0s: 대쉬 1회 + 즉시 재시도(쿨다운 차단 확인). 이후 거리 측정, 2.1s 후 재활성, 종료.
+	FTimerDelegate DashDel = FTimerDelegate::CreateLambda([this]()
+	{
+		ARECharacterBase* Char = Cast<ARECharacterBase>(GetPawn());
+		if (!Char)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Dash] probe: no pawn"));
+			return;
+		}
+		UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Char);
+		ProbeDashStart = Char->GetActorLocation();
+
+		// 1) 정상 대쉬(+X 방향).
+		const bool bFirst = Char->TryDash(FVector::ForwardVector);
+		const bool bDashingTag = ASC && ASC->HasMatchingGameplayTag(RETag_State_Dashing);
+		UE_LOG(LogTemp, Log, TEXT("[Dash] activate ok=%d State.Dashing=%d"), bFirst, bDashingTag);
+
+		// 2) 즉시 재시도 → 쿨다운 차단 기대.
+		const bool bBlocked = Char->TryDash(FVector::ForwardVector);
+		UE_LOG(LogTemp, Log, TEXT("[Dash] immediate retry activated=%d (0=blocked by cooldown, 기대 0)"), bBlocked);
+
+		// 3) 0.3s 후 이동거리 측정(RootMotion 완료 뒤).
+		FTimerHandle DistTimer;
+		FTimerDelegate DistDel = FTimerDelegate::CreateLambda([this]()
+		{
+			if (APawn* Pn = GetPawn())
+			{
+				const float Dist = FVector::Dist2D(Pn->GetActorLocation(), ProbeDashStart);
+				UE_LOG(LogTemp, Log, TEXT("[Dash] dist=%.1f (기대 ~600)"), Dist);
+			}
+		});
+		GetWorld()->GetTimerManager().SetTimer(DistTimer, DistDel, 0.3f, false);
+
+		// 4) 2.1s 후(쿨다운 만료) 재활성 → 성공 기대. 그 뒤 종료.
+		FTimerHandle ReTimer;
+		FTimerDelegate ReDel = FTimerDelegate::CreateLambda([this]()
+		{
+			bool bReactivated = false;
+			if (ARECharacterBase* Pn = Cast<ARECharacterBase>(GetPawn()))
+			{
+				bReactivated = Pn->TryDash(FVector::ForwardVector);
+			}
+			UE_LOG(LogTemp, Log, TEXT("[Dash] re-activate ok=%d (기대 1, 쿨다운 만료)"), bReactivated);
+			UE_LOG(LogTemp, Log, TEXT("[Dash] probe done — exiting"));
+			// headless 프로세스 자체 종료(결정적 실행).
+			FPlatformMisc::RequestExit(false);
+		});
+		GetWorld()->GetTimerManager().SetTimer(ReTimer, ReDel, 2.1f, false);
+	});
+	GetWorld()->GetTimerManager().SetTimer(ProbeDashTimer, DashDel, 2.0f, false);
 }
