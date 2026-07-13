@@ -5,12 +5,14 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
+#include "GameplayAbilitySpecHandle.h"
 #include "RECharacterBase.generated.h"
 
 class USpringArmComponent;
 class UCameraComponent;
 class UAbilitySystemComponent;
 class UREAutoFireComponent;
+class UREGA_Dash;
 
 /**
  *  탑뷰 쿼터뷰 플레이어 폰 베이스.
@@ -40,6 +42,12 @@ public:
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	/** 서버: 대쉬 시도. Dir 저장 후 대쉬 어빌리티 활성. 활성 성공 시 true. */
+	bool TryDash(FVector Dir);
+
+	/** 대쉬 어빌리티가 읽을 목표 방향(로컬이 계산해 서버로 전달한 값). */
+	FVector GetPendingDashDir() const { return PendingDashDir; }
+
 protected:
 	/** 게임플레이 어빌리티 시스템 컴포넌트. Pawn 소유, Mixed 복제. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Abilities", meta = (AllowPrivateAccess = "true"))
@@ -48,6 +56,12 @@ protected:
 	/** 자동사격 컴포넌트 (#26). 서버에서만 구동. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AutoFire", meta = (AllowPrivateAccess = "true"))
 	UREAutoFireComponent* AutoFireComponent;
+
+	/** 부여된 대쉬 어빌리티 스펙 핸들(서버). */
+	FGameplayAbilitySpecHandle DashAbilityHandle;
+
+	/** 대쉬 목표 방향. Server_Dash → TryDash에서 세팅, 어빌리티 ActivateAbility에서 소비. */
+	FVector PendingDashDir = FVector::ForwardVector;
 
 	/** ASC ActorInfo 초기화 공용 헬퍼 (서버/클라 양쪽에서 호출). */
 	void InitASCActorInfo();
