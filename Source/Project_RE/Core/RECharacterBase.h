@@ -11,6 +11,7 @@
 class USpringArmComponent;
 class UCameraComponent;
 class UAbilitySystemComponent;
+class UREAutoFireComponent;
 class UREGA_Dash;
 
 /**
@@ -51,6 +52,10 @@ protected:
 	/** 게임플레이 어빌리티 시스템 컴포넌트. Pawn 소유, Mixed 복제. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Abilities", meta = (AllowPrivateAccess = "true"))
 	UAbilitySystemComponent* AbilitySystemComponent;
+
+	/** 자동사격 컴포넌트 (#26). 서버에서만 구동. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AutoFire", meta = (AllowPrivateAccess = "true"))
+	UREAutoFireComponent* AutoFireComponent;
 
 	/** 부여된 대쉬 어빌리티 스펙 핸들(서버). */
 	FGameplayAbilitySpecHandle DashAbilityHandle;
