@@ -10,6 +10,7 @@
 class USpringArmComponent;
 class UCameraComponent;
 class UAbilitySystemComponent;
+class UREAutoFireComponent;
 
 /**
  *  탑뷰 쿼터뷰 플레이어 폰 베이스.
@@ -43,6 +44,10 @@ protected:
 	/** 게임플레이 어빌리티 시스템 컴포넌트. Pawn 소유, Mixed 복제. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Abilities", meta = (AllowPrivateAccess = "true"))
 	UAbilitySystemComponent* AbilitySystemComponent;
+
+	/** 자동사격 컴포넌트 (#26). 서버에서만 구동. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AutoFire", meta = (AllowPrivateAccess = "true"))
+	UREAutoFireComponent* AutoFireComponent;
 
 	/** ASC ActorInfo 초기화 공용 헬퍼 (서버/클라 양쪽에서 호출). */
 	void InitASCActorInfo();
