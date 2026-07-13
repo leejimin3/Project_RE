@@ -13,6 +13,7 @@
 #include "REAutoFireComponent.h"
 #include "GameplayAbilitySpec.h"
 #include "Abilities/REGA_Dash.h"
+#include "REHealthBarComponent.h"
 
 ARECharacterBase::ARECharacterBase()
 {
@@ -33,6 +34,11 @@ ARECharacterBase::ARECharacterBase()
 
 	// 자동사격 부착 — 컴포넌트가 BeginPlay에서 서버 여부를 스스로 판단.
 	AutoFireComponent = CreateDefaultSubobject<UREAutoFireComponent>(TEXT("AutoFire"));
+
+	// HP바 (#29) — 플레이어 초록. 회전/사이즈/위젯클래스는 컴포넌트 생성자가 처리.
+	HealthBar = CreateDefaultSubobject<UREHealthBarComponent>(TEXT("HealthBar"));
+	HealthBar->SetupAttachment(RootComponent);
+	HealthBar->BarColor = FLinearColor::Green;
 
 	// 이동 방향으로 캐릭터가 회전 (탑뷰 클릭 이동 시 진행 방향을 바라봄)
 	GetCharacterMovement()->bOrientRotationToMovement = true;
@@ -85,6 +91,7 @@ float ARECharacterBase::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 
 	const float Applied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 	Health = FMath::Clamp(Health - Applied, 0.f, MaxHealth);
+	OnRep_Health(); // 서버/싱글 경로 — 복제 OnRep은 원격 클라 전용이라 직접 호출
 	// TODO M5: 서버권위 피격 판정/이펙트, 사망 처리
 	return Applied;
 }
@@ -137,4 +144,12 @@ bool ARECharacterBase::TryDash(FVector Dir)
 	// 방향 저장(어빌리티가 소비) 후 클래스로 활성 시도. 쿨다운 중이면 false.
 	PendingDashDir = Dir.GetSafeNormal2D();
 	return AbilitySystemComponent->TryActivateAbilityByClass(UREGA_Dash::StaticClass());
+}
+
+void ARECharacterBase::OnRep_Health()
+{
+	if (HealthBar)
+	{
+		HealthBar->SetHealthPercent(MaxHealth > 0.f ? Health / MaxHealth : 0.f);
+	}
 }

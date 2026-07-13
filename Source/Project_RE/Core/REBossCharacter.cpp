@@ -4,6 +4,7 @@
 #include "REBulletSpawnSubsystem.h"
 #include "REBulletPatternGenerator.h"
 #include "Net/UnrealNetwork.h"
+#include "REHealthBarComponent.h"
 
 AREBossCharacter::AREBossCharacter()
 {
@@ -11,6 +12,11 @@ AREBossCharacter::AREBossCharacter()
 
 	// 체력 초기화 — MaxHealth 조정 시 정합 유지 (RECharacterBase 동일 패턴)
 	Health = MaxHealth;
+
+	// HP바 (#29) — 보스 빨강.
+	HealthBar = CreateDefaultSubobject<UREHealthBarComponent>(TEXT("HealthBar"));
+	HealthBar->SetupAttachment(RootComponent);
+	HealthBar->BarColor = FLinearColor::Red;
 }
 
 void AREBossCharacter::TriggerBulletPattern(EBulletPattern Pattern, int32 Seed, float StartTime)
@@ -71,6 +77,7 @@ float AREBossCharacter::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 
 	const float Applied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 	Health = FMath::Clamp(Health - Applied, 0.f, MaxHealth);
+	OnRep_Health(); // 서버/싱글 경로 — 복제 OnRep은 원격 클라 전용이라 직접 호출
 
 	if (Health <= 0.f && !bIsDead)
 	{
@@ -85,4 +92,12 @@ void AREBossCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AREBossCharacter, Health);
+}
+
+void AREBossCharacter::OnRep_Health()
+{
+	if (HealthBar)
+	{
+		HealthBar->SetHealthPercent(MaxHealth > 0.f ? Health / MaxHealth : 0.f);
+	}
 }
