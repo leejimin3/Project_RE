@@ -15,6 +15,11 @@ AREBossCharacter::AREBossCharacter()
 
 void AREBossCharacter::TriggerBulletPattern(EBulletPattern Pattern, int32 Seed, float StartTime)
 {
+	if (bIsDead)
+	{
+		return;
+	}
+
 	// TODO M5: Multicast_TriggerPattern RPC로 교체 (서버→클라 시드 브로드캐스트, 총알 자체는 미전송).
 	//          현재는 싱글 로컬 직접 스폰 경로.
 
