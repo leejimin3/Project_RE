@@ -33,6 +33,7 @@ public class Project_RE : ModuleRules
 			"Project_RE",
 			"Project_RE/Core",
 			"Project_RE/Mass",
+			"Project_RE/UI",
 			"Project_RE/Variant_Platforming",
 			"Project_RE/Variant_Platforming/Animation",
 			"Project_RE/Variant_Combat",
