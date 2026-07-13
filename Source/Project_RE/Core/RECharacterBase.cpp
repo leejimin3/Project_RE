@@ -10,6 +10,8 @@
 #include "UObject/ConstructorHelpers.h"
 #include "Net/UnrealNetwork.h"
 #include "AbilitySystemComponent.h"
+#include "GameplayAbilitySpec.h"
+#include "Abilities/REGA_Dash.h"
 
 ARECharacterBase::ARECharacterBase()
 {
@@ -106,6 +108,13 @@ void ARECharacterBase::PossessedBy(AController* NewController)
 	Super::PossessedBy(NewController);
 	// 서버 권위 경로 — Possess 즉시 ActorInfo 세팅.
 	InitASCActorInfo();
+
+	// 서버에서 대쉬 어빌리티 부여(1회). 클라는 부여받은 스펙이 복제됨.
+	if (HasAuthority() && AbilitySystemComponent && !DashAbilityHandle.IsValid())
+	{
+		DashAbilityHandle = AbilitySystemComponent->GiveAbility(
+			FGameplayAbilitySpec(UREGA_Dash::StaticClass(), /*Level=*/1, /*InputID=*/INDEX_NONE, this));
+	}
 }
 
 void ARECharacterBase::OnRep_PlayerState()
@@ -113,4 +122,15 @@ void ARECharacterBase::OnRep_PlayerState()
 	Super::OnRep_PlayerState();
 	// 클라 경로 — PlayerState 복제 도착 후 ActorInfo 세팅.
 	InitASCActorInfo();
+}
+
+bool ARECharacterBase::TryDash(FVector Dir)
+{
+	if (!AbilitySystemComponent)
+	{
+		return false;
+	}
+	// 방향 저장(어빌리티가 소비) 후 클래스로 활성 시도. 쿨다운 중이면 false.
+	PendingDashDir = Dir.GetSafeNormal2D();
+	return AbilitySystemComponent->TryActivateAbilityByClass(UREGA_Dash::StaticClass());
 }
