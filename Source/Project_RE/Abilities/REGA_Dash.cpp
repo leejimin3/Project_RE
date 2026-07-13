@@ -54,7 +54,7 @@ void UREGA_Dash::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 			DashDuration,
 			/*bIsAdditive=*/false,
 			/*StrengthOverTime=*/nullptr,
-			ERootMotionFinishVelocityMode::ClearVelocity,
+			ERootMotionFinishVelocityMode::SetVelocity,
 			/*SetVelocityOnFinish=*/FVector::ZeroVector,
 			/*ClampVelocityOnFinish=*/0.f,
 			/*bEnableGravity=*/false);
