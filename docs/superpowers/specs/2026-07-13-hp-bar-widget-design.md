@@ -51,7 +51,7 @@ API:
 
 ### `Project_RE.Build.cs`
 
-`UMG` 모듈 추가 (`UWidgetComponent`, `UProgressBar`).
+`UMG`·`Slate` 모듈 이미 존재 — 모듈 추가 불필요. `PublicIncludePaths`에 `Project_RE/UI`만 추가 (플랫 include 컨벤션).
 
 ## 데이터 흐름
 
