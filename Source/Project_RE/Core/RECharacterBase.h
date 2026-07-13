@@ -13,6 +13,7 @@ class UCameraComponent;
 class UAbilitySystemComponent;
 class UREAutoFireComponent;
 class UREGA_Dash;
+class UREHealthBarComponent;
 
 /**
  *  탑뷰 쿼터뷰 플레이어 폰 베이스.
@@ -57,6 +58,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AutoFire", meta = (AllowPrivateAccess = "true"))
 	UREAutoFireComponent* AutoFireComponent;
 
+	/** 머리 위 HP바 (#29). 셋업은 컴포넌트가 자체 처리. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI", meta = (AllowPrivateAccess = "true"))
+	UREHealthBarComponent* HealthBar;
+
+	/** Health 복제 도착(클라) / 서버 직접 호출 공용 — HP바 갱신. */
+	UFUNCTION()
+	void OnRep_Health();
+
 	/** 부여된 대쉬 어빌리티 스펙 핸들(서버). */
 	FGameplayAbilitySpecHandle DashAbilityHandle;
 
@@ -66,8 +75,8 @@ protected:
 	/** ASC ActorInfo 초기화 공용 헬퍼 (서버/클라 양쪽에서 호출). */
 	void InitASCActorInfo();
 
-	/** 현재 체력. 서버 권위, 클라 복제. */
-	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
+	/** 현재 체력. 서버 권위, 클라 복제. 변경 시 OnRep_Health로 HP바 갱신. */
+	UPROPERTY(ReplicatedUsing = OnRep_Health, VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
 	float Health = 100.f;
 
 	/** 최대 체력. */

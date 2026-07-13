@@ -7,6 +7,8 @@
 #include "REBulletPattern.h"
 #include "REBossCharacter.generated.h"
 
+class UREHealthBarComponent;
+
 /**
  *  보스 폰. 탄막 패턴 발사 진입점을 가진다.
  *  ACharacter 직접 상속 — ARECharacterBase는 카메라 붐 달린 플레이어 폰이라 부적합.
@@ -33,13 +35,21 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:
-	/** 현재 체력. 서버 권위, 클라 복제. */
-	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
+	/** 현재 체력. 서버 권위, 클라 복제. 변경 시 OnRep_Health로 HP바 갱신. */
+	UPROPERTY(ReplicatedUsing = OnRep_Health, VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
 	float Health = 100.f;
 
 	/** 최대 체력. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stats")
 	float MaxHealth = 100.f;
+
+	/** 머리 위 HP바 (#29). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI", meta = (AllowPrivateAccess = "true"))
+	UREHealthBarComponent* HealthBar;
+
+	/** Health 복제 도착(클라) / 서버 직접 호출 공용 — HP바 갱신. */
+	UFUNCTION()
+	void OnRep_Health();
 
 private:
 	/** Spiral 호출마다 누적되는 시작각. 연속 트리거 시 링이 회전한다. */
