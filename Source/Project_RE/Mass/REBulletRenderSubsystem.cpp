@@ -26,6 +26,8 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 
 	ISM = NewObject<UInstancedStaticMeshComponent>(Holder);
 	Holder->SetRootComponent(ISM);
+	// 탄막은 시각 표현 전용 — 콜리전 기본값 BlockAll이 AutoFire linetrace(#34)/플레이어 이동을 막던 문제.
+	ISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	ISM->RegisterComponent();
 
 	if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
