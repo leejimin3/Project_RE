@@ -32,6 +32,15 @@ void UREAutoFireComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
+void UREAutoFireComponent::StopFiring()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(FireTimer);
+		UE_LOG(LogTemp, Log, TEXT("[RE] AutoFire stopped"));
+	}
+}
+
 void UREAutoFireComponent::Fire()
 {
 	// 최근접 보스 탐색 — 보스 1~2마리 전제, 매 발사 전체 스캔(캐싱 불필요).
