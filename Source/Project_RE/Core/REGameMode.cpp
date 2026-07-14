@@ -64,7 +64,7 @@ void AREGameMode::BeginPlay()
 				DemoBoss->TriggerBulletPattern(EBulletPattern::Spiral, 12345, 0.f);
 			}
 		});
-		GetWorld()->GetTimerManager().SetTimer(DemoFireTimer, FireDel, 0.1f, /*bLoop=*/true);
+		GetWorld()->GetTimerManager().SetTimer(DemoFireTimer, FireDel, REBulletPattern::FireIntervalSec, /*bLoop=*/true);
 	}
 
 	// #15 프로브: nonzero velocity/lifetime 탄환 1발 → SimProcessor 이동/파괴 관측용.
