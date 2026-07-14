@@ -14,6 +14,7 @@ UE 5.8 C++ 탑뷰 탄막 프로젝트. 이슈 **#43** (마일스톤 **M3: 스케
 | CVar 조회 시점 | **발사 시점** (`Boss::TriggerBulletPattern` 진입 시 `GetValueOnGameThread()`) | 완료조건 "재시작 없이 다음 발사부터 반영"을 타이머 재설정 없이 자동 충족. |
 | CVar 선언 위치 | `REBossCharacter.cpp` 파일 스코프 `static TAutoConsoleVariable<int32>` | 읽는 곳이 Boss 한 곳뿐. 헤더 노출 불필요. |
 | 고정할 축 | **수명(3s)·발사주기(0.1s) 고정, 발사당 탄 수만 역산** | 측정에 필요한 건 "동시 N발"이라는 단일 축. 3개 노브를 각각 노출하면 조합 폭발 → CVar 1개로 제한. |
+| 반올림 | **`round`** (이슈 본문의 `ceil`에서 변경) | 이슈가 지정한 `ceil(N/30)`은 이슈 자신의 완료조건(±10%)을 **N=100에서 위반**한다: `ceil(100/30)=4` → live≈120 (**+20%**). Count는 정수라 3발(live 90)과 4발(live 120) 사이 중간값이 없다. `round`면 N=100→3 (live≈90, **−10%**, 경계 안), N=480→16(0%), N=1000→33(−1%), N=5000→167(+0.2%) — **4개 전부 ±10% 이내.** |
 | 균등 링 유지 | `AngleStepDeg = 360 / Count` 계산 (기존 `22.5f` 하드코딩 제거) | `22.5f`는 `360/16`. Count가 바뀌면 링이 안 닫힌다. |
 | 기존 M0/M1 프로브 코드 | **미접촉** (BeginPlay `:55-56` 버스트 2발, `:78-91` 수학 프로브, SimProbe + `Tick()`) | 초기 2발 버스트는 3초 뒤 소멸 → steady-state 무영향. SimProbe는 0.5s 단발이라 `Tick()` 로그가 곧 멈춘다(`ProbeBullet.Reset()`). 측정 노이즈 사실상 0. 무관한 삭제는 diff·리뷰 범위만 넓힌다. |
 | 관측 방법 | `REBulletRenderProcessor.cpp:71-76`의 **기존 `RenderProbe` 재사용** | `live=%d`는 Mass 쿼리로 센 실제 엔티티 수(ISM 인스턴스 아님)라 그대로 쓸 수 있다. 새 카운터 안 만든다. **해당 파일은 #44 소유 — 읽기만 하고 수정 금지.** |
@@ -42,7 +43,7 @@ namespace REBulletPattern
     /**
      *  목표 동시 탄환 수 N → 균등 링 Spiral 파라미터.
      *  steady-state 동시 탄환 = 발사당_탄수 / 발사주기 × 수명 이므로
-     *  Count = ceil(N × FireIntervalSec / BulletLifetimeSec), AngleStep = 360/Count.
+     *  Count = round(N × FireIntervalSec / BulletLifetimeSec), AngleStep = 360/Count.
      */
     FSpiralParams MakeSpiralForLiveCount(int32 TargetLive, float BaseAngleDeg);
 }
@@ -53,7 +54,7 @@ namespace REBulletPattern
 FSpiralParams MakeSpiralForLiveCount(int32 TargetLive, float BaseAngleDeg)
 {
     FSpiralParams P;
-    P.Count        = FMath::Max(1, FMath::CeilToInt(TargetLive * FireIntervalSec / BulletLifetimeSec));
+    P.Count        = FMath::Max(1, FMath::RoundToInt(TargetLive * FireIntervalSec / BulletLifetimeSec));
     P.AngleStepDeg = 360.f / P.Count;   // Count 무관 균등 링
     P.BaseAngleDeg = BaseAngleDeg;
     return P;                            // Speed/Lifetime은 기본값 유지
@@ -61,14 +62,16 @@ FSpiralParams MakeSpiralForLiveCount(int32 TargetLive, float BaseAngleDeg)
 ```
 `FMath::Max(1, ...)`은 `N <= 0` 입력 시 `360 / 0` 나눗셈을 막는 가드다 (CVar는 사용자 입력 경계).
 
-역산 결과:
+역산 결과 (`round`, 위 결정 요약 참고):
 
-| N | Count = ceil(N/30) | AngleStep |
-|---|---|---|
-| 100 | 4 | 90.0° |
-| 480 (기본값) | 16 | 22.5° |
-| 1000 | 34 | 10.588° |
-| 5000 | 167 | 2.156° |
+| N | Count = round(N/30) | AngleStep | steady live | 오차 |
+|---|---|---|---|---|
+| 100 | 3 | 120.0° | ~90 | −10% |
+| 480 (기본값) | 16 | 22.5° | 480 | 0% |
+| 1000 | 33 | 10.909° | ~990 | −1% |
+| 5000 | 167 | 2.156° | ~5010 | +0.2% |
+
+N=480이 기존 하드코딩(16발 / `AngleStep=22.5°`)과 정확히 일치 — 기본값에서 회귀 없음.
 
 ### 3. `Source/Project_RE/Core/REBossCharacter.cpp` (수정)
 파일 스코프 CVar 선언:
@@ -105,11 +108,11 @@ GetWorld()->GetTimerManager().SetTimer(
 ```
 콘솔 `re.Bullets.Count 1000`
    → (다음 발사 시점) Boss::TriggerBulletPattern → CVar.GetValueOnGameThread() = 1000
-   → MakeSpiralForLiveCount(1000, BaseAngle) → Count=34, AngleStep=10.588°
-   → GenerateSpiral → SpawnBulletBatch (34 엔티티, Lifetime=3s)
+   → MakeSpiralForLiveCount(1000, BaseAngle) → Count=33, AngleStep=10.909°
+   → GenerateSpiral → SpawnBulletBatch (33 엔티티, Lifetime=3s)
    → SimProcessor: 3초 후 파괴
-   → steady-state live ≈ 34 / 0.1 × 3 = 1020  (N=1000 ±2%)
-   → RenderProcessor RenderProbe: `[RE] RenderProbe: live=1020 ISM.Count=1020` (30틱마다)
+   → steady-state live ≈ 33 / 0.1 × 3 = 990  (N=1000 −1%)
+   → RenderProcessor RenderProbe: `[RE] RenderProbe: live=990 ISM.Count=990` (30틱마다)
 ```
 
 ## 검증 (자동 테스트 인프라 없음 → 빌드 + headless 프로브)
