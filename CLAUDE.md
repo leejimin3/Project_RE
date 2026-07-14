@@ -65,10 +65,10 @@ Strong success criteria let the LLM loop independently. Weak criteria ("make it 
 | 브랜치 | 용도 |
 |--------|------|
 | `main` | 릴리즈 태그 전용 (Tag 0.1, 0.2, 1.0 ...) |
-| `develop` | 통합 브랜치. feature → develop 머지. |
-| `feature/*` | 기능 개발. develop에서 분기, develop으로 머지. |
-| `release/*` | 릴리즈 준비. develop에서 분기, bugfix만. main + develop 양쪽 머지. |
-| `hotfix/*` | 프로덕션 긴급 수정. main에서 분기, main + develop 양쪽 머지. |
+| `dev` | 통합 브랜치. feature → dev 머지. |
+| `feature/*` | 기능 개발. dev에서 분기, dev로 머지. |
+| `release/*` | 릴리즈 준비. dev에서 분기, bugfix만. main + dev 양쪽 머지. |
+| `hotfix/*` | 프로덕션 긴급 수정. main에서 분기, main + dev 양쪽 머지. |
 
 규칙:
 - feature 브랜치명: `feature/M1-mass-bullet`, `feature/M2-player-loop` 등 마일스톤 접두어
