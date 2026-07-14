@@ -14,6 +14,7 @@
 #include "GameplayAbilitySpec.h"
 #include "Abilities/REGA_Dash.h"
 #include "REHealthBarComponent.h"
+#include "REGameMode.h"
 
 ARECharacterBase::ARECharacterBase()
 {
@@ -92,7 +93,18 @@ float ARECharacterBase::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 	const float Applied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 	Health = FMath::Clamp(Health - Applied, 0.f, MaxHealth);
 	OnRep_Health(); // 서버/싱글 경로 — 복제 OnRep은 원격 클라 전용이라 직접 호출
-	// TODO M5: 서버권위 피격 판정/이펙트, 사망 처리
+
+	// 패배 판정 — 이미 HasAuthority 가드 안. 사망 후에도 뜬 탄환이 계속 때리므로 bIsDead로 재진입 차단.
+	if (Health <= 0.f && !bIsDead)
+	{
+		bIsDead = true;
+		UE_LOG(LogTemp, Log, TEXT("[RE] Player died (Health<=0)"));
+		if (AREGameMode* GM = GetWorld()->GetAuthGameMode<AREGameMode>())
+		{
+			GM->EndGame(/*bVictory=*/false);
+		}
+	}
+
 	return Applied;
 }
 

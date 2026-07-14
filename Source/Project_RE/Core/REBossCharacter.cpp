@@ -5,6 +5,7 @@
 #include "REBulletPatternGenerator.h"
 #include "Net/UnrealNetwork.h"
 #include "REHealthBarComponent.h"
+#include "REGameMode.h"
 
 AREBossCharacter::AREBossCharacter()
 {
@@ -83,6 +84,10 @@ float AREBossCharacter::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 	{
 		bIsDead = true;
 		UE_LOG(LogTemp, Log, TEXT("[RE] Boss died (Health<=0)"));
+		if (AREGameMode* GM = GetWorld()->GetAuthGameMode<AREGameMode>())
+		{
+			GM->EndGame(/*bVictory=*/true);
+		}
 	}
 
 	return Applied;

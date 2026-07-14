@@ -12,6 +12,7 @@
 #include "REBulletPatternGenerator.h"
 #include "Mass/EntityFragments.h"  // FTransformFragment
 #include "TimerManager.h"
+#include "REAutoFireComponent.h"
 
 AREGameMode::AREGameMode()
 {
@@ -117,5 +118,37 @@ void AREGameMode::Tick(float DeltaSeconds)
 	{
 		UE_LOG(LogTemp, Log, TEXT("[RE] SimProbe: t=%.2f Alive=0 (destroyed)"), ProbeElapsed);
 		ProbeBullet.Reset();  // 파괴 확인 후 로그 종료.
+	}
+}
+
+void AREGameMode::EndGame(bool bVictory)
+{
+	if (bGameOver)
+	{
+		return;
+	}
+	bGameOver = true;
+
+	UE_LOG(LogTemp, Log, TEXT("[RE] EndGame: %s"), bVictory ? TEXT("VICTORY") : TEXT("DEFEAT"));
+
+	// 1) 탄막 발사 중지. 이미 뜬 탄환은 Lifetime 다할 때까지 계속 난다 (설계 합의 — 일괄 소멸 안 함).
+	GetWorld()->GetTimerManager().ClearTimer(DemoFireTimer);
+
+	APlayerController* PC = GetWorld()->GetFirstPlayerController();
+
+	// 2) 자동사격 중지. 서버 타이머 구동이라 입력 차단으로는 안 멈춘다.
+	//    AutoFireComponent는 캐릭터의 protected 멤버 — accessor 추가 대신 컴포넌트 조회.
+	if (ARECharacterBase* Player = PC ? Cast<ARECharacterBase>(PC->GetPawn()) : nullptr)
+	{
+		if (UREAutoFireComponent* AutoFire = Player->FindComponentByClass<UREAutoFireComponent>())
+		{
+			AutoFire->StopFiring();
+		}
+	}
+
+	// 3) 결과 화면 + 입력 차단 — 오너 클라 실행(싱글은 로컬 즉시).
+	if (AREPlayerController* REPC = Cast<AREPlayerController>(PC))
+	{
+		REPC->Client_ShowResult(bVictory);
 	}
 }

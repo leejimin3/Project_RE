@@ -19,6 +19,7 @@ public class Project_RE : ModuleRules
 			"GameplayStateTreeModule",
 			"UMG",
 			"Slate",
+			"SlateCore",
 			"MassEntity",
 			"MassCore",
 			"GameplayAbilities",

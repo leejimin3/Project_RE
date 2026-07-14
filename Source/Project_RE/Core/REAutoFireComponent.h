@@ -21,6 +21,12 @@ class UREAutoFireComponent : public UActorComponent
 public:
 	UREAutoFireComponent();
 
+	/**
+	 *  발사 중지 (#40 게임 종료). 자동사격은 입력이 아니라 서버 타이머 구동이라
+	 *  PlayerController의 DisableInput으로는 안 멈춘다 — 명시적 정지가 필요하다.
+	 */
+	void StopFiring();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

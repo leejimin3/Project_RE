@@ -17,6 +17,8 @@
 #include "AbilitySystemGlobals.h"
 #include "Abilities/REGameplayTags.h"
 #include "HAL/PlatformMisc.h"
+#include "REResultWidget.h"
+#include "Blueprint/UserWidget.h"
 
 void AREPlayerController::SetupInputComponent()
 {
@@ -108,6 +110,20 @@ void AREPlayerController::Server_Dash_Implementation(FVector Dir)
 	{
 		Char->TryDash(Dir);
 	}
+}
+
+void AREPlayerController::Client_ShowResult_Implementation(bool bVictory)
+{
+	if (UREResultWidget* Result = CreateWidget<UREResultWidget>(this, UREResultWidget::StaticClass()))
+	{
+		Result->SetResult(bVictory);
+		Result->AddToViewport();
+	}
+
+	// 이동/대쉬 입력 차단 — 입력은 클라 소유물이라 여기가 제자리.
+	DisableInput(this);
+
+	UE_LOG(LogTemp, Log, TEXT("[RE] Client_ShowResult: %s"), bVictory ? TEXT("VICTORY") : TEXT("DEFEAT"));
 }
 
 void AREPlayerController::Server_RequestMove_Implementation(FVector Target)

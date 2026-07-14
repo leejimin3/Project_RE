@@ -20,6 +20,14 @@ class AREPlayerController : public APlayerController
 {
 	GENERATED_BODY()
 
+public:
+	/**
+	 *  결과 화면 표시 + 입력 차단 (#40). 서버가 EndGame에서 호출, 오너 클라에서 실행.
+	 *  싱글/리슨에서는 로컬 즉시 실행 — M4 데디 전환 시 수정 불필요.
+	 */
+	UFUNCTION(Client, Reliable)
+	void Client_ShowResult(bool bVictory);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
