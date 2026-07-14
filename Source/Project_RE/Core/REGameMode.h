@@ -36,6 +36,12 @@ class AREGameMode : public AGameModeBase
 public:
 	AREGameMode();
 
+	/**
+	 *  승패 확정 (#40). 탄막 발사·자동사격 정지 + 결과 화면 표시.
+	 *  GameModeBase는 서버에만 존재 → 이 함수 자체가 서버 권위. 중복 호출은 선착순 무시.
+	 */
+	void EndGame(bool bVictory);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -50,4 +56,7 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<AREBossCharacter> DemoBoss = nullptr;
+
+	/** 승패 확정 여부. 같은 프레임에 양쪽이 죽는 경우 선착순 처리. */
+	bool bGameOver = false;
 };

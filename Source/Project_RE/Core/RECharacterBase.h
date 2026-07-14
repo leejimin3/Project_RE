@@ -83,6 +83,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stats")
 	float MaxHealth = 100.f;
 
+	/** 사망 여부. 서버 전용 — 클라 시각처리는 스코프 밖이라 비복제. (AREBossCharacter 동일 패턴) */
+	bool bIsDead = false;
+
 	/** 탑뷰 카메라 붐 (절대 하향 고정) */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
 	USpringArmComponent* CameraBoom;
