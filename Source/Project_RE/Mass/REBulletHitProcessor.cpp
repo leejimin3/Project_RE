@@ -6,6 +6,8 @@
 #include "MassExecutionContext.h"
 #include "Mass/EntityFragments.h"  // FTransformFragment
 #include "Core/RECharacterBase.h"
+#include "Abilities/REGameplayTags.h"
+#include "AbilitySystemComponent.h"
 #include "Engine/DamageEvents.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
@@ -45,6 +47,16 @@ void UREBulletHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 	if (!Player)
 	{
 		return;  // 플레이어 없으면 no-op (레벨 전환 등)
+	}
+
+	// 대쉬 중 무적 — #25가 부여하는 State.Dashing 태그를 여기서 소비.
+	// 판정 자체를 스킵(탄환 미파괴) — 대쉬는 탄막을 "통과"하지 "지우지" 않는다.
+	const UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent();
+	if (ASC && ASC->HasMatchingGameplayTag(RETag_State_Dashing))
+	{
+		// 대쉬 중엔 매 프레임 찍히므로 Verbose — 검증 시 -LogCmds="LogTemp Verbose"로 관측.
+		UE_LOG(LogTemp, Verbose, TEXT("[RE] BulletHit: skipped (State.Dashing)"));
+		return;
 	}
 
 	const FVector PlayerLoc = Player->GetActorLocation();
