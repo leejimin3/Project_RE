@@ -74,3 +74,12 @@ Strong success criteria let the LLM loop independently. Weak criteria ("make it 
 - feature 브랜치명: `feature/M1-mass-bullet`, `feature/M2-player-loop` 등 마일스톤 접두어
 - main 직접 커밋 금지 — 반드시 PR 경유
 - release 브랜치에서는 bugfix 커밋만 허용
+
+7. Orca 에이전트 오케스트레이션
+이 프로젝트는 **Orca ADE** 위에서 개발한다. 네 세션은 Orca 터미널 페인 안에서 실행 중이다.
+확인법: `$env:ORCA_TERMINAL_HANDLE` 이 있으면 Orca 안이다.
+
+다음 상황이면 **`docs/guides/orca.md` 를 먼저 읽어라**:
+- 다른 에이전트 세션(옆 페인)에 지시를 보내거나 응답을 받아야 할 때
+- 여러 worktree에 작업을 병렬로 뿌려야 할 때
+- 코디네이터/워커로 일해야 할 때 (`worker_done` 규약이 있다 — 모르고 쓰면 코디네이터가 멈춘다)
