@@ -40,17 +40,19 @@ $orca = "$env:LOCALAPPDATA\Programs\orca\resources\bin\orca.exe"
 
 | 방식 | 지시 보내기 | 응답 받기 | 용도 |
 |---|---|---|---|
-| `terminal send` | O | **X** | 일반 셸 페인 |
+| `terminal send` | **X** (긴 텍스트는 뭉개짐) | **X** (alt-screen) | 일반 셸 페인 전용 |
 | `orchestration` | O (자동 배달) | O (스레드) | **에이전트 간 통신** |
 
-### `terminal send` — 쓰기 전용. 에이전트 상대로는 쓰지 마라
+### `terminal send` — 일반 셸 전용. 에이전트에게는 쓰지 마라
 
 ```powershell
 & $orca terminal send --terminal term_xxx --text "git status" --enter
 & $orca terminal read --terminal term_xxx     # 일반 셸이면 출력이 보인다
 ```
 
-**함정:** Claude Code / Codex 같은 TUI 에이전트는 **alt-screen 버퍼**를 쓴다.
+일반 셸 페인에는 잘 동작한다. **Claude Code / Codex 같은 TUI 에이전트에는 양방향 모두 실패한다.**
+
+**함정 1 — 응답을 못 읽는다.** TUI 에이전트는 **alt-screen 버퍼**를 쓴다.
 화면 내용이 스크롤백에 쌓이지 않으므로 `terminal read`는 빈 값을 돌려준다:
 
 ```
@@ -58,7 +60,14 @@ tail: ["PS E:\UnrealProjects\Project_RE>claude"]
 returnedLineCount: 1
 ```
 
-즉 **에이전트에게 지시는 넣을 수 있으나 답은 긁어올 수 없다.** 답이 필요하면 아래 orchestration을 써라.
+**함정 2 — 긴 지시는 조용히 뭉개진다. 이게 더 위험하다.**
+`terminal send`는 `accepted: true` 와 정상 `bytesWritten` 을 돌려주지만,
+긴 프롬프트를 TUI에 밀어넣으면 **일부만 도착하거나 통째로 사라진다.**
+실제로 3개 워커 세션에 긴 작업 프롬프트를 보냈을 때, 한 세션에는 `2` 한 글자만 도착했고
+나머지 둘은 아무것도 받지 못했다. **CLI는 성공을 보고했다.**
+
+> **에이전트에게 보내는 것은 지시든 질문이든 전부 `orchestration send` 를 써라.**
+> `terminal send` 의 성공 반환값을 믿지 마라 — 도달 여부는 상대에게 물어봐야만 확인된다.
 
 ### `orchestration` — 에이전트 간 메시지 큐. 이게 정답
 
