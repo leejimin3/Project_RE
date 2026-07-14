@@ -12,13 +12,18 @@
  */
 namespace REBulletPattern
 {
+	/** 발사 주기(s). GameMode 발사 타이머와 역산 공식의 단일 출처. */
+	constexpr float FireIntervalSec   = 0.1f;
+	/** 탄 수명(s). FSpiralParams::Lifetime 기본값과 역산 공식의 단일 출처. */
+	constexpr float BulletLifetimeSec = 3.f;
+
 	struct FSpiralParams
 	{
 		int32 Count        = 16;
 		float BaseAngleDeg = 0.f;    // 이번 발사 시작각 (Boss가 누적해 전달)
 		float AngleStepDeg = 22.5f;  // 탄 간 각 간격 (기본 360/16 = 균등 링)
 		float Speed        = 300.f;  // uu/s
-		float Lifetime     = 3.f;    // s
+		float Lifetime     = BulletLifetimeSec;  // s
 	};
 
 	struct FFanParams
@@ -35,4 +40,13 @@ namespace REBulletPattern
 
 	/** 부채꼴: CenterAngle 기준 -Spread/2 .. +Spread/2 를 Count 등분 동시 발사. */
 	TArray<FBulletSpawnParams> GenerateFan(const FVector& Origin, const FFanParams& P);
+
+	/**
+	 *  목표 동시 탄환 수 N → 균등 링 Spiral 파라미터.
+	 *  steady-state 동시 탄환 = 발사당_탄수 / 발사주기 × 수명 이므로
+	 *  Count = round(N × FireIntervalSec / BulletLifetimeSec), AngleStep = 360/Count.
+	 *  ceil이 아니라 round인 이유: ceil(100/30)=4 → live≈120 (+20%)으로 ±10% 허용치를 넘는다.
+	 *  Speed/Lifetime은 FSpiralParams 기본값 유지.
+	 */
+	FSpiralParams MakeSpiralForLiveCount(int32 TargetLive, float BaseAngleDeg);
 }

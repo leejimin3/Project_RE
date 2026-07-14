@@ -39,4 +39,14 @@ namespace REBulletPattern
 		}
 		return Out;
 	}
+
+	FSpiralParams MakeSpiralForLiveCount(int32 TargetLive, float BaseAngleDeg)
+	{
+		FSpiralParams P;
+		// Max(1,...): TargetLive<=0 (CVar 사용자 입력) 시 360/0 나눗셈 방지.
+		P.Count        = FMath::Max(1, FMath::RoundToInt(TargetLive * FireIntervalSec / BulletLifetimeSec));
+		P.AngleStepDeg = 360.f / P.Count;   // Count 무관 균등 링
+		P.BaseAngleDeg = BaseAngleDeg;
+		return P;
+	}
 }
