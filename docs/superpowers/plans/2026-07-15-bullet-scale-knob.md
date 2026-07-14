@@ -355,19 +355,17 @@ Expected: `Target=5000 ... -> N=167`, steady-state `live=` ≈ **5010 (+0.2%, ±
 
 **N=5000이 크게 미달하면** (예: 3000대) 스폰이 프레임 예산을 못 따라간 것이다 — `SpawnBulletBatch`의 per-entity `CreateEntity` 병목. **이건 #46이 측정할 대상이지 여기서 고칠 게 아니다.** 수치를 goal 문서에 기록하고 사용자에게 보고하라.
 
-- [ ] **Step 5: 측정 결과를 goal 문서로 기록**
+- [ ] **Step 5: 측정 결과를 PR 본문에 기록** (별도 문서 안 만든다)
 
-`docs/superpowers/goals/2026-07-15-bullet-scale-knob-goal.md` 생성. 기존 goal 문서(`docs/superpowers/goals/` 참고) 형식을 따르되, **실제 로그를 붙여넣어라 — 예상값을 옮겨 적지 마라.** 포함할 것:
+`docs/superpowers/goals/2026-07-15-bullet-scale-knob-goal.md`는 **구현 인계 문서**로 이미 존재한다 — 거기에 결과를 덮어쓰지 마라. 측정 결과는 PR 본문에 넣는다. **실제 로그를 붙여넣어라 — 예상값을 옮겨 적지 마라.** 포함할 것:
 - 3개 수치 각각의 `Boss Spiral: Target=... -> N=...` 로그 1줄
 - 3개 수치 각각의 steady-state `RenderProbe: live=...` 로그 2~3줄
 - 목표 대비 오차율 표 (N / Count / 실측 live / 오차%)
 - `-nullrhi`에서 RenderProbe가 안 찍혀 실RHI로 폴백했다면 그 사실
 - N=5000에서 관측된 체감 프레임 저하 (있다면) — **수치 측정은 #46 범위, 여기선 정성 기록만**
+- 이슈의 `ceil` → `round` 설계 이탈 근거
 
-```bash
-git add docs/superpowers/goals/2026-07-15-bullet-scale-knob-goal.md
-git commit -m "test(M3): headless probe for 100/1000/5000 live bullet counts (#43)"
-```
+TASK 3은 관측만 하므로 코드 변경이 없으면 **커밋하지 않는다.**
 
 - [ ] **Step 6: 완료조건 최종 체크 (이슈 #43)**
 
