@@ -50,11 +50,4 @@ namespace REBulletPattern
 		return P;
 	}
 
-	FSpiralParams MakeSpiralForLiveCount(int32 TargetLive, float BaseAngleDeg)
-	{
-		// 오픈루프 피드포워드: steady-state 동시 탄환 = 발사당_탄수 / 발사주기 × 수명.
-		// 탄이 소멸 없이 수명까지 사는 경로(Actor 베이스라인)에서만 목표를 정확히 맞춘다.
-		// Mass는 히트 프로세서 소멸분 때문에 미달 → Boss가 클로즈드루프로 보정(#51).
-		return MakeSpiralRing(FMath::RoundToInt(TargetLive * FireIntervalSec / BulletLifetimeSec), BaseAngleDeg);
-	}
 }

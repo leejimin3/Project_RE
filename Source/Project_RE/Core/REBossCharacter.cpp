@@ -12,7 +12,7 @@
 
 /**
  *  목표 동시 탄환 수. 발사 시점에 조회하므로 재시작 없이 다음 발사부터 반영된다.
- *  발사당 탄 수 = round(N × 발사주기 / 수명) 로 역산 (REBulletPattern::MakeSpiralForLiveCount).
+ *  TriggerBulletPattern이 라이브 카운트(ISM) 피드백 클로즈드루프로 발사당 탄 수를 이 목표에 맞춘다(#51).
  *  기본 480 = 기존 하드코딩(16발 / 0.1s × 3s)과 동일 — 회귀 없음.
  */
 static TAutoConsoleVariable<int32> CVarBulletCount(

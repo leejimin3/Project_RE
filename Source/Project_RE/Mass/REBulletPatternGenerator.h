@@ -42,17 +42,9 @@ namespace REBulletPattern
 	TArray<FBulletSpawnParams> GenerateFan(const FVector& Origin, const FFanParams& P);
 
 	/**
-	 *  목표 동시 탄환 수 N → 균등 링 Spiral 파라미터.
-	 *  steady-state 동시 탄환 = 발사당_탄수 / 발사주기 × 수명 이므로
-	 *  Count = round(N × FireIntervalSec / BulletLifetimeSec), AngleStep = 360/Count.
-	 *  ceil이 아니라 round인 이유: ceil(100/30)=4 → live≈120 (+20%)으로 ±10% 허용치를 넘는다.
-	 *  Speed/Lifetime은 FSpiralParams 기본값 유지.
-	 */
-	FSpiralParams MakeSpiralForLiveCount(int32 TargetLive, float BaseAngleDeg);
-
-	/**
 	 *  정확한 Count로 균등 링 Spiral 파라미터. Count는 호출자가 결정한다
-	 *  (Boss의 클로즈드루프 스폰 컨트롤러 등 — 라이브 카운트 피드백으로 산출된 값).
+	 *  (Boss의 클로즈드루프 스폰 컨트롤러가 라이브 카운트 피드백으로 산출한 값 — REBossCharacter.cpp).
+	 *  steady-state 동시 탄환 ≈ 발사당_탄수 / 발사주기 × 수명 이 되도록 Count를 호출자가 조절한다.
 	 */
 	FSpiralParams MakeSpiralRing(int32 Count, float BaseAngleDeg);
 }
