@@ -33,6 +33,8 @@ void UREBulletRenderProcessor::ConfigureQueries(const TSharedRef<FMassEntityMana
 
 void UREBulletRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassExecutionContext& Context)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(RE_BulletRender);
+
 	UWorld* World = EntityManager.GetWorld();
 	UREBulletRenderSubsystem* RS = World ? World->GetSubsystem<UREBulletRenderSubsystem>() : nullptr;
 	UInstancedStaticMeshComponent* ISM = RS ? RS->GetISM() : nullptr;

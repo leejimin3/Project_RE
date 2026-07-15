@@ -20,6 +20,8 @@ void UREBulletSimProcessor::ConfigureQueries(const TSharedRef<FMassEntityManager
 
 void UREBulletSimProcessor::Execute(FMassEntityManager& EntityManager, FMassExecutionContext& Context)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(RE_BulletSim);
+
 	EntityQuery.ForEachEntityChunk(Context, [](FMassExecutionContext& Context)
 	{
 		const float Dt = Context.GetDeltaTimeSeconds();
