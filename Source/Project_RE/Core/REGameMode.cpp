@@ -13,6 +13,19 @@
 #include "Mass/EntityFragments.h"  // FTransformFragment
 #include "TimerManager.h"
 #include "REAutoFireComponent.h"
+#include "HAL/IConsoleManager.h"
+
+namespace
+{
+	// #46 측정 전용: 1이면 EndGame을 무력화 → 즉사 DEFEAT가 보스 DemoFireTimer를 끄지 못하게 막는다.
+	// (보스 스폰이 PlayerStart와 겹쳐 t≈0.4s에 플레이어 즉사 → 발사 중단 → Mass 탄환 0발로 측정이 무효화됨.)
+	// 프로파일링에서만 켠다(scripts/profile.ps1). 기본 0 = 게임 플레이 영향 없음.
+	static TAutoConsoleVariable<int32> CVarProfilingKeepFiring(
+		TEXT("re.Profiling.KeepFiring"),
+		0,
+		TEXT("측정 전용: 1이면 게임오버를 무시하고 보스 탄막 발사를 계속 유지."),
+		ECVF_Cheat);
+}
 
 AREGameMode::AREGameMode()
 {
@@ -123,6 +136,12 @@ void AREGameMode::Tick(float DeltaSeconds)
 
 void AREGameMode::EndGame(bool bVictory)
 {
+	// #46 측정 모드: 게임오버를 무시하고 탄막을 계속 유지 (근거는 CVar 정의 주석).
+	if (CVarProfilingKeepFiring.GetValueOnGameThread() != 0)
+	{
+		return;
+	}
+
 	if (bGameOver)
 	{
 		return;
