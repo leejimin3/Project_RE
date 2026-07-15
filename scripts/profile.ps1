@@ -14,7 +14,9 @@ param(
     # 하드 타임아웃(초). 5000발 저FPS 여유 포함.
     [int]$TimeoutSec = 300,
     # Actor 베이스라인(#45) 경로 측정. Mass boss(기본 480발)를 0으로 죽이고 액터만 스폰.
-    [switch]$Actor
+    [switch]$Actor,
+    # 스폰 적분 게인 Ki 오버라이드(튜닝용). 0 이하면 빌드 기본값 사용.
+    [double]$Ki = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,6 +44,7 @@ if ($Actor) {
     $Tag     = 'Mass'
     $ExecCmd = "re.Profiling.KeepFiring 1,re.Bullets.Count $Bullets"
 }
+if ($Ki -gt 0) { $ExecCmd += ",re.Bullets.SpawnKi $Ki" }
 $RunDir = Join-Path $Root "Saved\Profiling\RE_${Tag}_${Bullets}_${Stamp}"
 New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
 

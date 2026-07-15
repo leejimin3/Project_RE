@@ -49,4 +49,10 @@ namespace REBulletPattern
 	 *  Speed/Lifetime은 FSpiralParams 기본값 유지.
 	 */
 	FSpiralParams MakeSpiralForLiveCount(int32 TargetLive, float BaseAngleDeg);
+
+	/**
+	 *  정확한 Count로 균등 링 Spiral 파라미터. Count는 호출자가 결정한다
+	 *  (Boss의 클로즈드루프 스폰 컨트롤러 등 — 라이브 카운트 피드백으로 산출된 값).
+	 */
+	FSpiralParams MakeSpiralRing(int32 Count, float BaseAngleDeg);
 }

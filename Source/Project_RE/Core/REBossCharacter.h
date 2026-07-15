@@ -57,6 +57,17 @@ private:
 	/** Spiral 호출당 BaseAngle 증가량(deg). */
 	static constexpr float SpiralRotationStepDeg = 15.f;
 
+	/**
+	 *  클로즈드루프 스폰율(발사당 탄 수). 적분 제어 — 라이브 카운트가 목표에 못 미치면 램프업.
+	 *  Mass는 히트 프로세서가 원점 근처 탄을 소멸시켜 피드포워드로는 목표 미달(#51).
+	 *  -1 = 미초기화(첫 발사에 피드포워드 값으로 시딩).
+	 */
+	float SpiralSpawnRate = -1.f;
+	/** 소수부 누산 — 발사당 정수 탄 수로 내림하되 소수부를 이월해 소형 타깃 양자화 오버슛 방지. */
+	float SpiralSpawnAccum = 0.f;
+	/** 누적 발사 횟수 — 첫 1수명(≈수명/발사주기 발) 동안은 적분 정지(피드포워드로 채우기)해 와인드업 방지. */
+	int32 SpiralShotCount = 0;
+
 	/** 사망 여부. 서버 전용 — 클라 시각처리는 스코프 밖이라 비복제. */
 	bool bIsDead = false;
 };
