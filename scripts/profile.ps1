@@ -12,7 +12,9 @@ param(
     # 캡처 총 프레임 = 워밍업 120 + 측정 600. docs/guides/profiling.md 참조.
     [int]$Frames  = 720,
     # 하드 타임아웃(초). 5000발 저FPS 여유 포함.
-    [int]$TimeoutSec = 300
+    [int]$TimeoutSec = 300,
+    # Actor 베이스라인(#45) 경로 측정. Mass boss(기본 480발)를 0으로 죽이고 액터만 스폰.
+    [switch]$Actor
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,10 +33,20 @@ if (-not (Test-Path $Editor))   { throw "에디터 없음: $Editor" }
 if (-not (Test-Path $Uproject)) { throw "uproject 없음: $Uproject" }
 
 $Stamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
-$RunDir = Join-Path $Root "Saved\Profiling\RE_${Bullets}_${Stamp}"
+# re.Profiling.KeepFiring 1: 즉사 DEFEAT가 보스 발사를 끊어 Mass 탄환이 0발로 측정되는 것을 막는다 (#46).
+# Mass 경로: re.Bullets.Count N (Actor는 기본 0). Actor 경로: Mass boss(기본 480)를 0으로 죽이고 액터만.
+if ($Actor) {
+    $Tag     = 'Actor'
+    $ExecCmd = "re.Profiling.KeepFiring 1,re.Bullets.Count 0,re.ActorBullets.Count $Bullets"
+} else {
+    $Tag     = 'Mass'
+    $ExecCmd = "re.Profiling.KeepFiring 1,re.Bullets.Count $Bullets"
+}
+$RunDir = Join-Path $Root "Saved\Profiling\RE_${Tag}_${Bullets}_${Stamp}"
 New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
 
 $TracePath = Join-Path $RunDir 'trace.utrace'
+$LogPath   = Join-Path $RunDir 'run.log'   # 실제 유지 탄환 수(RenderProbe/ActorBulletProbe) 대조용 (#46)
 $StartTime = Get-Date
 
 # 측정 조건은 docs/guides/profiling.md 에 고정 기록되어 있다. 바꾸면 문서도 바꿔라.
@@ -47,14 +59,15 @@ $ArgLine = @(
     '-statnamedevents',
     "-tracefile=`"$TracePath`"",
     "-csvCaptureFrames=$Frames",
-    "-ExecCmds=`"re.Bullets.Count $Bullets`"",
+    "-ExecCmds=`"$ExecCmd`"",
+    "-abslog=`"$LogPath`"",
     # -unattended 는 절대 넣지 마라: REPlayerController 의 headless 프로브가 켜지고
     # (HasAuthority() && FApp::IsUnattended()), 그 프로브가 ~4초 뒤 RequestExit 로
     # 게임을 스스로 꺼서 캡처 프레임을 못 채운다.
     '-nosplash', '-NoSound'
 ) -join ' '
 
-Write-Host "[profile] Bullets=$Bullets Frames=$Frames"
+Write-Host "[profile] Path=$Tag Bullets=$Bullets Frames=$Frames"
 Write-Host "[profile] run dir: $RunDir"
 
 $Proc = Start-Process -FilePath $Editor -ArgumentList $ArgLine -PassThru

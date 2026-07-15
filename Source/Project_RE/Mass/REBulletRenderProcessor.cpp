@@ -7,6 +7,9 @@
 #include "Mass/EntityFragments.h"  // FTransformFragment
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/World.h"
+#include "ProfilingDebugging/CsvProfiler.h"
+
+CSV_DECLARE_CATEGORY_EXTERN(REBullet);  // 정의는 REBulletSimProcessor.cpp
 
 namespace
 {
@@ -34,6 +37,7 @@ void UREBulletRenderProcessor::ConfigureQueries(const TSharedRef<FMassEntityMana
 void UREBulletRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassExecutionContext& Context)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(RE_BulletRender);
+	CSV_SCOPED_TIMING_STAT(REBullet, BulletRender);
 
 	UWorld* World = EntityManager.GetWorld();
 	UREBulletRenderSubsystem* RS = World ? World->GetSubsystem<UREBulletRenderSubsystem>() : nullptr;

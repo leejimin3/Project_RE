@@ -4,6 +4,11 @@
 #include "REBulletFragments.h"
 #include "MassExecutionContext.h"
 #include "Mass/EntityFragments.h"  // FTransformFragment
+#include "ProfilingDebugging/CsvProfiler.h"
+
+// #46 프로세서 3분해 — CSV 프로파일러에 프레임별 ms 컬럼(REBullet/*)을 찍는다.
+// 카테고리는 이 TU 한 곳에서만 정의. Render/Hit 은 EXTERN 선언으로 공유.
+CSV_DEFINE_CATEGORY(REBullet, true);
 
 UREBulletSimProcessor::UREBulletSimProcessor()
 	: EntityQuery(*this)
@@ -21,6 +26,7 @@ void UREBulletSimProcessor::ConfigureQueries(const TSharedRef<FMassEntityManager
 void UREBulletSimProcessor::Execute(FMassEntityManager& EntityManager, FMassExecutionContext& Context)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(RE_BulletSim);
+	CSV_SCOPED_TIMING_STAT(REBullet, BulletSim);
 
 	EntityQuery.ForEachEntityChunk(Context, [](FMassExecutionContext& Context)
 	{

@@ -11,6 +11,9 @@
 #include "Engine/DamageEvents.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
+#include "ProfilingDebugging/CsvProfiler.h"
+
+CSV_DECLARE_CATEGORY_EXTERN(REBullet);  // 정의는 REBulletSimProcessor.cpp
 
 namespace
 {
@@ -42,6 +45,7 @@ void UREBulletHitProcessor::ConfigureQueries(const TSharedRef<FMassEntityManager
 void UREBulletHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExecutionContext& Context)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(RE_BulletHit);
+	CSV_SCOPED_TIMING_STAT(REBullet, BulletHit);
 
 	UWorld* World = EntityManager.GetWorld();
 	APawn* Pawn = World ? UGameplayStatics::GetPlayerPawn(World, 0) : nullptr;
