@@ -7,6 +7,17 @@
 #include "REHealthBarComponent.h"
 #include "REGameMode.h"
 
+/**
+ *  목표 동시 탄환 수. 발사 시점에 조회하므로 재시작 없이 다음 발사부터 반영된다.
+ *  발사당 탄 수 = round(N × 발사주기 / 수명) 로 역산 (REBulletPattern::MakeSpiralForLiveCount).
+ *  기본 480 = 기존 하드코딩(16발 / 0.1s × 3s)과 동일 — 회귀 없음.
+ */
+static TAutoConsoleVariable<int32> CVarBulletCount(
+	TEXT("re.Bullets.Count"),
+	480,
+	TEXT("목표 동시 탄환 수(steady-state). 다음 발사부터 반영."),
+	ECVF_Cheat);
+
 AREBossCharacter::AREBossCharacter()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -42,10 +53,13 @@ void AREBossCharacter::TriggerBulletPattern(EBulletPattern Pattern, int32 Seed, 
 	{
 	case EBulletPattern::Spiral:
 	{
-		REBulletPattern::FSpiralParams SP;
-		SP.BaseAngleDeg = SpiralBaseAngleDeg;
+		// 발사 시점 조회 — CVar 변경이 재시작/타이머 재설정 없이 다음 발사부터 반영된다.
+		const int32 TargetLive = CVarBulletCount.GetValueOnGameThread();
+		const REBulletPattern::FSpiralParams SP =
+			REBulletPattern::MakeSpiralForLiveCount(TargetLive, SpiralBaseAngleDeg);
 		Params = REBulletPattern::GenerateSpiral(GetActorLocation(), SP);
-		UE_LOG(LogTemp, Log, TEXT("[RE] Boss Spiral: BaseAngle=%.1f -> N=%d"), SpiralBaseAngleDeg, Params.Num());
+		UE_LOG(LogTemp, Log, TEXT("[RE] Boss Spiral: Target=%d BaseAngle=%.1f -> N=%d"),
+			TargetLive, SpiralBaseAngleDeg, Params.Num());
 		SpiralBaseAngleDeg += SpiralRotationStepDeg;  // 다음 호출 시 회전
 		break;
 	}
