@@ -32,6 +32,7 @@ public class Project_RE : ModuleRules
 
 		PublicIncludePaths.AddRange(new string[] {
 			"Project_RE",
+			"Project_RE/Baseline",
 			"Project_RE/Core",
 			"Project_RE/Mass",
 			"Project_RE/UI",
