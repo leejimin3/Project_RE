@@ -8,17 +8,16 @@
 #include "REBulletSimProcessor.h"
 #include "REBulletRenderProcessor.h"
 #include "REBossCharacter.h"
-#include "REBulletSpawnSubsystem.h"
 #include "REBulletPatternGenerator.h"
-#include "Mass/EntityFragments.h"  // FTransformFragment
 #include "TimerManager.h"
 #include "REAutoFireComponent.h"
 #include "HAL/IConsoleManager.h"
 
 namespace
 {
-	// #46 측정 전용: 1이면 EndGame을 무력화 → 즉사 DEFEAT가 보스 DemoFireTimer를 끄지 못하게 막는다.
-	// (보스 스폰이 PlayerStart와 겹쳐 t≈0.4s에 플레이어 즉사 → 발사 중단 → Mass 탄환 0발로 측정이 무효화됨.)
+	// #46 측정 전용: 1이면 EndGame을 무력화 → 승패 확정이 보스 DemoFireTimer를 끄지 못하게 막는다.
+	// (자동사격이 보스를 ~2.5s에 죽이거나(VICTORY) 정지 플레이어가 탄막에 죽으면(DEFEAT)
+	//  발사가 중단돼 Mass 탄환이 목표 수까지 못 차 측정이 무효화됨.)
 	// 프로파일링에서만 켠다(scripts/profile.ps1). 기본 0 = 게임 플레이 영향 없음.
 	static TAutoConsoleVariable<int32> CVarProfilingKeepFiring(
 		TEXT("re.Profiling.KeepFiring"),
@@ -31,7 +30,6 @@ AREGameMode::AREGameMode()
 {
 	DefaultPawnClass = ARECharacterBase::StaticClass();
 	PlayerControllerClass = AREPlayerController::StaticClass();
-	PrimaryActorTick.bCanEverTick = true;
 }
 
 void AREGameMode::BeginPlay()
@@ -58,12 +56,15 @@ void AREGameMode::BeginPlay()
 	UE_LOG(LogTemp, Log, TEXT("[RE] SimProcessor flags=%d  RenderProcessor flags=%d"), SimFlags, RenderFlags);
 
 	// #5 검증: 보스 스폰 후 탄막 트리거 → 싱글 경로 스폰 카운트 실증.
-	// AlwaysSpawn: 원점 캡슐 충돌로 스폰 실패하는 것 방지.
+	// AlwaysSpawn: 캡슐 충돌로 스폰 실패하는 것 방지.
 	// Z=90: 탄환이 보스 위치에서 스폰되므로 바닥(Z=0) 위로 띄워 매몰/z-fighting 방지 (#17 데모 가시성).
+	// X=600: PlayerStart(원점 부근)와 이격 — 겹치면 스폰 즉시 피격으로 프레임 3에 즉사 DEFEAT (#54).
+	//        탄속 300×수명 3s = 사거리 900 안쪽이라 위협은 유지, 도달까지 ~2s 회피 여유.
+	//        REActorBulletSpawner::SpawnOrigin(측정 비교군)과 반드시 동일 좌표 유지.
 	FActorSpawnParameters BossSpawnParams;
 	BossSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	if (AREBossCharacter* Boss = GetWorld()->SpawnActor<AREBossCharacter>(
-			AREBossCharacter::StaticClass(), FVector(0.f, 0.f, 90.f), FRotator::ZeroRotator, BossSpawnParams))
+			AREBossCharacter::StaticClass(), FVector(600.f, 0.f, 90.f), FRotator::ZeroRotator, BossSpawnParams))
 	{
 		Boss->TriggerBulletPattern(EBulletPattern::Spiral, 12345, 0.f);
 		Boss->TriggerBulletPattern(EBulletPattern::Spiral, 12345, 0.f);  // #16 프로브: BaseAngle 누적 확인
@@ -80,14 +81,6 @@ void AREGameMode::BeginPlay()
 		GetWorld()->GetTimerManager().SetTimer(DemoFireTimer, FireDel, REBulletPattern::FireIntervalSec, /*bLoop=*/true);
 	}
 
-	// #15 프로브: nonzero velocity/lifetime 탄환 1발 → SimProcessor 이동/파괴 관측용.
-	// MassGameplay 플러그인의 페이즈 매니저가 SimProcessor를 매 프레임 자동 구동(PrePhysics).
-	if (UREBulletSpawnSubsystem* Spawner = GetWorld()->GetSubsystem<UREBulletSpawnSubsystem>())
-	{
-		ProbeBullet = Spawner->SpawnBullet(FVector::ZeroVector, FVector(100.f, 0.f, 0.f), 0.5f);
-		UE_LOG(LogTemp, Log, TEXT("[RE] SimProbe spawn: Vel=(100,0,0) Life=0.50"));
-	}
-
 	// #16 프로브: 패턴 제너레이터 수학 단위 검증 (순수 함수, 프레임 무관).
 	{
 		using namespace REBulletPattern;
@@ -101,36 +94,6 @@ void AREGameMode::BeginPlay()
 		const float FA0 = FMath::RadiansToDegrees(FMath::Atan2(Fn[0].Velocity.Y, Fn[0].Velocity.X));
 		const float FAL = FMath::RadiansToDegrees(FMath::Atan2(Fn.Last().Velocity.Y, Fn.Last().Velocity.X));
 		UE_LOG(LogTemp, Log, TEXT("[RE] FanProbe: N=%d ang_first=%.1f ang_last=%.1f"), Fn.Num(), FA0, FAL);
-	}
-}
-
-void AREGameMode::Tick(float DeltaSeconds)
-{
-	Super::Tick(DeltaSeconds);
-
-	if (!ProbeBullet.IsSet())
-	{
-		return;
-	}
-
-	ProbeElapsed += DeltaSeconds;
-
-	UMassEntitySubsystem* Mass = GetWorld()->GetSubsystem<UMassEntitySubsystem>();
-	if (!Mass)
-	{
-		return;
-	}
-	FMassEntityManager& EM = Mass->GetMutableEntityManager();
-
-	if (EM.IsEntityValid(ProbeBullet))
-	{
-		const FVector Loc = EM.GetFragmentDataChecked<FTransformFragment>(ProbeBullet).GetTransform().GetLocation();
-		UE_LOG(LogTemp, Log, TEXT("[RE] SimProbe: t=%.2f Loc=%s Alive=1"), ProbeElapsed, *Loc.ToString());
-	}
-	else
-	{
-		UE_LOG(LogTemp, Log, TEXT("[RE] SimProbe: t=%.2f Alive=0 (destroyed)"), ProbeElapsed);
-		ProbeBullet.Reset();  // 파괴 확인 후 로그 종료.
 	}
 }
 

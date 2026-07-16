@@ -26,7 +26,7 @@ scripts/profile.ps1 -Bullets 5000 -Actor   # Actor 베이스라인 (#45 비교�
 | 측정 구간 | **600프레임** (캡처 총 720 = 120 + 600) | steady-state 만 읽는다 |
 | 바이너리 | `UnrealEditor.exe -game` | 패키징(cook)은 수십 분 + 코드 수정마다 재쿡. **절대치가 아니라 상대 비교용**이다 — 에디터 오버헤드가 섞여 있음을 알고 읽어라 |
 | `-unattended` | **금지** | `FApp::IsUnattended()` 가 켜지면 `REPlayerController` 의 headless 프로브가 발동해 약 4초 뒤 `RequestExit` 로 게임을 스스로 끈다 → 캡처 프레임을 못 채운다 |
-| `re.Profiling.KeepFiring` | **1 (필수)** | 보스 스폰(0,0,90)이 PlayerStart와 겹쳐 t≈0.4s에 플레이어 즉사 → `EndGame`이 보스 `DemoFireTimer`를 꺼 **Mass 탄환이 0발**로 측정이 무효화된다. 이 CVar가 게임오버를 무력화 + 보스를 무적으로 해 탄막을 계속 유지시킨다. 스크립트가 자동 주입 |
+| `re.Profiling.KeepFiring` | **1 (필수)** | 자동사격이 보스를 ~2.5s에 죽이거나(VICTORY) 정지 플레이어가 탄막에 죽으면(DEFEAT) `EndGame`이 보스 `DemoFireTimer`를 꺼 **Mass 탄환이 0발**로 측정이 무효화된다. 이 CVar가 게임오버를 무력화 + 보스를 무적으로 해 탄막을 계속 유지시킨다. 스크립트가 자동 주입 |
 
 워밍업 컷은 스크립트가 하지 않는다. `frames.csv` 원본을 그대로 남기고, **읽을 때 앞 120행을 버린다.** (하네스는 수집만 하고 해석하지 않는다 — 해석은 #46.)
 
