@@ -152,8 +152,11 @@ void AREPlayerController::RunHeadlessMoveProbe()
 			UE_LOG(LogTemp, Warning, TEXT("[Move] probe: no pawn"));
 			return;
 		}
-		// 시작점에서 +X 500 만큼 떨어진 목표(nav 위 예상).
-		ProbeTarget = P->GetActorLocation() + FVector(500.f, 0.f, 0.f);
+		// 시작점에서 +Y 500 만큼 떨어진 목표(nav 위 예상).
+		// +Y인 이유(#56): 보스가 +X 600에 있음 — +X 목표는 탄막 정면 진입(사망)이고,
+		// 대쉬 프로브(+X)도 보스 캡슐에 막혀 거리 게이트가 무효화됨. 이동을 +Y로 빼면
+		// 대쉬(+X)가 Y≈450에서 발사돼 보스와 안 겹침.
+		ProbeTarget = P->GetActorLocation() + FVector(0.f, 500.f, 0.f);
 		UE_LOG(LogTemp, Log, TEXT("[Move] probe start: pawn=%s target=%s"),
 			*P->GetActorLocation().ToString(), *ProbeTarget.ToString());
 
