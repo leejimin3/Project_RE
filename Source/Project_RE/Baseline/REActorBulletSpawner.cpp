@@ -20,8 +20,8 @@ namespace
 	/** Mass 데모 발사 주기 (REGameMode.cpp:67 DemoFireTimer). */
 	constexpr float FireInterval = 0.1f;
 
-	/** Mass 스폰 원점 = Boss 스폰 위치 (REGameMode.cpp:53). Boss는 움직이지 않는다. */
-	const FVector SpawnOrigin(0.f, 0.f, 90.f);
+	/** Mass 스폰 원점 = Boss 스폰 위치 (REGameMode.cpp BeginPlay). Boss는 움직이지 않는다. */
+	const FVector SpawnOrigin(600.f, 0.f, 90.f);
 
 	/** Boss의 SpiralRotationStepDeg (REBossCharacter.h:58). */
 	constexpr float RotationStepDeg = 15.f;

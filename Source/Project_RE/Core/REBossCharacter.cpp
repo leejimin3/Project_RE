@@ -134,7 +134,7 @@ void AREBossCharacter::TriggerBulletPattern(EBulletPattern Pattern, int32 Seed, 
 float AREBossCharacter::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent,
                                     AController* EventInstigator, AActor* DamageCauser)
 {
-	// #46 측정 모드: 탄환이 보스 원점(0,0,90)에 스폰돼 자기 탄에 맞아 ~3초 만에 죽는다 →
+	// #46 측정 모드: 플레이어 자동사격(10dmg/0.25s)이 보스를 ~2.5s에 죽인다 →
 	// 발사가 끊겨 Mass 탄환이 목표 수까지 못 찬다. 프로파일링 중에는 보스를 무적으로.
 	static IConsoleVariable* KeepFiring = IConsoleManager::Get().FindConsoleVariable(TEXT("re.Profiling.KeepFiring"));
 	if (KeepFiring && KeepFiring->GetInt() != 0)
