@@ -14,6 +14,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "REStatsSettings.h"
+#include "TimerManager.h"
 
 /**
  *  측정용 클로즈드루프 오버라이드. 발사 시점 조회 — 재시작 없이 다음 발사부터 반영.
@@ -65,6 +66,71 @@ AREBossCharacter::AREBossCharacter()
 	{
 		GetMesh()->SetAnimInstanceClass(AnimAsset.Class);
 	}
+}
+
+void AREBossCharacter::StartFiring(int32 Seed)
+{
+	PhaseRng.Initialize(Seed);
+	bFirstPhase = true;
+	BeginPhase();   // 즉시 1회, 이후 타이머로 재진입
+}
+
+void AREBossCharacter::StopFiring()
+{
+	GetWorldTimerManager().ClearTimer(FireTimer);
+	GetWorldTimerManager().ClearTimer(PhaseTimer);
+}
+
+void AREBossCharacter::BeginPhase()
+{
+	// KeepFiring 측정 모드: 로테이션/대기 우회, Spiral 연속 발사.
+	// StartFiring 시점(BeginPlay)엔 ExecCmds가 아직 CVar를 안 세팅했을 수 있어
+	// 여기(타이머 재진입 콜백)에서 매번 조회한다. 첫 페이즈 Spiral 고정이
+	// profiling 시작 오염 창을 닫는다.
+	static IConsoleVariable* KeepFiring = IConsoleManager::Get().FindConsoleVariable(TEXT("re.Profiling.KeepFiring"));
+	if (KeepFiring && KeepFiring->GetInt() != 0)
+	{
+		CurrentPhasePattern = EBulletPattern::Spiral;
+		GetWorldTimerManager().SetTimer(FireTimer, this,
+			&AREBossCharacter::FireCurrentPattern, REBulletPattern::FireIntervalSec(), /*bLoop=*/true);
+		return;   // PhaseTimer 예약 안 함 → 페이즈 종료/대기 없음
+	}
+
+	if (bFirstPhase)
+	{
+		CurrentPhasePattern = EBulletPattern::Spiral;   // 오프닝 시그니처 + 오염 창 차단
+		bFirstPhase = false;
+	}
+	else
+	{
+		CurrentPhasePattern = (PhaseRng.RandRange(0, 1) == 0)
+			? EBulletPattern::Spiral : EBulletPattern::Fan;
+	}
+
+	const bool bSpiral = (CurrentPhasePattern == EBulletPattern::Spiral);
+	const float PhaseSec  = bSpiral ? SpiralPhaseSec : FanPhaseSec;
+	const float FireInterval = bSpiral ? REBulletPattern::FireIntervalSec() : FanFireIntervalSec;
+
+	UE_LOG(LogTemp, Log, TEXT("[RE] Boss Phase: %s %.1fs"),
+		bSpiral ? TEXT("Spiral") : TEXT("Fan"), PhaseSec);
+
+	GetWorldTimerManager().SetTimer(FireTimer, this,
+		&AREBossCharacter::FireCurrentPattern, FireInterval, /*bLoop=*/true);
+	GetWorldTimerManager().SetTimer(PhaseTimer, this,
+		&AREBossCharacter::EndPhase, PhaseSec, /*bLoop=*/false);
+}
+
+void AREBossCharacter::FireCurrentPattern()
+{
+	TriggerBulletPattern(CurrentPhasePattern, /*Seed=*/12345, /*StartTime=*/0.f);
+}
+
+void AREBossCharacter::EndPhase()
+{
+	GetWorldTimerManager().ClearTimer(FireTimer);
+	UE_LOG(LogTemp, Log, TEXT("[RE] Boss Phase: Rest %.1fs"), RestSec);
+	GetWorldTimerManager().SetTimer(PhaseTimer, this,
+		&AREBossCharacter::BeginPhase, RestSec, /*bLoop=*/false);
 }
 
 void AREBossCharacter::TriggerBulletPattern(EBulletPattern Pattern, int32 Seed, float StartTime)

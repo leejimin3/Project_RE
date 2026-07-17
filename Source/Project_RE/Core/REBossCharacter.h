@@ -28,6 +28,11 @@ public:
 	 */
 	void TriggerBulletPattern(EBulletPattern Pattern, int32 Seed, float StartTime);
 
+	/** 페이즈 로테이션 발사 시작. Seed로 패턴 순서 결정(M5 시드 동기화 선행). */
+	void StartFiring(int32 Seed);
+	/** 발사 정지. 이미 뜬 탄은 수명까지 유지(일괄 소멸 안 함). */
+	void StopFiring();
+
 	//~ 서버 권위 데미지 진입점. 서버에서만 Health 차감.
 	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent,
 	                         AController* EventInstigator, AActor* DamageCauser) override;
@@ -70,4 +75,20 @@ private:
 
 	/** 사망 여부. 서버 전용 — 클라 시각처리는 스코프 밖이라 비복제. */
 	bool bIsDead = false;
+
+	//~ 패턴 로테이션 페이즈 스케줄러 (#64). 발사 주체 = Boss (M5 RPC 확장 대비).
+	void BeginPhase();          // 다음 패턴 선택 + 발사 타이머 세팅 + 페이즈 종료 예약
+	void FireCurrentPattern();  // 현재 페이즈 패턴 1회 발사 (FireTimer 콜백)
+	void EndPhase();            // 발사 정지 + RestSec 뒤 BeginPhase 예약
+
+	FRandomStream PhaseRng;
+	EBulletPattern CurrentPhasePattern = EBulletPattern::Spiral;
+	bool bFirstPhase = true;    // 첫 페이즈 Spiral 고정 (오프닝 + profiling 오염 창 차단)
+	FTimerHandle FireTimer;     // 페이즈 내 발사 반복
+	FTimerHandle PhaseTimer;    // 페이즈 종료/대기 전환
+
+	static constexpr float SpiralPhaseSec     = 5.f;
+	static constexpr float FanPhaseSec        = 3.f;
+	static constexpr float RestSec            = 1.f;
+	static constexpr float FanFireIntervalSec = 0.5f;
 };
