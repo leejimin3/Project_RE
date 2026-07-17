@@ -13,6 +13,7 @@
 #include "Animation/AnimInstance.h"
 #include "Engine/SkeletalMesh.h"
 #include "UObject/ConstructorHelpers.h"
+#include "REStatsSettings.h"
 
 /**
  *  목표 동시 탄환 수. 발사 시점에 조회하므로 재시작 없이 다음 발사부터 반영된다.
@@ -37,7 +38,8 @@ AREBossCharacter::AREBossCharacter()
 {
 	PrimaryActorTick.bCanEverTick = false;
 
-	// 체력 초기화 — MaxHealth 조정 시 정합 유지 (RECharacterBase 동일 패턴)
+	// 체력 초기화 — Settings 단일 출처 (M3.5 ③, RECharacterBase 동일 패턴).
+	MaxHealth = GetDefault<UREStatsSettings>()->BossMaxHealth;
 	Health = MaxHealth;
 
 	// HP바 (#29) — 보스 빨강.

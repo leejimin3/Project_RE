@@ -10,11 +10,18 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "UObject/ConstructorHelpers.h"
+#include "REStatsSettings.h"
 
 UREAttackComponent::UREAttackComponent()
 {
 	// 호출 구동(Server RPC 경유) — 틱/타이머 불필요.
 	PrimaryComponentTick.bCanEverTick = false;
+
+	// 공격 스탯 — Settings 단일 출처 (M3.5 ③).
+	const UREStatsSettings* Stats = GetDefault<UREStatsSettings>();
+	Damage         = Stats->AttackDamage;
+	AttackInterval = Stats->AttackInterval;
+	AttackRange    = Stats->AttackRange;
 
 	// 발사 모션 (M3.5 ②) — 실패해도 크래시 없이 진행(모션만 생략).
 	static ConstructorHelpers::FObjectFinder<UAnimMontage> MontageAsset(
