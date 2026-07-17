@@ -74,19 +74,9 @@ void AREGameMode::BeginPlay()
 	if (AREBossCharacter* Boss = GetWorld()->SpawnActor<AREBossCharacter>(
 			AREBossCharacter::StaticClass(), FVector(600.f, 0.f, 90.f), FRotator::ZeroRotator, BossSpawnParams))
 	{
-		Boss->TriggerBulletPattern(EBulletPattern::Spiral, 12345, 0.f);
-		Boss->TriggerBulletPattern(EBulletPattern::Spiral, 12345, 0.f);  // #16 프로브: BaseAngle 누적 확인
-
-		// #17 데모: 0.1초마다 Spiral 발사 → 회전 나선 탄막 지속(영상 소스 + ISM 카운트 추종 검증).
+		// #64: 발사 주체를 Boss로 이관 — 랜덤 패턴 페이즈 로테이션(M5 RPC 확장 대비).
 		DemoBoss = Boss;
-		FTimerDelegate FireDel = FTimerDelegate::CreateLambda([this]()
-		{
-			if (DemoBoss)
-			{
-				DemoBoss->TriggerBulletPattern(EBulletPattern::Spiral, 12345, 0.f);
-			}
-		});
-		GetWorld()->GetTimerManager().SetTimer(DemoFireTimer, FireDel, REBulletPattern::FireIntervalSec(), /*bLoop=*/true);
+		Boss->StartFiring(/*Seed=*/12345);
 	}
 
 	// #16 프로브: 패턴 제너레이터 수학 단위 검증 (순수 함수, 프레임 무관).
@@ -122,7 +112,10 @@ void AREGameMode::EndGame(bool bVictory)
 	UE_LOG(LogTemp, Log, TEXT("[RE] EndGame: %s"), bVictory ? TEXT("VICTORY") : TEXT("DEFEAT"));
 
 	// 1) 탄막 발사 중지. 이미 뜬 탄환은 Lifetime 다할 때까지 계속 난다 (설계 합의 — 일괄 소멸 안 함).
-	GetWorld()->GetTimerManager().ClearTimer(DemoFireTimer);
+	if (DemoBoss)
+	{
+		DemoBoss->StopFiring();
+	}
 
 	APlayerController* PC = GetWorld()->GetFirstPlayerController();
 

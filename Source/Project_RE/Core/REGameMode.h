@@ -5,7 +5,6 @@
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
 #include "MassEntityTypes.h"
-#include "Engine/TimerHandle.h"
 #include "REGameMode.generated.h"
 
 class AREBossCharacter;
@@ -48,9 +47,6 @@ protected:
 	virtual void BeginPlay() override;
 
 private:
-	/** 데모: 주기적 Spiral 발사로 지속 탄막(영상 소스). */
-	FTimerHandle DemoFireTimer;
-
 	UPROPERTY()
 	TObjectPtr<AREBossCharacter> DemoBoss = nullptr;
 
