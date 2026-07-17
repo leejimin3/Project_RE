@@ -26,7 +26,7 @@
 2. **랜덤 = `FRandomStream(Seed)`.** 페이즈마다 `RandRange(0, 1)`로 Spiral/Fan 선택. 같은 시드 → 같은 패턴 순서(결정성) → M5 시드 동기화의 선행. 연속 중복 허용(2종에서 중복 회피는 강제 교대라 랜덤 의미 소멸).
 3. **페이즈 시간 상수 (헤더, 추후 튜닝):** `SpiralPhaseSec=5`, `FanPhaseSec=3`, `RestSec=1`, `FanFireIntervalSec=0.5`. Spiral 발사 주기는 기존 `BossFireInterval`(0.1s) 유지.
 4. **Fan 플레이어 조준.** 발사 시점 `GetFirstPlayerController()->GetPawn()` 위치로 CenterAngle 계산(atan2). 폰 없으면 0° 폴백. (TODO M5: 멀티는 타깃 선택 필요 — 주석만.)
-5. **Spiral 회전 스텝 조정.** `SpiralRotationStepDeg` 15° → 비정합 후보를 실RHI 스크린샷 비교 후 확정. 후보: 황금각 근사 137.5°, 소각 9.7° 등. 판단 기준: 직선 방사 소멸 + 나선 팔 가시성.
+5. **Spiral 회전 스텝 조정.** `SpiralRotationStepDeg` 15° → 비정합 후보를 실RHI 스크린샷 비교 후 확정. 후보: 황금각 근사 137.5°, 소각 9.7° 등. 판단 기준: 직선 방사 소멸 + 나선 팔 가시성. **확정: 137.5°.** 근거: 9.7°는 보스 근처에 탄이 겹쳐 뭉치며(밀도 불균일) 팔 구분이 흐려짐, 137.5°는 팔이 뚜렷이 분리되고 밀도 균일 — 두 기준 모두 137.5°가 우세.
 6. **측정 하네스 보존.** `KeepFiring != 0`이면 페이즈 로테이션을 우회하고 Spiral 클로즈드루프 연속 발사 유지 → `profile.ps1` 회귀 없음.
 
 ## 변경 범위

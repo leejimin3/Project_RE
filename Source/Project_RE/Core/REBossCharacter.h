@@ -59,8 +59,8 @@ protected:
 private:
 	/** Spiral 호출마다 누적되는 시작각. 연속 트리거 시 링이 회전한다. */
 	float SpiralBaseAngleDeg = 0.f;
-	/** Spiral 호출당 BaseAngle 증가량(deg). */
-	static constexpr float SpiralRotationStepDeg = 15.f;
+	/** Spiral 호출당 BaseAngle 증가량(deg). 링 간격(22.5°)과 비정합 → 나선 팔이 휜다(#64). */
+	static constexpr float SpiralRotationStepDeg = 137.5f;
 
 	/**
 	 *  클로즈드루프 스폰율(발사당 탄 수). 적분 제어 — 라이브 카운트가 목표에 못 미치면 램프업.
