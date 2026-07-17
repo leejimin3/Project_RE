@@ -29,8 +29,9 @@ bool UREAttackComponent::FireInDirection(const FVector& Dir)
 	}
 	LastFireTime = Now;
 
-	// 총구 높이(Z+50)에서 Dir 방향으로 사거리만큼 수평 트레이스. 자기 자신 무시.
-	const FVector Start = GetOwner()->GetActorLocation() + FVector(0.f, 0.f, 50.f);
+	// 총구 높이(Z+20)에서 Dir 방향으로 사거리만큼 수평 트레이스. 자기 자신 무시.
+	// Z+50이면 보스 캡슐(중심 90, HalfHeight 88 → 상단 178)을 스치듯 넘어가 미스 — 20으로 하향.
+	const FVector Start = GetOwner()->GetActorLocation() + FVector(0.f, 0.f, 20.f);
 	const FVector End = Start + Dir * AttackRange;
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(REAttack), /*bTraceComplex=*/false, GetOwner());
 	FHitResult Hit;
