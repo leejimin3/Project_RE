@@ -19,6 +19,11 @@
 #include "HAL/PlatformMisc.h"
 #include "REResultWidget.h"
 #include "Blueprint/UserWidget.h"
+#include "Core/REAttackComponent.h"
+#include "Core/REBossCharacter.h"
+#include "Core/REGameMode.h"
+#include "GameFramework/PawnMovementComponent.h"
+#include "EngineUtils.h"
 
 void AREPlayerController::SetupInputComponent()
 {
@@ -42,10 +47,16 @@ void AREPlayerController::SetupInputComponent()
 	DashAction->ValueType = EInputActionValueType::Boolean;
 	TopDownMappingContext->MapKey(DashAction, EKeys::SpaceBar);
 
+	// 좌클릭 공격 IA (코드생성, transient). Boolean+트리거 없음 = 홀드 동안 매 프레임 Triggered.
+	FireAction = NewObject<UInputAction>(this, TEXT("IA_Fire"));
+	FireAction->ValueType = EInputActionValueType::Boolean;
+	TopDownMappingContext->MapKey(FireAction, EKeys::LeftMouseButton);
+
 	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent))
 	{
 		EIC->BindAction(ClickMoveAction, ETriggerEvent::Triggered, this, &AREPlayerController::OnClickMove);
 		EIC->BindAction(DashAction, ETriggerEvent::Started, this, &AREPlayerController::OnDash);
+		EIC->BindAction(FireAction, ETriggerEvent::Triggered, this, &AREPlayerController::OnFire);
 	}
 }
 
@@ -73,6 +84,7 @@ void AREPlayerController::BeginPlay()
 	if (HasAuthority() && FApp::IsUnattended())
 	{
 		RunHeadlessMoveProbe();
+		RunHeadlessFireProbe();
 		RunHeadlessDashProbe();
 	}
 }
@@ -112,6 +124,41 @@ void AREPlayerController::Server_Dash_Implementation(FVector Dir)
 	}
 }
 
+void AREPlayerController::OnFire(const FInputActionValue& Value)
+{
+	// 홀드 연사 — Triggered가 매 프레임 오므로 로컬에서 AttackInterval 주기로 페이싱.
+	// 서버도 rate limit을 재검증하므로 이 페이싱은 RPC 트래픽 절약용.
+	APawn* P = GetPawn();
+	if (!P)
+	{
+		return;
+	}
+	UREAttackComponent* Attack = P->FindComponentByClass<UREAttackComponent>();
+	if (!Attack)
+	{
+		return;
+	}
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (LastFireRequestTime >= 0.0 && Now - LastFireRequestTime < Attack->GetAttackInterval())
+	{
+		return;
+	}
+
+	// 커서 방향 계산은 로컬(커서/카메라는 로컬 전용) — 방향만 서버로 (OnDash 동일 패턴).
+	FHitResult Hit;
+	if (!GetHitResultUnderCursor(ECC_Visibility, false, Hit) || !Hit.bBlockingHit)
+	{
+		return;
+	}
+	const FVector Dir = (Hit.ImpactPoint - P->GetActorLocation()).GetSafeNormal2D();
+	if (Dir.IsNearlyZero())
+	{
+		return;
+	}
+	LastFireRequestTime = Now;
+	Server_RequestFire(Dir);
+}
+
 void AREPlayerController::Client_ShowResult_Implementation(bool bVictory)
 {
 	if (UREResultWidget* Result = CreateWidget<UREResultWidget>(this, UREResultWidget::StaticClass()))
@@ -139,6 +186,44 @@ void AREPlayerController::Server_RequestMove_Implementation(FVector Target)
 
 	UE_LOG(LogTemp, Log, TEXT("[Move] Server_RequestMove recv target=%s"), *NavLoc.Location.ToString());
 	UAIBlueprintHelperLibrary::SimpleMoveToLocation(this, NavLoc.Location);
+}
+
+void AREPlayerController::Server_RequestFire_Implementation(FVector Dir)
+{
+	// 게임오버 후 잔여 RPC 무시 — 구 AutoFire StopFiring의 대체.
+	AREGameMode* GM = GetWorld()->GetAuthGameMode<AREGameMode>();
+	if (GM && GM->IsGameOver())
+	{
+		return;
+	}
+
+	APawn* P = GetPawn();
+	if (!P)
+	{
+		return;
+	}
+	// 클라 입력 신뢰 금지 — 서버에서 재정규화.
+	const FVector Dir2D = Dir.GetSafeNormal2D();
+	if (Dir2D.IsNearlyZero())
+	{
+		return;
+	}
+	UREAttackComponent* Attack = P->FindComponentByClass<UREAttackComponent>();
+	if (!Attack)
+	{
+		return;
+	}
+
+	if (Attack->FireInDirection(Dir2D))
+	{
+		// 발사 성공 시에만 정지+회전 — rate limit에 걸린 스팸 RPC가 이동을 끊지 못하게.
+		StopMovement();                                        // 우클릭 이동 패스팔로잉 중단
+		if (UPawnMovementComponent* Move = P->GetMovementComponent())
+		{
+			Move->StopMovementImmediately();                   // 잔여 속도 제거 (로아 평타 정지)
+		}
+		P->SetActorRotation(FRotator(0.f, Dir2D.Rotation().Yaw, 0.f));  // 커서 방향 회전
+	}
 }
 
 void AREPlayerController::RunHeadlessMoveProbe()
@@ -179,6 +264,38 @@ void AREPlayerController::RunHeadlessMoveProbe()
 		GetWorld()->GetTimerManager().SetTimer(ProbeLogTimer, LogDel, 0.5f, /*bLoop=*/true);
 	});
 	GetWorld()->GetTimerManager().SetTimer(ProbeMoveTimer, MoveDel, 1.0f, /*bLoop=*/false);
+}
+
+void AREPlayerController::RunHeadlessFireProbe()
+{
+	// t=1.5s: 보스 방향 발사 1회(hit 기대) + 즉시 재발사(rate limit 차단 기대).
+	// 이동 프로브(1.0s, +Y 이동)와 대쉬 프로브(2.0s, +X) 사이 — 서로 간섭 없음.
+	// 발사 성공 시 StopMovement가 이동 프로브를 끊지만 dist 로그는 계속 나옴(수렴만 중단) — 게이트 아님.
+	FTimerDelegate FireDel = FTimerDelegate::CreateLambda([this]()
+	{
+		APawn* P = GetPawn();
+		if (!P)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Attack] probe: no pawn"));
+			return;
+		}
+		AREBossCharacter* Boss = nullptr;
+		for (TActorIterator<AREBossCharacter> It(GetWorld()); It; ++It)
+		{
+			Boss = *It;
+			break;
+		}
+		if (!Boss)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Attack] probe: no boss"));
+			return;
+		}
+		const FVector Dir = (Boss->GetActorLocation() - P->GetActorLocation()).GetSafeNormal2D();
+		UE_LOG(LogTemp, Log, TEXT("[Attack] probe fire dir=%s"), *Dir.ToString());
+		Server_RequestFire(Dir);   // 1발 — hit boss 기대
+		Server_RequestFire(Dir);   // 즉시 재발사 — rate-limited 기대
+	});
+	GetWorld()->GetTimerManager().SetTimer(ProbeFireTimer, FireDel, 1.5f, false);
 }
 
 void AREPlayerController::RunHeadlessDashProbe()

@@ -46,11 +46,21 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void Server_Dash(FVector Dir);
 
+	/** 좌클릭 핸들러: 홀드 연사 — 커서 방향을 로컬 페이싱 후 서버로 발사 요청 */
+	void OnFire(const FInputActionValue& Value);
+
+	/** 발사 요청 서버 RPC. 서버가 rate limit 재검증 후 정지·회전·히트스캔. */
+	UFUNCTION(Server, Reliable)
+	void Server_RequestFire(FVector Dir);
+
 	UPROPERTY()
 	UInputAction* ClickMoveAction;
 
 	UPROPERTY()
 	UInputAction* DashAction;
+
+	UPROPERTY()
+	UInputAction* FireAction;
 
 	UPROPERTY()
 	UInputMappingContext* TopDownMappingContext;
@@ -61,6 +71,14 @@ private:
 
 	/** 헤드리스(-unattended) 대쉬 프로브. 서버 권위에서만 발동. */
 	void RunHeadlessDashProbe();
+
+	/** 클라 발사 페이싱 — 마지막 발사 요청 시각(월드초). 홀드 시 Triggered가 매 프레임 오는 것 억제. */
+	double LastFireRequestTime = -1.0;
+
+	/** 헤드리스(-unattended) 발사 프로브. 서버 권위에서만 발동. */
+	void RunHeadlessFireProbe();
+
+	FTimerHandle ProbeFireTimer;
 
 	FTimerHandle ProbeDashTimer;
 	FVector ProbeDashStart = FVector::ZeroVector;
