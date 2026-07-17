@@ -16,14 +16,15 @@
 #include "REStatsSettings.h"
 
 /**
- *  목표 동시 탄환 수. 발사 시점에 조회하므로 재시작 없이 다음 발사부터 반영된다.
- *  TriggerBulletPattern이 라이브 카운트(ISM) 피드백 클로즈드루프로 발사당 탄 수를 이 목표에 맞춘다(#51).
- *  기본 480 = 기존 하드코딩(16발 / 0.1s × 3s)과 동일 — 회귀 없음.
+ *  목표 동시 탄환 수의 측정용 런타임 오버라이드. 발사 시점 조회 — 재시작 없이 다음 발사부터 반영.
+ *  -1(기본) = 미설정 → Settings(BulletCount) 사용. 0 이상 = 이 값 사용
+ *  (0은 Mass off 스위치 — scripts/profile.ps1 Actor 비교군 경로가 의존, 유효값이라 센티널로 못 쓴다).
+ *  TriggerBulletPattern이 라이브 카운트(ISM) 피드백 클로즈드루프로 발사당 탄 수를 목표에 맞춘다(#51).
  */
 static TAutoConsoleVariable<int32> CVarBulletCount(
 	TEXT("re.Bullets.Count"),
-	480,
-	TEXT("목표 동시 탄환 수(steady-state). 다음 발사부터 반영."),
+	-1,
+	TEXT("측정용 오버라이드: -1=미설정(Settings BulletCount 사용), 0 이상=목표 동시 탄환 수."),
 	ECVF_Cheat);
 
 // #51 클로즈드루프 적분 게인. 수명 지연(수명/발사주기 ≈ 30발) 대비 크면 진동한다.
@@ -89,7 +90,9 @@ void AREBossCharacter::TriggerBulletPattern(EBulletPattern Pattern, int32 Seed, 
 	case EBulletPattern::Spiral:
 	{
 		// 발사 시점 조회 — CVar 변경이 재시작/타이머 재설정 없이 다음 발사부터 반영된다.
-		const int32 TargetLive = CVarBulletCount.GetValueOnGameThread();
+		// CVar ≥ 0 = 측정용 오버라이드, -1 = Settings(BulletCount)가 기본값.
+		const int32 CVarCount = CVarBulletCount.GetValueOnGameThread();
+		const int32 TargetLive = CVarCount >= 0 ? CVarCount : GetDefault<UREStatsSettings>()->BulletCount;
 
 		// 라이브 탄환 수 = ISM 인스턴스 수(렌더 프로세서가 매 프레임 엔티티 수로 동기화).
 		// 관측 불가(데디서버 등 ISM 없음)면 CurrentLive=-1 → 피드포워드 폴백.
