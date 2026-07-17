@@ -15,6 +15,7 @@
 #include "UObject/ConstructorHelpers.h"
 #include "REStatsSettings.h"
 #include "TimerManager.h"
+#include "GameFramework/PlayerController.h"
 
 /**
  *  측정용 클로즈드루프 오버라이드. 발사 시점 조회 — 재시작 없이 다음 발사부터 반영.
@@ -220,8 +221,19 @@ void AREBossCharacter::TriggerBulletPattern(EBulletPattern Pattern, int32 Seed, 
 	case EBulletPattern::Fan:
 	{
 		REBulletPattern::FFanParams FP;
+		// 플레이어 방향 조준. 폰 없으면 0°(기존 기본) 폴백.
+		// TODO M5: 멀티는 타깃 선택 필요 — 지금은 첫 플레이어 고정.
+		if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+		{
+			if (const APawn* Target = PC->GetPawn())
+			{
+				const FVector D = Target->GetActorLocation() - GetActorLocation();
+				FP.CenterAngleDeg = FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X));
+			}
+		}
 		Params = REBulletPattern::GenerateFan(GetActorLocation(), FP);
-		UE_LOG(LogTemp, Log, TEXT("[RE] Boss Fan: Spread=%.1f -> N=%d"), FP.SpreadDeg, Params.Num());
+		UE_LOG(LogTemp, Log, TEXT("[RE] Boss Fan: Center=%.1f Spread=%.1f -> N=%d"),
+			FP.CenterAngleDeg, FP.SpreadDeg, Params.Num());
 		break;
 	}
 	case EBulletPattern::Homing:
