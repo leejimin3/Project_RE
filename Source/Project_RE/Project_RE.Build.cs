@@ -25,7 +25,8 @@ public class Project_RE : ModuleRules
 			"GameplayAbilities",
 			"GameplayTags",
 			"GameplayTasks",
-			"NavigationSystem"
+			"NavigationSystem",
+			"DeveloperSettings"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

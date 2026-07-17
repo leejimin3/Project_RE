@@ -32,16 +32,13 @@ public:
 	float GetAttackInterval() const { return AttackInterval; }
 
 private:
-	/** 발사당 데미지. (③ 스탯 이슈에서 Settings 이관 예정) */
-	UPROPERTY(EditDefaultsOnly, Category = "Attack")
+	/** 발사당 데미지. Settings(AttackDamage) 단일 출처 — 생성자에서 로드. */
 	float Damage = 10.f;
 
-	/** 발사 간격(s). 서버 rate limit + 클라 페이싱 공용. */
-	UPROPERTY(EditDefaultsOnly, Category = "Attack")
+	/** 발사 간격(s). Settings(AttackInterval) 단일 출처. 서버 rate limit + 클라 페이싱 공용. */
 	float AttackInterval = 0.25f;
 
-	/** 히트스캔 사거리(uu). */
-	UPROPERTY(EditDefaultsOnly, Category = "Attack")
+	/** 히트스캔 사거리(uu). Settings(AttackRange) 단일 출처. */
 	float AttackRange = 2000.f;
 
 	/** 발사 모션 몽타주. 코스메틱 — 싱글/리슨은 서버 재생 = 화면 표시. */

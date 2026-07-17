@@ -15,6 +15,7 @@
 #include "Abilities/REGA_Dash.h"
 #include "REHealthBarComponent.h"
 #include "REGameMode.h"
+#include "REStatsSettings.h"
 
 ARECharacterBase::ARECharacterBase()
 {
@@ -25,7 +26,8 @@ ARECharacterBase::ARECharacterBase()
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationRoll = false;
 
-	// 체력 초기화 — MaxHealth 조정 시 정합 유지
+	// 체력 초기화 — Settings 단일 출처 (M3.5 ③).
+	MaxHealth = GetDefault<UREStatsSettings>()->PlayerMaxHealth;
 	Health = MaxHealth;
 
 	// GAS: ASC 부착 — Pawn 소유, 복제 켜고 Mixed 모드(오너 클라만 GE 복제).
