@@ -11,6 +11,7 @@
 #include "REBulletPatternGenerator.h"
 #include "TimerManager.h"
 #include "HAL/IConsoleManager.h"
+#include "REStatsSettings.h"
 
 namespace
 {
@@ -34,6 +35,14 @@ AREGameMode::AREGameMode()
 void AREGameMode::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// M3.5 ③: 스탯 로드 확인 — ini 반영 검증 프로브 (재시작 반영 원칙의 관측점).
+	{
+		const UREStatsSettings* Stats = GetDefault<UREStatsSettings>();
+		UE_LOG(LogTemp, Log, TEXT("[Stats] Dmg=%.1f AtkInt=%.2f Range=%.0f PHP=%.0f BHP=%.0f BSpd=%.0f BLife=%.1f BInt=%.2f"),
+			Stats->AttackDamage, Stats->AttackInterval, Stats->AttackRange, Stats->PlayerMaxHealth,
+			Stats->BossMaxHealth, Stats->BulletSpeed, Stats->BulletLifetime, Stats->BossFireInterval);
+	}
 
 	// Mass 스모크 테스트: 서브시스템 얻고 엔티티 1개 생성 → 로그.
 	// GameMode는 서버 권위라 HasAuthority 가드 불필요.
