@@ -11,7 +11,7 @@
 class USpringArmComponent;
 class UCameraComponent;
 class UAbilitySystemComponent;
-class UREAutoFireComponent;
+class UREAttackComponent;
 class UREGA_Dash;
 class UREHealthBarComponent;
 
@@ -54,9 +54,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Abilities", meta = (AllowPrivateAccess = "true"))
 	UAbilitySystemComponent* AbilitySystemComponent;
 
-	/** 자동사격 컴포넌트 (#26). 서버에서만 구동. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AutoFire", meta = (AllowPrivateAccess = "true"))
-	UREAutoFireComponent* AutoFireComponent;
+	/** 수동공격 컴포넌트 (M3.5 ①). 서버에서 Server_RequestFire 경유로만 발사. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Attack", meta = (AllowPrivateAccess = "true"))
+	UREAttackComponent* AttackComponent;
 
 	/** 머리 위 HP바 (#29). 셋업은 컴포넌트가 자체 처리. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI", meta = (AllowPrivateAccess = "true"))

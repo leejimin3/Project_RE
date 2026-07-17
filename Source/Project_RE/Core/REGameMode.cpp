@@ -10,7 +10,6 @@
 #include "REBossCharacter.h"
 #include "REBulletPatternGenerator.h"
 #include "TimerManager.h"
-#include "REAutoFireComponent.h"
 #include "HAL/IConsoleManager.h"
 
 namespace
@@ -118,17 +117,7 @@ void AREGameMode::EndGame(bool bVictory)
 
 	APlayerController* PC = GetWorld()->GetFirstPlayerController();
 
-	// 2) 자동사격 중지. 서버 타이머 구동이라 입력 차단으로는 안 멈춘다.
-	//    AutoFireComponent는 캐릭터의 protected 멤버 — accessor 추가 대신 컴포넌트 조회.
-	if (ARECharacterBase* Player = PC ? Cast<ARECharacterBase>(PC->GetPawn()) : nullptr)
-	{
-		if (UREAutoFireComponent* AutoFire = Player->FindComponentByClass<UREAutoFireComponent>())
-		{
-			AutoFire->StopFiring();
-		}
-	}
-
-	// 3) 결과 화면 + 입력 차단 — 오너 클라 실행(싱글은 로컬 즉시).
+	// 2) 결과 화면 + 입력 차단 — 오너 클라 실행(싱글은 로컬 즉시).
 	if (AREPlayerController* REPC = Cast<AREPlayerController>(PC))
 	{
 		REPC->Client_ShowResult(bVictory);

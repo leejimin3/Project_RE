@@ -10,7 +10,7 @@
 #include "UObject/ConstructorHelpers.h"
 #include "Net/UnrealNetwork.h"
 #include "AbilitySystemComponent.h"
-#include "REAutoFireComponent.h"
+#include "REAttackComponent.h"
 #include "GameplayAbilitySpec.h"
 #include "Abilities/REGA_Dash.h"
 #include "REHealthBarComponent.h"
@@ -33,8 +33,8 @@ ARECharacterBase::ARECharacterBase()
 	AbilitySystemComponent->SetIsReplicated(true);
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
 
-	// 자동사격 부착 — 컴포넌트가 BeginPlay에서 서버 여부를 스스로 판단.
-	AutoFireComponent = CreateDefaultSubobject<UREAutoFireComponent>(TEXT("AutoFire"));
+	// 수동공격 부착 — 발사는 컨트롤러 Server_RequestFire → FireInDirection 경유.
+	AttackComponent = CreateDefaultSubobject<UREAttackComponent>(TEXT("Attack"));
 
 	// HP바 (#29) — 플레이어 초록. 회전/사이즈/위젯클래스는 컴포넌트 생성자가 처리.
 	HealthBar = CreateDefaultSubobject<UREHealthBarComponent>(TEXT("HealthBar"));
