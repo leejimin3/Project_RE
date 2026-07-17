@@ -9,6 +9,10 @@
 #include "HAL/IConsoleManager.h"
 #include "REBulletRenderSubsystem.h"                        // 라이브 카운트(ISM) 조회 (#51)
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Engine/SkeletalMesh.h"
+#include "UObject/ConstructorHelpers.h"
 
 /**
  *  목표 동시 탄환 수. 발사 시점에 조회하므로 재시작 없이 다음 발사부터 반영된다.
@@ -40,6 +44,24 @@ AREBossCharacter::AREBossCharacter()
 	HealthBar = CreateDefaultSubobject<UREHealthBarComponent>(TEXT("HealthBar"));
 	HealthBar->SetupAttachment(RootComponent);
 	HealthBar->BarColor = FLinearColor::Red;
+
+	// 보스 가시화 (M3.5 ②) — Quinn 메시 로드 (실패해도 크래시 없이 진행).
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> MeshAsset(
+		TEXT("/Game/Characters/Mannequins/Meshes/SKM_Quinn_Simple.SKM_Quinn_Simple"));
+	if (MeshAsset.Succeeded())
+	{
+		GetMesh()->SetSkeletalMesh(MeshAsset.Object);
+		GetMesh()->SetRelativeLocation(FVector(0.f, 0.f, -90.f));
+		GetMesh()->SetRelativeRotation(FRotator(0.f, -90.f, 0.f));
+	}
+
+	// 로코모션 애님BP — 고정형 보스라 idle 상태 재생이 목적.
+	static ConstructorHelpers::FClassFinder<UAnimInstance> AnimAsset(
+		TEXT("/Game/Characters/Mannequins/Anims/Unarmed/ABP_Unarmed"));
+	if (AnimAsset.Succeeded())
+	{
+		GetMesh()->SetAnimInstanceClass(AnimAsset.Class);
+	}
 }
 
 void AREBossCharacter::TriggerBulletPattern(EBulletPattern Pattern, int32 Seed, float StartTime)
