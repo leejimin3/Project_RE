@@ -47,5 +47,43 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		}
 	}
 
+	// 곡사탄 ISM — 주황 구체(직선탄 빨강과 구분). Z 살아있어 궤적 높이가 보인다.
+	ArcISM = NewObject<UInstancedStaticMeshComponent>(Holder);
+	ArcISM->SetupAttachment(ISM);
+	ArcISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ArcISM->bAffectDynamicIndirectLighting = false;
+	ArcISM->bAffectDistanceFieldLighting = false;
+	ArcISM->RegisterComponent();
+	if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
+	{
+		ArcISM->SetStaticMesh(Mesh);
+	}
+	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
+	{
+		if (UMaterialInstanceDynamic* Dyn = ArcISM->CreateDynamicMaterialInstance(0, Base))
+		{
+			Dyn->SetVectorParameterValue(TEXT("Color"), FLinearColor(1.f, 0.5f, 0.f));  // 주황
+		}
+	}
+
+	// 착지 마커 ISM — 빨강 평면 원. Cylinder를 납작하게(Z scale 축소) 눌러 디스크로.
+	MarkerISM = NewObject<UInstancedStaticMeshComponent>(Holder);
+	MarkerISM->SetupAttachment(ISM);
+	MarkerISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	MarkerISM->bAffectDynamicIndirectLighting = false;
+	MarkerISM->bAffectDistanceFieldLighting = false;
+	MarkerISM->RegisterComponent();
+	if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder")))
+	{
+		MarkerISM->SetStaticMesh(Mesh);
+	}
+	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
+	{
+		if (UMaterialInstanceDynamic* Dyn = MarkerISM->CreateDynamicMaterialInstance(0, Base))
+		{
+			Dyn->SetVectorParameterValue(TEXT("Color"), FLinearColor::Red);
+		}
+	}
+
 	UE_LOG(LogTemp, Log, TEXT("[RE] RenderSubsystem: ISM ready (mesh=%d)"), ISM->GetStaticMesh() != nullptr);
 }

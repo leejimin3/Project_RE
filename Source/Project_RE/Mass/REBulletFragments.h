@@ -30,3 +30,25 @@ struct FBulletTag : public FMassTag
 {
 	GENERATED_BODY()
 };
+
+/** 곡사탄 시뮬 상태. 위치는 FTransformFragment, arc 파라미터는 여기. */
+USTRUCT()
+struct FArcBulletFragment : public FMassFragment
+{
+	GENERATED_BODY()
+
+	FVector Start      = FVector::ZeroVector;
+	FVector Target     = FVector::ZeroVector;
+	float   FlightTime = 1.5f;
+	float   Elapsed    = 0.f;
+	float   MaxHeight  = 400.f;
+	float   Damage     = 15.f;
+	float   Radius     = 120.f;
+};
+
+/** 곡사탄 식별 태그. 기존 FBulletTag(직선탄)와 분리 — arc 프로세서만 선별. */
+USTRUCT()
+struct FArcBulletTag : public FMassTag
+{
+	GENERATED_BODY()
+};
