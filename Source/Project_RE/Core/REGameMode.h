@@ -41,6 +41,9 @@ public:
 	 */
 	void EndGame(bool bVictory);
 
+	/** 승패 확정 여부 — 게임오버 후 잔여 발사 RPC 무시용 (REPlayerController가 조회). */
+	bool IsGameOver() const { return bGameOver; }
+
 protected:
 	virtual void BeginPlay() override;
 
