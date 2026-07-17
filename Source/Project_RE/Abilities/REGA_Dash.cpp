@@ -6,6 +6,11 @@
 #include "Core/RECharacterBase.h"
 #include "Abilities/Tasks/AbilityTask_ApplyRootMotionConstantForce.h"
 #include "GameFramework/RootMotionSource.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimSequence.h"
+#include "Animation/AnimMontage.h"
+#include "UObject/ConstructorHelpers.h"
 
 UREGA_Dash::UREGA_Dash()
 {
@@ -19,6 +24,14 @@ UREGA_Dash::UREGA_Dash()
 
 	// 활성 동안 소유자에 State.Dashing 부여(#27 무적판정 계약). EndAbility 시 자동 해제.
 	ActivationOwnedTags.AddTag(RETag_State_Dashing);
+
+	// 대쉬 모션 (M3.5 ②) — 실패해도 크래시 없이 진행.
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> DashAnimAsset(
+		TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Jump/MM_Dash.MM_Dash"));
+	if (DashAnimAsset.Succeeded())
+	{
+		DashAnim = DashAnimAsset.Object;
+	}
 }
 
 void UREGA_Dash::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
@@ -61,6 +74,20 @@ void UREGA_Dash::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 
 	Task->OnFinish.AddDynamic(this, &UREGA_Dash::OnDashFinished);
 	Task->ReadyForActivation();
+
+	// 대쉬 모션 — 코스메틱, RootMotion 이동(위 태스크)과 독립.
+	// TODO M4: 데디 원격 클라 표시용 Multicast 검토.
+	if (DashAnim)
+	{
+		if (UAnimInstance* AnimInst = Char->GetMesh() ? Char->GetMesh()->GetAnimInstance() : nullptr)
+		{
+			// PlaySlotAnimationAsDynamicMontage는 float가 아니라 UAnimMontage*를 반환 — 길이는 GetPlayLength()로 조회.
+			UAnimMontage* PlayedMontage = AnimInst->PlaySlotAnimationAsDynamicMontage(
+				DashAnim, FName("DefaultSlot"), /*BlendInTime=*/0.1f, /*BlendOutTime=*/0.1f);
+			const float Len = PlayedMontage ? PlayedMontage->GetPlayLength() : 0.f;
+			UE_LOG(LogTemp, Log, TEXT("[Dash] anim len=%.2f"), Len);
+		}
+	}
 }
 
 void UREGA_Dash::OnDashFinished()
