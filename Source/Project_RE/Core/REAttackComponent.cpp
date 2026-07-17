@@ -5,11 +5,24 @@
 #include "Engine/DamageEvents.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/Character.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "UObject/ConstructorHelpers.h"
 
 UREAttackComponent::UREAttackComponent()
 {
 	// 호출 구동(Server RPC 경유) — 틱/타이머 불필요.
 	PrimaryComponentTick.bCanEverTick = false;
+
+	// 발사 모션 (M3.5 ②) — 실패해도 크래시 없이 진행(모션만 생략).
+	static ConstructorHelpers::FObjectFinder<UAnimMontage> MontageAsset(
+		TEXT("/Game/Characters/Mannequins/Anims/Pistol/MM_Pistol_Fire_Montage.MM_Pistol_Fire_Montage"));
+	if (MontageAsset.Succeeded())
+	{
+		FireMontage = MontageAsset.Object;
+	}
 }
 
 bool UREAttackComponent::FireInDirection(const FVector& Dir)
@@ -28,6 +41,20 @@ bool UREAttackComponent::FireInDirection(const FVector& Dir)
 		return false;
 	}
 	LastFireTime = Now;
+
+	// 발사 모션 — 코스메틱, 판정과 무관하게 발사 자체에 재생.
+	// TODO M4: 데디에선 원격 클라에 안 보임 — Multicast RPC로 교체.
+	if (FireMontage)
+	{
+		if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
+		{
+			if (UAnimInstance* AnimInst = OwnerChar->GetMesh() ? OwnerChar->GetMesh()->GetAnimInstance() : nullptr)
+			{
+				const float Len = AnimInst->Montage_Play(FireMontage, 1.0f);
+				UE_LOG(LogTemp, Log, TEXT("[Attack] fire montage len=%.2f"), Len);
+			}
+		}
+	}
 
 	// 총구 높이(Z+20)에서 Dir 방향으로 사거리만큼 수평 트레이스. 자기 자신 무시.
 	// Z+50이면 보스 캡슐(중심 90, HalfHeight 88 → 상단 178)을 스치듯 넘어가 미스 — 20으로 하향.

@@ -6,6 +6,8 @@
 #include "Components/ActorComponent.h"
 #include "REAttackComponent.generated.h"
 
+class UAnimMontage;
+
 /**
  *  플레이어 수동공격 컴포넌트 (M3.5 ①, 구 REAutoFireComponent #26).
  *  서버에서 FireInDirection(Dir) 호출 → Dir 방향 히트스캔 1발 → 보스 히트 시 TakeDamage.
@@ -41,6 +43,10 @@ private:
 	/** 히트스캔 사거리(uu). */
 	UPROPERTY(EditDefaultsOnly, Category = "Attack")
 	float AttackRange = 2000.f;
+
+	/** 발사 모션 몽타주. 코스메틱 — 싱글/리슨은 서버 재생 = 화면 표시. */
+	UPROPERTY()
+	TObjectPtr<UAnimMontage> FireMontage;
 
 	/** 서버 마지막 발사 시각(월드초). rate limit 기준. -1 = 미발사. */
 	double LastFireTime = -1.0;
