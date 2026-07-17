@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "REBulletSpawnSubsystem.h"   // FBulletSpawnParams
+#include "Math/RandomStream.h"
 
 /**
  *  보스 탄막 패턴 발사 수학. 엔진/액터 의존 없는 순수 함수 → headless 단위 검증 가능.
@@ -50,4 +51,29 @@ namespace REBulletPattern
 	 *  steady-state 동시 탄환 ≈ 발사당_탄수 / 발사주기 × 수명 이 되도록 Count를 호출자가 조절한다.
 	 */
 	FSpiralParams MakeSpiralRing(int32 Count, float BaseAngleDeg);
+
+	/** 곡사탄 1발 스폰 파라미터(UStruct 아님 — 함수 인자 전용). */
+	struct FArcBulletSpawnParams
+	{
+		FVector Start      = FVector::ZeroVector;
+		FVector Target     = FVector::ZeroVector;
+		float   FlightTime = 1.5f;
+		float   MaxHeight  = 400.f;
+		float   Damage     = 15.f;
+		float   Radius     = 120.f;
+	};
+
+	//~ 착지점 생성기 — 전부 월드 착지점(Z=GroundZ) 배열 반환. 순수함수(FRandomStream 제외).
+	/** 원형 링: 중심 C, 반경 R, N개 균등각. */
+	TArray<FVector> GenRing(const FVector& Center, float Radius, int32 N, float GroundZ);
+	/** 라인: 보스→플레이어 방향의 수직 벽. 중심=플레이어, 길이 WallLen, N등분. */
+	TArray<FVector> GenLine(const FVector& BossLoc, const FVector& PlayerLoc, float WallLen, int32 N, float GroundZ);
+	/** 격자: 중심 기준 ±Extent 범위 Cols×Rows 균등 그리드. */
+	TArray<FVector> GenGrid(const FVector& Center, float ExtentX, float ExtentY, int32 Cols, int32 Rows, float GroundZ);
+	/** 나선: 아르키메데스 — 각 i·137.5°, 반경 MaxRadius·√((i+1)/N). */
+	TArray<FVector> GenArcSpiral(const FVector& Center, float MaxRadius, int32 N, float GroundZ);
+	/** 플레이어 조준: 중심 1점 + 반경 ClusterRadius 링 RingN점. */
+	TArray<FVector> GenPlayerCluster(const FVector& PlayerLoc, float ClusterRadius, int32 RingN, float GroundZ);
+	/** 랜덤: 중심 기준 반경 ArenaRadius 내 균등 면적 분포 N점(√ 보정). */
+	TArray<FVector> GenRandom(const FVector& Center, float ArenaRadius, int32 N, FRandomStream& Rng, float GroundZ);
 }
