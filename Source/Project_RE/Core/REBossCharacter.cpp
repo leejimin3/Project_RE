@@ -16,15 +16,15 @@
 #include "REStatsSettings.h"
 
 /**
- *  목표 동시 탄환 수의 측정용 런타임 오버라이드. 발사 시점 조회 — 재시작 없이 다음 발사부터 반영.
- *  -1(기본) = 미설정 → Settings(BulletCount) 사용. 0 이상 = 이 값 사용
+ *  측정용 클로즈드루프 오버라이드. 발사 시점 조회 — 재시작 없이 다음 발사부터 반영.
+ *  -1(기본) = 오픈루프: Settings(BulletsPerShot) 고정 발수 — 게임플레이 경로, 패턴 균일.
+ *  0 이상 = 이 값을 목표 동시 탄수로 클로즈드루프(#51) 가동 — M3 측정 하네스 전제
  *  (0은 Mass off 스위치 — scripts/profile.ps1 Actor 비교군 경로가 의존, 유효값이라 센티널로 못 쓴다).
- *  TriggerBulletPattern이 라이브 카운트(ISM) 피드백 클로즈드루프로 발사당 탄 수를 목표에 맞춘다(#51).
  */
 static TAutoConsoleVariable<int32> CVarBulletCount(
 	TEXT("re.Bullets.Count"),
 	-1,
-	TEXT("측정용 오버라이드: -1=미설정(Settings BulletCount 사용), 0 이상=목표 동시 탄환 수."),
+	TEXT("측정용: -1=오픈루프(Settings BulletsPerShot 고정), 0 이상=목표 동시 탄수 클로즈드루프."),
 	ECVF_Cheat);
 
 // #51 클로즈드루프 적분 게인. 수명 지연(수명/발사주기 ≈ 30발) 대비 크면 진동한다.
@@ -90,53 +90,64 @@ void AREBossCharacter::TriggerBulletPattern(EBulletPattern Pattern, int32 Seed, 
 	case EBulletPattern::Spiral:
 	{
 		// 발사 시점 조회 — CVar 변경이 재시작/타이머 재설정 없이 다음 발사부터 반영된다.
-		// CVar ≥ 0 = 측정용 오버라이드, -1 = Settings(BulletCount)가 기본값.
+		// CVar ≥ 0 = 측정용 클로즈드루프(동시 탄수 유지 — M3 하네스 전제),
+		// -1(기본) = 오픈루프: Settings(BulletsPerShot) 고정 발수 → 링이 매 발사 균일.
 		const int32 CVarCount = CVarBulletCount.GetValueOnGameThread();
-		const int32 TargetLive = CVarCount >= 0 ? CVarCount : GetDefault<UREStatsSettings>()->BulletCount;
-
-		// 라이브 탄환 수 = ISM 인스턴스 수(렌더 프로세서가 매 프레임 엔티티 수로 동기화).
-		// 관측 불가(데디서버 등 ISM 없음)면 CurrentLive=-1 → 피드포워드 폴백.
-		int32 CurrentLive = -1;
-		if (const UREBulletRenderSubsystem* RS = GetWorld()->GetSubsystem<UREBulletRenderSubsystem>())
-		{
-			if (const UInstancedStaticMeshComponent* ISM = RS->GetISM())
-			{
-				CurrentLive = ISM->GetInstanceCount();
-			}
-		}
-
-		const float FeedFwd = TargetLive * REBulletPattern::FireIntervalSec() / REBulletPattern::BulletLifetimeSec();
 		int32 Count;
-		if (CurrentLive >= 0 && TargetLive > 0)
+		if (CVarCount < 0)
 		{
-			// 클로즈드루프(적분 제어): 스폰율을 오차만큼 램프. 소멸률이 얼마든 라이브=목표에서 램프가 멎어 정상상태 오차 0.
-			// 단, 첫 1수명 동안은 아직 탄환이 채워지는 중이라 오차가 크게 양수 → 적분하면 와인드업으로 대폭 오버슈트한다.
-			// 그 구간은 피드포워드로 채우기만 하고, 채워진 뒤(정상상태 근처)부터 적분으로 소멸분을 보정한다.
-			const int32 FillShots = FMath::CeilToInt(REBulletPattern::BulletLifetimeSec() / REBulletPattern::FireIntervalSec());
-			if (SpiralShotCount < FillShots)
-			{
-				SpiralSpawnRate = FeedFwd;
-			}
-			else
-			{
-				SpiralSpawnRate += CVarSpawnKi.GetValueOnGameThread() * (TargetLive - CurrentLive);
-				SpiralSpawnRate = FMath::Clamp(SpiralSpawnRate, 0.f, (float)TargetLive);  // anti-windup 상한
-			}
-			// 소수부 이월 내림 — 소형 타깃(rate~3.3)에서 round()가 매 발사 4로 올려 +20% 오버슛하는 것 방지.
-			SpiralSpawnAccum += SpiralSpawnRate;
-			Count = FMath::FloorToInt(SpiralSpawnAccum);
-			SpiralSpawnAccum -= Count;
+			// 게임플레이 경로 — 발사당 탄수 고정. 동시 탄수는 발수×수명/주기로 자연 결정(제한 없음).
+			Count = GetDefault<UREStatsSettings>()->BulletsPerShot;
 		}
 		else
 		{
-			Count = FMath::RoundToInt(FeedFwd);  // 라이브 관측 불가(데디서버 등) → 오픈루프 폴백
+			const int32 TargetLive = CVarCount;
+
+			// 라이브 탄환 수 = ISM 인스턴스 수(렌더 프로세서가 매 프레임 엔티티 수로 동기화).
+			// 관측 불가(데디서버 등 ISM 없음)면 CurrentLive=-1 → 피드포워드 폴백.
+			int32 CurrentLive = -1;
+			if (const UREBulletRenderSubsystem* RS = GetWorld()->GetSubsystem<UREBulletRenderSubsystem>())
+			{
+				if (const UInstancedStaticMeshComponent* ISM = RS->GetISM())
+				{
+					CurrentLive = ISM->GetInstanceCount();
+				}
+			}
+
+			const float FeedFwd = TargetLive * REBulletPattern::FireIntervalSec() / REBulletPattern::BulletLifetimeSec();
+			if (CurrentLive >= 0 && TargetLive > 0)
+			{
+				// 클로즈드루프(적분 제어): 스폰율을 오차만큼 램프. 소멸률이 얼마든 라이브=목표에서 램프가 멎어 정상상태 오차 0.
+				// 단, 첫 1수명 동안은 아직 탄환이 채워지는 중이라 오차가 크게 양수 → 적분하면 와인드업으로 대폭 오버슈트한다.
+				// 그 구간은 피드포워드로 채우기만 하고, 채워진 뒤(정상상태 근처)부터 적분으로 소멸분을 보정한다.
+				const int32 FillShots = FMath::CeilToInt(REBulletPattern::BulletLifetimeSec() / REBulletPattern::FireIntervalSec());
+				if (SpiralShotCount < FillShots)
+				{
+					SpiralSpawnRate = FeedFwd;
+				}
+				else
+				{
+					SpiralSpawnRate += CVarSpawnKi.GetValueOnGameThread() * (TargetLive - CurrentLive);
+					SpiralSpawnRate = FMath::Clamp(SpiralSpawnRate, 0.f, (float)TargetLive);  // anti-windup 상한
+				}
+				// 소수부 이월 내림 — 소형 타깃(rate~3.3)에서 round()가 매 발사 4로 올려 +20% 오버슛하는 것 방지.
+				SpiralSpawnAccum += SpiralSpawnRate;
+				Count = FMath::FloorToInt(SpiralSpawnAccum);
+				SpiralSpawnAccum -= Count;
+			}
+			else
+			{
+				Count = FMath::RoundToInt(FeedFwd);  // 라이브 관측 불가(데디서버 등) → 오픈루프 폴백
+			}
+			++SpiralShotCount;
+
+			UE_LOG(LogTemp, Log, TEXT("[RE] Boss Spiral: Target=%d Live=%d Rate=%.1f"),
+				TargetLive, CurrentLive, SpiralSpawnRate);
 		}
-		++SpiralShotCount;
 
 		const REBulletPattern::FSpiralParams SP = REBulletPattern::MakeSpiralRing(Count, SpiralBaseAngleDeg);
 		Params = REBulletPattern::GenerateSpiral(GetActorLocation(), SP);
-		UE_LOG(LogTemp, Log, TEXT("[RE] Boss Spiral: Target=%d Live=%d Rate=%.1f -> N=%d"),
-			TargetLive, CurrentLive, SpiralSpawnRate, Params.Num());
+		UE_LOG(LogTemp, Log, TEXT("[RE] Boss Spiral: N=%d"), Params.Num());
 		SpiralBaseAngleDeg += SpiralRotationStepDeg;  // 다음 호출 시 회전
 		break;
 	}
