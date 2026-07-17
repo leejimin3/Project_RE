@@ -77,7 +77,7 @@ void AREGameMode::BeginPlay()
 				DemoBoss->TriggerBulletPattern(EBulletPattern::Spiral, 12345, 0.f);
 			}
 		});
-		GetWorld()->GetTimerManager().SetTimer(DemoFireTimer, FireDel, REBulletPattern::FireIntervalSec, /*bLoop=*/true);
+		GetWorld()->GetTimerManager().SetTimer(DemoFireTimer, FireDel, REBulletPattern::FireIntervalSec(), /*bLoop=*/true);
 	}
 
 	// #16 프로브: 패턴 제너레이터 수학 단위 검증 (순수 함수, 프레임 무관).

@@ -100,14 +100,14 @@ void AREBossCharacter::TriggerBulletPattern(EBulletPattern Pattern, int32 Seed, 
 			}
 		}
 
-		const float FeedFwd = TargetLive * REBulletPattern::FireIntervalSec / REBulletPattern::BulletLifetimeSec;
+		const float FeedFwd = TargetLive * REBulletPattern::FireIntervalSec() / REBulletPattern::BulletLifetimeSec();
 		int32 Count;
 		if (CurrentLive >= 0 && TargetLive > 0)
 		{
 			// 클로즈드루프(적분 제어): 스폰율을 오차만큼 램프. 소멸률이 얼마든 라이브=목표에서 램프가 멎어 정상상태 오차 0.
 			// 단, 첫 1수명 동안은 아직 탄환이 채워지는 중이라 오차가 크게 양수 → 적분하면 와인드업으로 대폭 오버슈트한다.
 			// 그 구간은 피드포워드로 채우기만 하고, 채워진 뒤(정상상태 근처)부터 적분으로 소멸분을 보정한다.
-			const int32 FillShots = FMath::CeilToInt(REBulletPattern::BulletLifetimeSec / REBulletPattern::FireIntervalSec);
+			const int32 FillShots = FMath::CeilToInt(REBulletPattern::BulletLifetimeSec() / REBulletPattern::FireIntervalSec());
 			if (SpiralShotCount < FillShots)
 			{
 				SpiralSpawnRate = FeedFwd;

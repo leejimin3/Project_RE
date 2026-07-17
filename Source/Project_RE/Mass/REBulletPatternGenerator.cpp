@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "REBulletPatternGenerator.h"
+#include "REStatsSettings.h"
 
 namespace
 {
@@ -14,6 +15,30 @@ namespace
 
 namespace REBulletPattern
 {
+	float FireIntervalSec()
+	{
+		return GetDefault<UREStatsSettings>()->BossFireInterval;
+	}
+
+	float BulletLifetimeSec()
+	{
+		return GetDefault<UREStatsSettings>()->BulletLifetime;
+	}
+
+	FSpiralParams::FSpiralParams()
+	{
+		const UREStatsSettings* S = GetDefault<UREStatsSettings>();
+		Speed    = S->BulletSpeed;
+		Lifetime = S->BulletLifetime;
+	}
+
+	FFanParams::FFanParams()
+	{
+		const UREStatsSettings* S = GetDefault<UREStatsSettings>();
+		Speed    = S->BulletSpeed;
+		Lifetime = S->BulletLifetime;
+	}
+
 	TArray<FBulletSpawnParams> GenerateSpiral(const FVector& Origin, const FSpiralParams& P)
 	{
 		TArray<FBulletSpawnParams> Out;
