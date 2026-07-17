@@ -11,7 +11,8 @@
  *  에디터 Project Settings > Game > RE Stats 에서 편집 → DefaultGame.ini 저장. 리빌드 불필요.
  *  값 변경은 재시작 시 반영 (소비처가 생성자/스폰 시점에 조회).
  *  기본값 = 이관 전 하드코딩과 동일 (ini 미변경 시 회귀 없음).
- *  탄환 수(re.Bullets.Count)·스폰 게인은 프로파일링 즉석 노브라 CVar 유지 — 여기 없음.
+ *  탄환 수는 BulletCount가 기본값, CVar re.Bullets.Count(≥0)는 측정용 런타임 오버라이드.
+ *  스폰 게인(re.Bullets.SpawnKi)은 프로파일링 즉석 노브라 CVar 유지 — 여기 없음.
  */
 UCLASS(Config = Game, defaultconfig, meta = (DisplayName = "RE Stats"))
 class UREStatsSettings : public UDeveloperSettings
@@ -53,4 +54,12 @@ public:
 	/** 보스 탄막 발사 주기(s). */
 	UPROPERTY(EditAnywhere, Config, Category = "Boss")
 	float BossFireInterval = 0.1f;
+
+	/**
+	 *  목표 동시 탄환 수(steady-state) — "화면이 얼마나 가득 차는가".
+	 *  클로즈드루프 스폰(#51)이 발사당 탄 수를 조절해 이 값을 유지한다.
+	 *  CVar re.Bullets.Count가 0 이상이면 그 값이 우선(측정용 오버라이드).
+	 */
+	UPROPERTY(EditAnywhere, Config, Category = "Boss")
+	int32 BulletCount = 480;
 };
