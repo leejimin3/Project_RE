@@ -11,6 +11,7 @@
 #include "Animation/AnimSequence.h"
 #include "Animation/AnimMontage.h"
 #include "UObject/ConstructorHelpers.h"
+#include "TimerManager.h"
 
 UREGA_Dash::UREGA_Dash()
 {
@@ -81,11 +82,29 @@ void UREGA_Dash::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	{
 		if (UAnimInstance* AnimInst = Char->GetMesh() ? Char->GetMesh()->GetAnimInstance() : nullptr)
 		{
+			// MM_Dash는 루트모션 포함 AnimSequence(bEnableRootMotion — 애셋 자체 플래그, 공용이라 미변경).
+			// UAnimMontage::bEnableRootMotionTranslation/Rotation은 4.5부터 PostLoad 동기화 전용 deprecated
+			// 필드라 런타임 생성 다이나믹 몽타주에는 효과 없음 — 실제 추출은 AnimSequence 플래그가 좌우한다.
+			// 기본 RootMotionMode(RootMotionFromMontagesOnly)에서 그 루트모션이 CharacterMovement에 그대로 먹혀
+			// ApplyRootMotionConstantForce와 충돌, 대쉬 거리가 짧아지는 회귀(680→405)가 났다.
+			// 몽타주 재생 구간만 IgnoreRootMotion(추출은 하되 적용은 안 함)으로 전환해 "코스메틱 독립"을 실제로 성립시킨다.
+			AnimInst->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
+
 			// PlaySlotAnimationAsDynamicMontage는 float가 아니라 UAnimMontage*를 반환 — 길이는 GetPlayLength()로 조회.
 			UAnimMontage* PlayedMontage = AnimInst->PlaySlotAnimationAsDynamicMontage(
 				DashAnim, FName("DefaultSlot"), /*BlendInTime=*/0.1f, /*BlendOutTime=*/0.1f);
 			const float Len = PlayedMontage ? PlayedMontage->GetPlayLength() : 0.f;
 			UE_LOG(LogTemp, Log, TEXT("[Dash] anim len=%.2f"), Len);
+
+			// 몽타주 재생이 끝나면 기본 모드로 복귀.
+			FTimerHandle RestoreRootMotionTimer;
+			GetWorld()->GetTimerManager().SetTimer(RestoreRootMotionTimer, FTimerDelegate::CreateLambda([AnimInst]()
+			{
+				if (IsValid(AnimInst))
+				{
+					AnimInst->SetRootMotionMode(ERootMotionMode::RootMotionFromMontagesOnly);
+				}
+			}), Len > 0.f ? Len : DashDuration, false);
 		}
 	}
 }
