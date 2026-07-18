@@ -104,16 +104,32 @@ void AREBossCharacter::BeginPhase()
 	}
 	else
 	{
-		CurrentPhasePattern = (PhaseRng.RandRange(0, 1) == 0)
-			? EBulletPattern::Spiral : EBulletPattern::Fan;
+		switch (PhaseRng.RandRange(0, 2))
+		{
+		case 0:  CurrentPhasePattern = EBulletPattern::Spiral; break;
+		case 1:  CurrentPhasePattern = EBulletPattern::Fan; break;
+		default: CurrentPhasePattern = EBulletPattern::Artillery; break;
+		}
+		if (CurrentPhasePattern == EBulletPattern::Artillery)
+		{
+			CurrentArtilleryShape = (EArtilleryShape)PhaseRng.RandRange(
+				(int32)EArtilleryShape::Ring, (int32)EArtilleryShape::Random);
+		}
 	}
 
-	const bool bSpiral = (CurrentPhasePattern == EBulletPattern::Spiral);
-	const float PhaseSec  = bSpiral ? SpiralPhaseSec : FanPhaseSec;
-	const float FireInterval = bSpiral ? REBulletPattern::FireIntervalSec() : FanFireIntervalSec;
+	float PhaseSec = SpiralPhaseSec;
+	float FireInterval = REBulletPattern::FireIntervalSec();
+	const TCHAR* PhaseName = TEXT("Spiral");
+	switch (CurrentPhasePattern)
+	{
+	case EBulletPattern::Fan:
+		PhaseSec = FanPhaseSec; FireInterval = FanFireIntervalSec; PhaseName = TEXT("Fan"); break;
+	case EBulletPattern::Artillery:
+		PhaseSec = ArtilleryPhaseSec; FireInterval = ArtilleryFireInterval; PhaseName = TEXT("Artillery"); break;
+	default: break;   // Spiral 기본값
+	}
 
-	UE_LOG(LogTemp, Log, TEXT("[RE] Boss Phase: %s %.1fs"),
-		bSpiral ? TEXT("Spiral") : TEXT("Fan"), PhaseSec);
+	UE_LOG(LogTemp, Log, TEXT("[RE] Boss Phase: %s %.1fs"), PhaseName, PhaseSec);
 
 	GetWorldTimerManager().SetTimer(FireTimer, this,
 		&AREBossCharacter::FireCurrentPattern, FireInterval, /*bLoop=*/true);
@@ -123,7 +139,82 @@ void AREBossCharacter::BeginPhase()
 
 void AREBossCharacter::FireCurrentPattern()
 {
+	if (CurrentPhasePattern == EBulletPattern::Artillery)
+	{
+		FireArtillery();
+		return;
+	}
 	TriggerBulletPattern(CurrentPhasePattern, /*Seed=*/12345, /*StartTime=*/0.f);
+}
+
+void AREBossCharacter::FireArtillery()
+{
+	if (bIsDead)
+	{
+		return;
+	}
+	UREBulletSpawnSubsystem* Spawner = GetWorld() ? GetWorld()->GetSubsystem<UREBulletSpawnSubsystem>() : nullptr;
+	if (!Spawner)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[RE] Boss::FireArtillery: Spawner NULL"));
+		return;
+	}
+
+	const FVector BossLoc = GetActorLocation();
+	const float GroundZ = BossLoc.Z + MarkerGroundOffset;   // 착지 평면(보스 캡슐 바닥 근사)
+
+	// 플레이어 위치(조준/라인용). 없으면 보스 앞쪽 폴백.
+	FVector PlayerLoc = BossLoc + FVector(300.f, 0.f, 0.f);
+	if (const APlayerController* PC = GetWorld()->GetFirstPlayerController())
+	{
+		if (const APawn* P = PC->GetPawn())
+		{
+			PlayerLoc = P->GetActorLocation();
+		}
+	}
+
+	// 모양별 착지점 생성.
+	TArray<FVector> Targets;
+	switch (CurrentArtilleryShape)
+	{
+	case EArtilleryShape::Ring:
+		Targets = REBulletPattern::GenRing(BossLoc, /*Radius=*/500.f, ArtilleryCount, GroundZ);
+		break;
+	case EArtilleryShape::Line:
+		Targets = REBulletPattern::GenLine(BossLoc, PlayerLoc, /*WallLen=*/900.f, ArtilleryCount, GroundZ);
+		break;
+	case EArtilleryShape::Grid:
+		Targets = REBulletPattern::GenGrid(BossLoc, /*ExtentX=*/600.f, /*ExtentY=*/600.f, /*Cols=*/4, /*Rows=*/3, GroundZ);
+		break;
+	case EArtilleryShape::Spiral:
+		Targets = REBulletPattern::GenArcSpiral(BossLoc, /*MaxRadius=*/600.f, ArtilleryCount, GroundZ);
+		break;
+	case EArtilleryShape::PlayerAimed:
+		Targets = REBulletPattern::GenPlayerCluster(PlayerLoc, /*ClusterRadius=*/150.f, /*RingN=*/4, GroundZ);
+		break;
+	case EArtilleryShape::Random:
+		Targets = REBulletPattern::GenRandom(BossLoc, /*ArenaRadius=*/800.f, ArtilleryCount, PhaseRng, GroundZ);
+		break;
+	}
+
+	// 착지점 → arc 스폰 파라미터. 발사 원점 = 보스.
+	TArray<REBulletPattern::FArcBulletSpawnParams> Shots;
+	Shots.Reserve(Targets.Num());
+	for (const FVector& T : Targets)
+	{
+		REBulletPattern::FArcBulletSpawnParams P;
+		P.Start      = BossLoc;
+		P.Target     = T;
+		P.FlightTime = ArtilleryFlightTime;
+		P.MaxHeight  = ArtilleryMaxHeight;
+		P.Damage     = ArtilleryDamage;
+		P.Radius     = ArtilleryRadius;
+		Shots.Add(P);
+	}
+	Spawner->SpawnArcBulletBatch(Shots);
+
+	UE_LOG(LogTemp, Log, TEXT("[RE] Boss Artillery: Shape=%d N=%d"),
+		(int32)CurrentArtilleryShape, Shots.Num());
 }
 
 void AREBossCharacter::EndPhase()

@@ -22,6 +22,8 @@ public:
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 
 	UInstancedStaticMeshComponent* GetISM() const { return ISM; }
+	UInstancedStaticMeshComponent* GetArcISM() const { return ArcISM; }
+	UInstancedStaticMeshComponent* GetMarkerISM() const { return MarkerISM; }
 
 private:
 	UPROPERTY()
@@ -29,4 +31,10 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UInstancedStaticMeshComponent> ISM = nullptr;
+
+	UPROPERTY()
+	TObjectPtr<UInstancedStaticMeshComponent> ArcISM = nullptr;     // 곡사탄(주황 구체, Z 궤적)
+
+	UPROPERTY()
+	TObjectPtr<UInstancedStaticMeshComponent> MarkerISM = nullptr;  // 착지 예고(빨강 평면 원)
 };

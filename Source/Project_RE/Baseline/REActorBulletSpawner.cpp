@@ -18,7 +18,7 @@ namespace
 		ECVF_Cheat);
 
 	/** Mass 데모 발사 주기 (REGameMode.cpp:67 DemoFireTimer). */
-	constexpr float FireInterval = 0.1f;
+	constexpr float ActorFireIntervalSec = 0.1f;
 
 	/** Mass 스폰 원점 = Boss 스폰 위치 (REGameMode.cpp BeginPlay). Boss는 움직이지 않는다. */
 	const FVector SpawnOrigin(600.f, 0.f, 90.f);
@@ -54,7 +54,7 @@ void UREActorBulletSpawner::OnWorldBeginPlay(UWorld& InWorld)
 
 	// 자립 구동 — GameMode 무관. CVar가 0이면 Fire()가 즉시 return이라 비용 무시 가능.
 	InWorld.GetTimerManager().SetTimer(FireTimer, this, &UREActorBulletSpawner::Fire,
-		FireInterval, /*bLoop=*/true);
+		ActorFireIntervalSec, /*bLoop=*/true);
 }
 
 void UREActorBulletSpawner::Fire()
@@ -75,7 +75,7 @@ void UREActorBulletSpawner::Fire()
 
 	// 정상상태 탄 수 = PerShot * (Lifetime / Interval). 목표 Target을 만족하는 PerShot 역산.
 	// 소수부는 누산해 다음 발사로 넘긴다 (매번 올림하면 목표를 최대 +30% 초과한다).
-	PerShotAccum += Target / (SP.Lifetime / FireInterval);
+	PerShotAccum += Target / (SP.Lifetime / ActorFireIntervalSec);
 	const int32 N = FMath::FloorToInt(PerShotAccum);
 	PerShotAccum -= N;
 	if (N <= 0)

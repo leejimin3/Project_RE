@@ -7,6 +7,8 @@
 #include "MassArchetypeTypes.h"
 #include "REBulletSpawnSubsystem.generated.h"
 
+namespace REBulletPattern { struct FArcBulletSpawnParams; }
+
 /** 탄환 1발 스폰 파라미터. UStruct 아님 — 함수 인자 전용 경량 구조체. */
 struct FBulletSpawnParams
 {
@@ -31,6 +33,13 @@ public:
 	/** N발 배치 스폰. 내부는 SpawnBullet 루프(배치 최적화는 YAGNI). */
 	void SpawnBulletBatch(TConstArrayView<FBulletSpawnParams> Params);
 
+	/** 곡사탄 1발 스폰 + arc Fragment 초기화. EntityManager 없으면 무효 핸들 반환. */
+	FMassEntityHandle SpawnArcBullet(FVector Start, FVector Target, float FlightTime,
+	                                 float MaxHeight, float Damage, float Radius);
+
+	/** N발 배치 스폰. 내부는 SpawnArcBullet 루프. */
+	void SpawnArcBulletBatch(TConstArrayView<REBulletPattern::FArcBulletSpawnParams> Params);
+
 private:
 	/** 탄환 Archetype 최초 스폰 시 1회 생성·캐싱. */
 	void EnsureArchetype(FMassEntityManager& EntityManager);
@@ -39,4 +48,9 @@ private:
 	FMassEntityManager* GetEntityManager() const;
 
 	FMassArchetypeHandle BulletArchetype;
+
+	/** 곡사탄 Archetype 최초 스폰 시 1회 생성·캐싱. */
+	void EnsureArcArchetype(FMassEntityManager& EntityManager);
+
+	FMassArchetypeHandle ArcArchetype;
 };

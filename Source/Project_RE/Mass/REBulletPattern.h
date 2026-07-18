@@ -13,5 +13,18 @@ enum class EBulletPattern : uint8
 {
 	Spiral,
 	Fan,
-	Homing
+	Homing,
+	Artillery   // 곡사: 포물선 착지 + 예고 마커 + 범위 데미지
+};
+
+/** 곡사 착지점 모양. Artillery 페이즈에서 랜덤 선택. */
+UENUM(BlueprintType)
+enum class EArtilleryShape : uint8
+{
+	Ring,          // 원형 링
+	Line,          // 보스→플레이어 수직 벽
+	Grid,          // 아레나 균등 격자
+	Spiral,        // 아르키메데스 나선(황금각)
+	PlayerAimed,   // 플레이어 위치 + 주변 클러스터
+	Random         // 아레나 반경 내 균등 랜덤
 };
