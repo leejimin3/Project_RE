@@ -97,24 +97,22 @@ void AREBossCharacter::BeginPhase()
 		return;   // PhaseTimer 예약 안 함 → 페이즈 종료/대기 없음
 	}
 
-	if (bFirstPhase)
+	// 완전 랜덤 로테이션. 같은 패턴 2연속 금지, 첫 페이즈 무제약(Spiral 고정 없음).
+	// enum 순서(Spiral=0,Fan=1,Homing=2,Artillery=3)와 로테이션 인덱스가 다르므로 풀 배열로 매핑.
+	// Homing은 백로그 스텁이라 풀에서 제외.
+	static const EBulletPattern Pool[3] = {
+		EBulletPattern::Spiral, EBulletPattern::Fan, EBulletPattern::Artillery };
+	EBulletPattern NewPattern;
+	do
 	{
-		CurrentPhasePattern = EBulletPattern::Spiral;   // 오프닝 시그니처 + 오염 창 차단
-		bFirstPhase = false;
-	}
-	else
+		NewPattern = Pool[PhaseRng.RandRange(0, 2)];
+	} while (!bFirstPhase && NewPattern == CurrentPhasePattern);
+	bFirstPhase = false;
+	CurrentPhasePattern = NewPattern;
+	if (CurrentPhasePattern == EBulletPattern::Artillery)
 	{
-		switch (PhaseRng.RandRange(0, 2))
-		{
-		case 0:  CurrentPhasePattern = EBulletPattern::Spiral; break;
-		case 1:  CurrentPhasePattern = EBulletPattern::Fan; break;
-		default: CurrentPhasePattern = EBulletPattern::Artillery; break;
-		}
-		if (CurrentPhasePattern == EBulletPattern::Artillery)
-		{
-			CurrentArtilleryShape = (EArtilleryShape)PhaseRng.RandRange(
-				(int32)EArtilleryShape::Ring, (int32)EArtilleryShape::Random);
-		}
+		CurrentArtilleryShape = (EArtilleryShape)PhaseRng.RandRange(
+			(int32)EArtilleryShape::Ring, (int32)EArtilleryShape::Random);
 	}
 
 	float PhaseSec = SpiralPhaseSec;
