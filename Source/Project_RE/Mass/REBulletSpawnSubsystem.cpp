@@ -5,6 +5,7 @@
 #include "MassEntitySubsystem.h"
 #include "MassEntityManager.h"
 #include "Mass/EntityFragments.h"  // FTransformFragment
+#include "REBulletPatternGenerator.h"
 
 FMassEntityManager* UREBulletSpawnSubsystem::GetEntityManager() const
 {
@@ -51,5 +52,53 @@ void UREBulletSpawnSubsystem::SpawnBulletBatch(TConstArrayView<FBulletSpawnParam
 	for (const FBulletSpawnParams& P : Params)
 	{
 		SpawnBullet(P.Location, P.Velocity, P.Lifetime);
+	}
+}
+
+void UREBulletSpawnSubsystem::EnsureArcArchetype(FMassEntityManager& EntityManager)
+{
+	if (ArcArchetype.IsValid())
+	{
+		return;
+	}
+	ArcArchetype = EntityManager.CreateArchetype({
+		FTransformFragment::StaticStruct(),
+		FArcBulletFragment::StaticStruct(),
+		FBulletRenderFragment::StaticStruct(),
+		FArcBulletTag::StaticStruct() });
+}
+
+FMassEntityHandle UREBulletSpawnSubsystem::SpawnArcBullet(FVector Start, FVector Target, float FlightTime,
+                                                          float MaxHeight, float Damage, float Radius)
+{
+	FMassEntityManager* EM = GetEntityManager();
+	if (!EM)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[RE] SpawnArcBullet: EntityManager NULL"));
+		return FMassEntityHandle();
+	}
+
+	EnsureArcArchetype(*EM);
+	FMassEntityHandle Entity = EM->CreateEntity(ArcArchetype);
+
+	// 발사 순간 위치 = Start (t=0에서 Sim이 곧바로 궤적으로 덮어씀).
+	EM->GetFragmentDataChecked<FTransformFragment>(Entity).GetMutableTransform().SetLocation(Start);
+	FArcBulletFragment& Arc = EM->GetFragmentDataChecked<FArcBulletFragment>(Entity);
+	Arc.Start      = Start;
+	Arc.Target     = Target;
+	Arc.FlightTime = FlightTime;
+	Arc.Elapsed    = 0.f;
+	Arc.MaxHeight  = MaxHeight;
+	Arc.Damage     = Damage;
+	Arc.Radius     = Radius;
+
+	return Entity;
+}
+
+void UREBulletSpawnSubsystem::SpawnArcBulletBatch(TConstArrayView<REBulletPattern::FArcBulletSpawnParams> Params)
+{
+	for (const REBulletPattern::FArcBulletSpawnParams& P : Params)
+	{
+		SpawnArcBullet(P.Start, P.Target, P.FlightTime, P.MaxHeight, P.Damage, P.Radius);
 	}
 }

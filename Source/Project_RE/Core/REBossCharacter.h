@@ -91,4 +91,19 @@ private:
 	static constexpr float FanPhaseSec        = 3.f;
 	static constexpr float RestSec            = 1.f;
 	static constexpr float FanFireIntervalSec = 0.5f;
+
+	//~ 곡사(Artillery) 페이즈 파라미터. 헤더 상수 — 플레이 후 튜닝.
+	static constexpr float ArtilleryPhaseSec     = 4.f;    // 페이즈 길이
+	static constexpr float ArtilleryFireInterval = 1.8f;   // 일제사 간격(비행시간보다 길게 → 겹침 억제)
+	static constexpr float ArtilleryFlightTime   = 1.5f;   // 회피 시간
+	static constexpr float ArtilleryMaxHeight    = 400.f;  // 포물선 최대 고도
+	static constexpr float ArtilleryRadius       = 120.f;  // 폭발/마커 반경
+	static constexpr float ArtilleryDamage       = 15.f;
+	static constexpr int32 ArtilleryCount        = 12;     // 일제사 착지점 수(모양별 기준)
+	static constexpr float MarkerGroundOffset     = -88.f; // 캡슐 중심→바닥(착지 평면). 판정은 XY라 시각용.
+
+	EArtilleryShape CurrentArtilleryShape = EArtilleryShape::Ring;
+
+	/** 현재 페이즈 Artillery 1회 일제사(FireCurrentPattern에서 분기). */
+	void FireArtillery();
 };
