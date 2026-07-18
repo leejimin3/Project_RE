@@ -81,7 +81,10 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	{
 		if (UMaterialInstanceDynamic* Dyn = MarkerISM->CreateDynamicMaterialInstance(0, Base))
 		{
-			Dyn->SetVectorParameterValue(TEXT("Color"), FLinearColor::Red);
+			// HDR 고강도 — 탄환 구체는 곡면 스페큘러 하이라이트로 블룸이 걸려 밝게 보이지만,
+			// 마커는 평평한 원판이라 그 하이라이트가 없어 같은 Color=1.0 값이어도 어둡게 죽는다.
+			// 값 자체를 1.0 위로 올려 블룸 임계값을 넘겨야 각도와 무관하게 확실히 보인다.
+			Dyn->SetVectorParameterValue(TEXT("Color"), FLinearColor(4.f, 0.f, 0.f));
 		}
 	}
 
