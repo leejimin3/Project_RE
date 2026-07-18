@@ -16,6 +16,14 @@
 #include "REHealthBarComponent.h"
 #include "REGameMode.h"
 #include "REStatsSettings.h"
+#include "HAL/IConsoleManager.h"
+
+// 치트: 1이면 플레이어 무적(TakeDamage 무피해). 데브 전용, 클라 로컬(ECVF_Cheat).
+static TAutoConsoleVariable<int32> CVarPlayerInvincible(
+	TEXT("re.Cheat.PlayerInvincible"),
+	0,
+	TEXT("1 = player takes no damage (dev cheat, client-local)"),
+	ECVF_Cheat);
 
 ARECharacterBase::ARECharacterBase()
 {
@@ -88,6 +96,12 @@ float ARECharacterBase::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 {
 	// 서버 권위 가드 — 게임상태(Health) 변경은 서버에서만
 	if (!HasAuthority())
+	{
+		return 0.f;
+	}
+
+	// ponytail: CVar는 클라 로컬 — PIE/단일프로세스만 유효, 실 데디 서버 미지원(데브 치트)
+	if (CVarPlayerInvincible.GetValueOnGameThread() != 0)
 	{
 		return 0.f;
 	}

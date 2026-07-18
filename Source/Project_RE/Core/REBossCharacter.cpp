@@ -110,13 +110,13 @@ void AREBossCharacter::BeginPhase()
 
 	const bool bSpiral = (CurrentPhasePattern == EBulletPattern::Spiral);
 	const float PhaseSec  = bSpiral ? SpiralPhaseSec : FanPhaseSec;
-	const float FireInterval = bSpiral ? REBulletPattern::FireIntervalSec() : FanFireIntervalSec;
+	const float PhaseFireInterval = bSpiral ? REBulletPattern::FireIntervalSec() : FanFireIntervalSec;
 
 	UE_LOG(LogTemp, Log, TEXT("[RE] Boss Phase: %s %.1fs"),
 		bSpiral ? TEXT("Spiral") : TEXT("Fan"), PhaseSec);
 
 	GetWorldTimerManager().SetTimer(FireTimer, this,
-		&AREBossCharacter::FireCurrentPattern, FireInterval, /*bLoop=*/true);
+		&AREBossCharacter::FireCurrentPattern, PhaseFireInterval, /*bLoop=*/true);
 	GetWorldTimerManager().SetTimer(PhaseTimer, this,
 		&AREBossCharacter::EndPhase, PhaseSec, /*bLoop=*/false);
 }

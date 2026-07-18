@@ -9,6 +9,7 @@
 class UInputAction;
 class UInputMappingContext;
 struct FInputActionValue;
+class URECheatPanelWidget;
 
 /**
  *  탑뷰 PlayerController. 우클릭으로 커서 아래 지점으로 폰을 이동시킨다.
@@ -65,6 +66,9 @@ protected:
 	UPROPERTY()
 	UInputMappingContext* TopDownMappingContext;
 
+	UPROPERTY()
+	UInputAction* CheatPanelAction;
+
 private:
 	/** 헤드리스(-unattended) 자기이동 프로브. 서버 권위에서만 발동. */
 	void RunHeadlessMoveProbe();
@@ -86,4 +90,10 @@ private:
 	FTimerHandle ProbeMoveTimer;
 	FTimerHandle ProbeLogTimer;
 	FVector ProbeTarget = FVector::ZeroVector;
+
+	/** 치트 패널 토글 (F1). 위젯 1회 생성 후 표시/숨김. */
+	void OnToggleCheatPanel();
+
+	UPROPERTY()
+	URECheatPanelWidget* CheatPanel = nullptr;
 };
