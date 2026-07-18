@@ -18,6 +18,7 @@
 #include "Abilities/REGameplayTags.h"
 #include "HAL/PlatformMisc.h"
 #include "REResultWidget.h"
+#include "RECheatPanelWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "Core/REAttackComponent.h"
 #include "Core/REBossCharacter.h"
@@ -52,11 +53,17 @@ void AREPlayerController::SetupInputComponent()
 	FireAction->ValueType = EInputActionValueType::Boolean;
 	TopDownMappingContext->MapKey(FireAction, EKeys::LeftMouseButton);
 
+	// F1 치트 패널 토글 IA (코드생성, transient).
+	CheatPanelAction = NewObject<UInputAction>(this, TEXT("IA_CheatPanel"));
+	CheatPanelAction->ValueType = EInputActionValueType::Boolean;
+	TopDownMappingContext->MapKey(CheatPanelAction, EKeys::F1);
+
 	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent))
 	{
 		EIC->BindAction(ClickMoveAction, ETriggerEvent::Triggered, this, &AREPlayerController::OnClickMove);
 		EIC->BindAction(DashAction, ETriggerEvent::Started, this, &AREPlayerController::OnDash);
 		EIC->BindAction(FireAction, ETriggerEvent::Triggered, this, &AREPlayerController::OnFire);
+		EIC->BindAction(CheatPanelAction, ETriggerEvent::Started, this, &AREPlayerController::OnToggleCheatPanel);
 	}
 }
 
@@ -171,6 +178,25 @@ void AREPlayerController::Client_ShowResult_Implementation(bool bVictory)
 	DisableInput(this);
 
 	UE_LOG(LogTemp, Log, TEXT("[RE] Client_ShowResult: %s"), bVictory ? TEXT("VICTORY") : TEXT("DEFEAT"));
+}
+
+void AREPlayerController::OnToggleCheatPanel()
+{
+	if (!IsLocalPlayerController())
+	{
+		return;
+	}
+	if (!CheatPanel)
+	{
+		CheatPanel = CreateWidget<URECheatPanelWidget>(this, URECheatPanelWidget::StaticClass());
+		if (CheatPanel)
+		{
+			CheatPanel->AddToViewport(100);   // 생성 시 표시 상태
+		}
+		return;
+	}
+	const bool bVisible = CheatPanel->GetVisibility() == ESlateVisibility::Visible;
+	CheatPanel->SetVisibility(bVisible ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
 }
 
 void AREPlayerController::Server_RequestMove_Implementation(FVector Target)
