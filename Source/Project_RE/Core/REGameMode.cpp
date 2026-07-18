@@ -76,7 +76,8 @@ void AREGameMode::BeginPlay()
 	{
 		// #64: 발사 주체를 Boss로 이관 — 랜덤 패턴 페이즈 로테이션(M5 RPC 확장 대비).
 		DemoBoss = Boss;
-		Boss->StartFiring(/*Seed=*/12345);
+		// 서버 권위 지점에서 랜덤 시드 1개 생성 → M5에서 클라 replicate하면 결정적 동기화.
+		Boss->StartFiring(/*Seed=*/FMath::Rand());
 	}
 
 	// #16 프로브: 패턴 제너레이터 수학 단위 검증 (순수 함수, 프레임 무관).

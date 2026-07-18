@@ -83,7 +83,7 @@ private:
 
 	FRandomStream PhaseRng;
 	EBulletPattern CurrentPhasePattern = EBulletPattern::Spiral;
-	bool bFirstPhase = true;    // 첫 페이즈 Spiral 고정 (오프닝 + profiling 오염 창 차단)
+	bool bFirstPhase = true;    // 첫 페이즈만 no-repeat 제약 예외 (무제약 랜덤 시작)
 	FTimerHandle FireTimer;     // 페이즈 내 발사 반복
 	FTimerHandle PhaseTimer;    // 페이즈 종료/대기 전환
 
