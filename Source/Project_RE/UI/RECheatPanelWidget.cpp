@@ -3,6 +3,8 @@
 #include "RECheatPanelWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
 #include "Components/VerticalBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
@@ -25,12 +27,23 @@ bool URECheatPanelWidget::Initialize()
 		return true;
 	}
 
-	UBorder* Root = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Root"));
-	Root->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.6f));
-	Root->SetPadding(FMargin(12.f));
+	// 루트 오버레이는 전체 화면을 채우되 투명 + 히트테스트 무시 —
+	// 패널 바깥 영역이 어두워지거나 게임 클릭을 먹지 않게.
+	UOverlay* Root = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("Root"));
+	Root->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+	// 실제 패널 — 좌상단 고정, 내용 크기만큼만 어둡게.
+	UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Panel"));
+	Panel->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.6f));
+	Panel->SetPadding(FMargin(12.f));
+	if (UOverlaySlot* PanelSlot = Cast<UOverlaySlot>(Root->AddChild(Panel)))
+	{
+		PanelSlot->SetHorizontalAlignment(HAlign_Left);
+		PanelSlot->SetVerticalAlignment(VAlign_Top);
+	}
 
 	UVerticalBox* Box = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Box"));
-	Root->AddChild(Box);
+	Panel->AddChild(Box);
 
 	// 타이틀
 	UTextBlock* Title = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Title"));
@@ -44,7 +57,7 @@ bool URECheatPanelWidget::Initialize()
 
 	InvincibleCheck = WidgetTree->ConstructWidget<UCheckBox>(UCheckBox::StaticClass(), TEXT("InvincibleCheck"));
 	// C++ 생성 UCheckBox는 스타일이 비어 안 보임 → 엔진 기본 체크박스 스타일 주입.
-	InvincibleCheck->WidgetStyle = FCoreStyle::Get().GetWidgetStyle<FCheckBoxStyle>("Checkbox");
+	InvincibleCheck->SetWidgetStyle(FCoreStyle::Get().GetWidgetStyle<FCheckBoxStyle>("Checkbox"));
 	// 초기 상태 = CVar 현재값.
 	static IConsoleVariable* Inv = IConsoleManager::Get().FindConsoleVariable(TEXT("re.Cheat.PlayerInvincible"));
 	InvincibleCheck->SetIsChecked(Inv && Inv->GetInt() != 0);
