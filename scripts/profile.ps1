@@ -22,7 +22,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $Root     = Split-Path $PSScriptRoot -Parent
-$Editor   = 'E:\UE_5.8\Engine\Binaries\Win64\UnrealEditor.exe'
+$Editor   = 'E:\UnrealEngine-5.8\UnrealEngine-5.8\Engine\Binaries\Win64\UnrealEditor.exe'
 $Uproject = Join-Path $Root 'Project_RE.uproject'
 # 엔진 CSV 프로파일러는 프로젝트 Saved 가 아니라 엔진 유저 디렉터리에 쓴다 (로그로 관측).
 # 프로젝트 쪽도 같이 훑는다 — 엔진 설정이 바뀌면 그쪽으로 떨어질 수 있다.

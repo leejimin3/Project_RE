@@ -32,7 +32,13 @@ scripts/profile.ps1 -Bullets 5000 -Actor   # Actor 베이스라인 (#45 비교�
 
 ## Insights 로 읽는 법
 
-1. `E:\UE_5.8\Engine\Binaries\Win64\UnrealInsights.exe` 실행
+1. `UnrealInsights.exe` 실행 — **소스 엔진에는 기본으로 없다.** 별도 타겟이라 한 번 빌드해야 한다:
+
+   ```powershell
+   & "E:\UnrealEngine-5.8\UnrealEngine-5.8\Engine\Build\BatchFiles\Build.bat" UnrealInsights Win64 Development
+   ```
+
+   빌드 후 `E:\UnrealEngine-5.8\UnrealEngine-5.8\Engine\Binaries\Win64\UnrealInsights.exe`
 2. `trace.utrace` 열기 (Open Trace File)
 3. Timing Insights 뷰 → 필터에 이벤트 이름 입력:
 
