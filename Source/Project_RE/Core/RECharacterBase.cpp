@@ -115,7 +115,11 @@ ARECharacterBase::ARECharacterBase()
 
 void ARECharacterBase::Multicast_PlayDashMontage_Implementation()
 {
-	if (!DashAnim)
+	// 데디 서버는 화면이 없으므로 코스메틱 재생을 생략한다 (#74 Multicast_PlayFireMontage와 동일 패턴).
+	// "데디는 AnimInstance가 null이라 자연 no-op"으로 봤던 초안 가정은 실측으로 반증됐다 —
+	// 데디 서버 로그에 `[Dash] anim len=0.97 (role=ROLE_Authority)`가 찍혔다. 가드가 없으면
+	// 서버가 IgnoreRootMotion으로 전환한 채 몽타주를 돌려 서버 권위 이동 경로에 개입한다.
+	if (!DashAnim || IsNetMode(NM_DedicatedServer))
 	{
 		return;
 	}
@@ -148,12 +152,16 @@ void ARECharacterBase::Multicast_PlayDashMontage_Implementation()
 	UE_LOG(LogTemp, Log, TEXT("[Dash] anim len=%.2f (role=%s)"), Len, *UEnum::GetValueAsString(GetLocalRole()));
 
 	// 몽타주 재생이 끝나면 기본 모드로 복귀.
+	// 약참조로 캡처한다: raw 포인터를 캡처하면 월드 정리(접속 종료/레벨 전환) 중 타이머가 돌 때
+	// 이미 파괴된 AnimInstance를 IsValid()가 역참조해 UObjectArray.h:1083 assert로 죽는다.
+	// 데디 클라 실측 크래시(#75) — 서버가 먼저 종료되자 클라 타이머가 이 경로로 터졌다.
+	TWeakObjectPtr<UAnimInstance> WeakAnimInst(AnimInst);
 	FTimerHandle RestoreRootMotionTimer;
-	GetWorldTimerManager().SetTimer(RestoreRootMotionTimer, FTimerDelegate::CreateLambda([AnimInst]()
+	GetWorldTimerManager().SetTimer(RestoreRootMotionTimer, FTimerDelegate::CreateLambda([WeakAnimInst]()
 	{
-		if (IsValid(AnimInst))
+		if (UAnimInstance* Anim = WeakAnimInst.Get())
 		{
-			AnimInst->SetRootMotionMode(ERootMotionMode::RootMotionFromMontagesOnly);
+			Anim->SetRootMotionMode(ERootMotionMode::RootMotionFromMontagesOnly);
 		}
 	}), Len, false);
 }

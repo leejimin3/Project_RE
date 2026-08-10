@@ -46,11 +46,38 @@ UREGA_Dash::ActivateAbility (서버 전용)
 
 추가로 **재생 실패 경로를 보강**했다: `PlaySlotAnimationAsDynamicMontage`가 null을 반환하면 억제할 루트모션도 없으므로 즉시 기본 모드로 복귀한다. 기존 코드는 실패 시 `Len=0` 타이머로 복귀했는데, 실패 경로를 명시적으로 끊는 편이 안전하다.
 
-### 4. 데디 서버 재생 생략을 넣지 않은 이유
+### 4. 데디 서버 재생 생략 — 명시 가드 (초안 가정 반증됨)
 
-`Multicast_PlayFireMontage`(#74)와 달리 `NM_DedicatedServer` 조기 반환이 없다. 데디 서버에서도 `IgnoreRootMotion` 전환이 걸려야 하기 때문이 아니라 — **서버의 `GetMesh()->GetAnimInstance()`가 데디에서 null이라 자연히 no-op**이 된다. 다만 이건 엔진 동작에 기댄 암묵 가정이므로, 검증에서 서버 로그에 `[Dash] anim len=` 이 찍히는지 반드시 확인한다.
+초안은 "서버의 `GetMesh()->GetAnimInstance()`가 데디에서 null이라 자연히 no-op"이라 보고 `NM_DedicatedServer` 조기 반환을 넣지 않았다. **실측으로 반증됐다.** 스테이징 서버 exe + 원격 클라 검증에서 서버 로그에 그대로 찍혔다:
 
-> 찍힌다면 서버가 실제로 몽타주를 재생하고 있다는 뜻이고, `IgnoreRootMotion` 전환이 서버 이동에 개입할 수 있다 — 그때는 #74와 같은 명시 가드를 추가해야 한다. **검증 항목으로 남긴다.**
+```
+[Dash] anim len=0.97 (role=ROLE_Authority)   ← 데디 서버, 2회
+```
+
+데디 서버에도 `AnimInstance`가 존재하고 몽타주가 실제로 재생된다. 즉 서버가 `IgnoreRootMotion`으로 전환한 채 돌아 **서버 권위 이동 경로에 개입**하고 있었다(측정된 거리 자체는 정상이었지만 우연에 기댄 상태).
+
+→ `#74`와 동일하게 명시 가드를 넣는다:
+
+```cpp
+if (!DashAnim || IsNetMode(NM_DedicatedServer)) { return; }
+```
+
+재검증 결과 서버 로그의 `[Dash] anim len=` 이 **0회**로 떨어졌고, 서버 대쉬 거리는 596.0으로 유지됐다.
+
+### 4-1. ⚠ 타이머 람다는 약참조 — 클라 크래시 수정
+
+루트모션 복귀 타이머가 `UAnimInstance*`를 **raw로 캡처**하고 있었다(PR #59 때부터). 서버/리슨에서만 돌던 시절에는 드러나지 않았지만, 재생이 클라로 넓어지자 데디 검증에서 바로 터졌다:
+
+```
+Assertion failed: Index >= 0 [UObjectArray.h:1083]
+  FUObjectArray::IndexToObject()
+  ...Multicast_PlayDashMontage_Implementation'::`2'::<lambda_1>::Execute()
+  FTimerManager::Tick()
+```
+
+서버가 먼저 종료되자 클라 월드 정리 중 타이머가 돌았고, `IsValid()`가 **이미 파괴된** AnimInstance를 역참조해 죽었다. 실제 상황으로는 *대쉬 도중 접속 종료 / 레벨 전환 → 클라 크래시*다.
+
+→ `TWeakObjectPtr<UAnimInstance>`로 캡처하고 `.Get()` 결과로 분기한다. 재검증에서 크래시 재현 없음.
 
 ### 5. 지연 측정 기준점
 
