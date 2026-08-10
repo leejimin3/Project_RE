@@ -118,6 +118,8 @@ void AREPlayerController::OnDash(const FInputActionValue& Value)
 	const FVector Dir = (Hit.ImpactPoint - P->GetActorLocation()).GetSafeNormal2D();
 	if (!Dir.IsNearlyZero())
 	{
+		// 입력 시각 기준점 — 서버 [Dash] activate ok / 클라 [Dash] anim 로그와의 타임스탬프 차가 곧 입력→대쉬 지연(#75 측정).
+		UE_LOG(LogTemp, Log, TEXT("[Dash] input sent (local)"));
 		Server_Dash(Dir);
 	}
 }
