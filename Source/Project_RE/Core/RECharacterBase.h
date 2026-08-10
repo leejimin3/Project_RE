@@ -14,6 +14,7 @@ class UAbilitySystemComponent;
 class UREAttackComponent;
 class UREGA_Dash;
 class UREHealthBarComponent;
+class UAnimSequence;
 
 /**
  *  탑뷰 쿼터뷰 플레이어 폰 베이스.
@@ -49,6 +50,14 @@ public:
 	/** 대쉬 어빌리티가 읽을 목표 방향(로컬이 계산해 서버로 전달한 값). */
 	FVector GetPendingDashDir() const { return PendingDashDir; }
 
+	/**
+	 *  대쉬 모션을 모든 인스턴스(서버 자신 + 전 클라)에 재생. 코스메틱 전용.
+	 *  Unreliable — 드랍돼도 이동/판정(서버 RootMotion)과 무관하다.
+	 *  서버 권위 코드(UREGA_Dash::ActivateAbility)에서만 호출한다.
+	 */
+	UFUNCTION(NetMulticast, Unreliable)
+	void Multicast_PlayDashMontage();
+
 protected:
 	/** 게임플레이 어빌리티 시스템 컴포넌트. Pawn 소유, Mixed 복제. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Abilities", meta = (AllowPrivateAccess = "true"))
@@ -71,6 +80,10 @@ protected:
 
 	/** 대쉬 목표 방향. Server_Dash → TryDash에서 세팅, 어빌리티 ActivateAbility에서 소비. */
 	FVector PendingDashDir = FVector::ForwardVector;
+
+	/** 대쉬 모션(AnimSequence — ABP DefaultSlot에 다이나믹 몽타주로 재생). 코스메틱. */
+	UPROPERTY()
+	TObjectPtr<UAnimSequence> DashAnim;
 
 	/** ASC ActorInfo 초기화 공용 헬퍼 (서버/클라 양쪽에서 호출). */
 	void InitASCActorInfo();
