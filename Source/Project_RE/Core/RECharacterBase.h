@@ -79,7 +79,7 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_Health, VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
 	float Health = 100.f;
 
-	/** 최대 체력. */
+	/** 최대 체력. 비복제 — 서버/클라 모두 생성자에서 같은 ini(UREStatsSettings)를 읽고 런타임 변경 코드가 없다 (#73). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stats")
 	float MaxHealth = 100.f;
 
