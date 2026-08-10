@@ -2,12 +2,10 @@
 
 #include "REAttackComponent.h"
 #include "REBossCharacter.h"
+#include "RECharacterBase.h"
 #include "Engine/DamageEvents.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Pawn.h"
-#include "GameFramework/Character.h"
-#include "Components/SkeletalMeshComponent.h"
-#include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "UObject/ConstructorHelpers.h"
 #include "REStatsSettings.h"
@@ -49,17 +47,15 @@ bool UREAttackComponent::FireInDirection(const FVector& Dir)
 	}
 	LastFireTime = Now;
 
-	// 발사 모션 — 코스메틱, 판정과 무관하게 발사 자체에 재생.
-	// TODO M4: 데디에선 원격 클라에 안 보임 — Multicast RPC로 교체.
+	// 발사 모션 — 코스메틱, 판정과 무관하게 발사 자체에 재생 (M4 #74).
+	// 서버 메시에 직접 재생하면 데디에선 아무도 못 본다 — 오너 캐릭터의 Multicast로 위임한다.
+	// 여기서 직접 재생하지 않으므로 리슨서버 이중 재생 경로가 없다(Multicast가 서버에서도 실행되어 1회).
+	// 배치/신뢰성 근거는 ARECharacterBase::Multicast_PlayFireMontage 주석 참조.
 	if (FireMontage)
 	{
-		if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
+		if (ARECharacterBase* OwnerChar = Cast<ARECharacterBase>(GetOwner()))
 		{
-			if (UAnimInstance* AnimInst = OwnerChar->GetMesh() ? OwnerChar->GetMesh()->GetAnimInstance() : nullptr)
-			{
-				const float Len = AnimInst->Montage_Play(FireMontage, 1.0f);
-				UE_LOG(LogTemp, Log, TEXT("[Attack] fire montage len=%.2f"), Len);
-			}
+			OwnerChar->Multicast_PlayFireMontage(FireMontage);
 		}
 	}
 

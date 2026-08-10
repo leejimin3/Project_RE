@@ -6,6 +6,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "Engine/SkeletalMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Net/UnrealNetwork.h"
@@ -172,6 +173,22 @@ bool ARECharacterBase::TryDash(FVector Dir)
 	// 방향 저장(어빌리티가 소비) 후 클래스로 활성 시도. 쿨다운 중이면 false.
 	PendingDashDir = Dir.GetSafeNormal2D();
 	return AbilitySystemComponent->TryActivateAbilityByClass(UREGA_Dash::StaticClass());
+}
+
+void ARECharacterBase::Multicast_PlayFireMontage_Implementation(UAnimMontage* Montage)
+{
+	// Multicast는 서버에서도 실행된다. 데디 서버는 화면이 없으므로 코스메틱 재생을 생략한다.
+	// 리슨서버/싱글은 여기서 딱 한 번 재생 — 컴포넌트의 직접 재생을 제거했으므로 이중 재생 경로가 없다.
+	if (!Montage || IsNetMode(NM_DedicatedServer))
+	{
+		return;
+	}
+
+	if (UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+	{
+		const float Len = AnimInst->Montage_Play(Montage, 1.0f);
+		UE_LOG(LogTemp, Log, TEXT("[Attack] fire montage len=%.2f"), Len);
+	}
 }
 
 void ARECharacterBase::OnRep_Health()
