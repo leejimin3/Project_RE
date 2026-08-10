@@ -165,6 +165,13 @@ void AREPlayerController::OnFire(const FInputActionValue& Value)
 		return;
 	}
 	LastFireRequestTime = Now;
+
+	// 데디 회전 보정 (#72) — 폰 회전은 오너 클라에 복제되지 않는다
+	// (ReplicatedMovement=COND_SimulatedOrPhysics, CMC::ShouldCorrectRotation()=false).
+	// 서버가 Server_RequestFire에서 하는 커서 방향 회전을 내 화면에서도 보이게 로컬로 같이 돈다.
+	// 리슨/싱글에서는 서버가 같은 값을 다시 넣으므로 무해.
+	P->SetActorRotation(FRotator(0.f, Dir.Rotation().Yaw, 0.f));
+
 	Server_RequestFire(Dir);
 }
 

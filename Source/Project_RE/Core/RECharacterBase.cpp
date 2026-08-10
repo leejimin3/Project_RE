@@ -58,6 +58,15 @@ ARECharacterBase::ARECharacterBase()
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.f, 640.f, 0.f);
 
+	// 데디 보정 스로틀 해제 (#72) — 클릭 이동은 입력 예측형이 아니라 클라 예측(Accel=0=브레이크)이
+	// 서버 패스팔로잉과 매 프레임 어긋난다. 기본 0.10s 스로틀이면 100ms마다 ~30uu가 밀린 뒤
+	// 하드 텔레포트로 보정된다(오너 클라는 SmoothCorrection 대상이 아님) — 캡슐에 붙은 카메라까지 튄다.
+	// 매 무브 보정하면 점프량이 1프레임 이동량(~10uu)으로 줄어든다.
+	// 근거: docs/superpowers/specs/2026-08-10-dedi-move-replication-design.md
+	// ponytail: 플레이어 1명 전제(보정 RPC 1개/무브). 다인전이면 되돌리고 이동목표 복제+클라 예측으로 가라.
+	GetCharacterMovement()->NetworkMinTimeBetweenClientAdjustments = 0.f;
+	GetCharacterMovement()->NetworkMinTimeBetweenClientAdjustmentsLargeCorrection = 0.f;
+
 	// SpringArm: 절대 하향(-50) 고정, 길이 1500, 상속/폰회전 사용 안 함
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
