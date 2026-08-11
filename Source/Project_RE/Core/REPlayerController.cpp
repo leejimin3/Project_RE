@@ -8,6 +8,8 @@
 #include "InputActionValue.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Core/RECharacterBase.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "NavigationSystem.h"
@@ -96,6 +98,69 @@ void AREPlayerController::BeginPlay()
 	}
 }
 
+void AREPlayerController::PlayerTick(float DeltaTime)
+{
+	Super::PlayerTick(DeltaTime);
+
+	// 오너 클라 전용 회전 구동 (#79). 서버는 CMC의 bOrientRotationToMovement가 그대로 담당한다.
+	if (HasAuthority())
+	{
+		return;
+	}
+
+	ACharacter* Char = Cast<ACharacter>(GetPawn());
+	if (!Char)
+	{
+		return;
+	}
+	UCharacterMovementComponent* Move = Char->GetCharacterMovement();
+	if (!Move)
+	{
+		return;
+	}
+
+	// 폰이 새로 잡히면 1회 설정. 오너 클라의 CMC 회전 경로는 죽어 있다 —
+	// 이 프로젝트의 이동은 입력 예측형이 아니라 서버 패스팔로잉이므로 클라는 Acceleration=0,
+	// bHasRequestedVelocity=false → ComputeOrientToMovementRotation이 CurrentRotation을 그대로 반환한다.
+	// 꺼도 잃는 것이 없고, 동시에 서버 보정이 회전을 되돌리는 분기의 조건이 불성립해진다
+	// (ClientAdjustPosition_Implementation: bUseLastGoodRotationDuringCorrection && bOrientRotationToMovement).
+	if (FacingPawn.Get() != Char)
+	{
+		FacingPawn = Char;
+		Move->bOrientRotationToMovement = false;
+	}
+
+	// 발사 직후 락 구간에는 커서 회전을 매 틱 다시 세운다.
+	// 한 번만 세우고 손을 놓으면, 그 사이 서버 보정이 회전을 되돌렸을 때 복구하지 못해
+	// "돌았다가 되돌아옴"이 된다 (#79 실측). 회전은 코스메틱이므로 재적용 비용은 무시할 만하다.
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (FacingLockUntil >= 0.0 && Now < FacingLockUntil)
+	{
+		// 서버 보정이 회전을 덮은 흔적. 실측상 1분 플레이에 100회 넘게 발생하므로 Verbose로 둔다
+		// (기본 출력 안 됨). 회전 문제가 재발하면 `Log LogTemp Verbose`로 켜서 관측한다.
+		const FRotator Cur = Char->GetActorRotation();
+		if (FMath::Abs(FRotator::NormalizeAxis(Cur.Yaw - FacingLockYaw)) > 2.f)
+		{
+			UE_LOG(LogTemp, Verbose, TEXT("[Facing] reverted: cur=%.1f expected=%.1f"), Cur.Yaw, FacingLockYaw);
+		}
+		Char->SetActorRotation(FRotator(0.f, FacingLockYaw, 0.f));
+		return;
+	}
+
+	// 이동 중에는 속도 방향을 본다. Velocity는 서버 보정으로 갱신되므로 서버 결과와 수렴한다.
+	// 정지 상태(속도 ~0)에서는 현재 회전을 유지 — 서버 CMC도 같은 조건에서 회전하지 않는다.
+	const FVector Vel = Char->GetVelocity();
+	if (Vel.SizeSquared2D() < 1.f)
+	{
+		return;
+	}
+
+	// 보간 속도는 서버와 동일 출처(RotationRate.Yaw)를 쓴다 — 상수 중복을 만들지 않는다.
+	const FRotator Target(0.f, Vel.Rotation().Yaw, 0.f);
+	Char->SetActorRotation(
+		FMath::RInterpConstantTo(Char->GetActorRotation(), Target, DeltaTime, Move->RotationRate.Yaw));
+}
+
 void AREPlayerController::OnClickMove(const FInputActionValue& Value)
 {
 	// 클릭 검출은 로컬(커서/카메라는 로컬 전용). 해석된 월드 좌표만 서버로.
@@ -172,6 +237,12 @@ void AREPlayerController::OnFire(const FInputActionValue& Value)
 	// 리슨/싱글에서는 서버가 같은 값을 다시 넣으므로 무해.
 	P->SetActorRotation(FRotator(0.f, Dir.Rotation().Yaw, 0.f));
 
+	// 발사 후 짧은 락 (#79) — 서버 StopMovement가 도달하기 전 남은 속도 때문에
+	// PlayerTick의 속도 기준 회전이 방금 세운 커서 회전을 덮는 것을 막는다.
+	// PlayerTick이 이 각도를 매 틱 다시 세우므로 서버 보정이 되돌려도 복구된다.
+	FacingLockYaw = Dir.Rotation().Yaw;
+	FacingLockUntil = Now + Attack->GetAttackInterval();
+
 	Server_RequestFire(Dir);
 }
 
@@ -247,6 +318,21 @@ void AREPlayerController::Server_RequestFire_Implementation(FVector Dir)
 	if (!Attack)
 	{
 		return;
+	}
+
+	// 대쉬 중 발사 금지 (#80). 상태는 UREGA_Dash의 ActivationOwnedTags(State.Dashing)가 이미 표현한다 —
+	// 별도 플래그를 만들지 않는다. 클라 입력은 신뢰 대상이 아니므로 차단은 서버에 둔다.
+	// 대쉬가 0.2s로 짧아 입력은 큐에 넣지 않고 버린다.
+	if (const ARECharacterBase* Char = Cast<ARECharacterBase>(P))
+	{
+		if (const UAbilitySystemComponent* ASC = Char->GetAbilitySystemComponent())
+		{
+			if (ASC->HasMatchingGameplayTag(RETag_State_Dashing))
+			{
+				UE_LOG(LogTemp, Log, TEXT("[Attack] blocked: dashing"));
+				return;
+			}
+		}
 	}
 
 	if (Attack->FireInDirection(Dir2D))
