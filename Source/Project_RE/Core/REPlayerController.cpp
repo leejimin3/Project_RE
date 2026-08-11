@@ -118,6 +118,8 @@ void AREPlayerController::OnDash(const FInputActionValue& Value)
 	const FVector Dir = (Hit.ImpactPoint - P->GetActorLocation()).GetSafeNormal2D();
 	if (!Dir.IsNearlyZero())
 	{
+		// 입력 시각 기준점 — 서버 [Dash] activate ok / 클라 [Dash] anim 로그와의 타임스탬프 차가 곧 입력→대쉬 지연(#75 측정).
+		UE_LOG(LogTemp, Log, TEXT("[Dash] input sent (local)"));
 		Server_Dash(Dir);
 	}
 }
@@ -163,6 +165,13 @@ void AREPlayerController::OnFire(const FInputActionValue& Value)
 		return;
 	}
 	LastFireRequestTime = Now;
+
+	// 데디 회전 보정 (#72) — 폰 회전은 오너 클라에 복제되지 않는다
+	// (ReplicatedMovement=COND_SimulatedOrPhysics, CMC::ShouldCorrectRotation()=false).
+	// 서버가 Server_RequestFire에서 하는 커서 방향 회전을 내 화면에서도 보이게 로컬로 같이 돈다.
+	// 리슨/싱글에서는 서버가 같은 값을 다시 넣으므로 무해.
+	P->SetActorRotation(FRotator(0.f, Dir.Rotation().Yaw, 0.f));
+
 	Server_RequestFire(Dir);
 }
 

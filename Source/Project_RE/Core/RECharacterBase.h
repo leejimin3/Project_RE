@@ -14,6 +14,8 @@ class UAbilitySystemComponent;
 class UREAttackComponent;
 class UREGA_Dash;
 class UREHealthBarComponent;
+class UAnimMontage;
+class UAnimSequence;
 
 /**
  *  탑뷰 쿼터뷰 플레이어 폰 베이스.
@@ -49,6 +51,28 @@ public:
 	/** 대쉬 어빌리티가 읽을 목표 방향(로컬이 계산해 서버로 전달한 값). */
 	FVector GetPendingDashDir() const { return PendingDashDir; }
 
+	/**
+	 *  전 클라 발사 모션 재생 (M4 #74). 코스메틱 전용 — 판정·데미지·rate limit과 무관.
+	 *
+	 *  RPC 배치 근거(이슈 #74 b안): UREAttackComponent는 복제 설정이 없다(SetIsReplicatedByDefault 미호출).
+	 *  컴포넌트에 Multicast를 두려면 컴포넌트 복제를 새로 켜야 하고, 그러면 코스메틱 한 줄 때문에
+	 *  이 컴포넌트가 통째로 복제 대상이 된다. 캐릭터는 이미 복제 액터이고 메시도 여기 있으므로
+	 *  RPC를 캐릭터에 두고 컴포넌트가 오너를 호출한다.
+	 *
+	 *  신뢰성 근거: Unreliable. 코스메틱이라 연사 중 1발 드랍이 판정/데미지에 영향이 없고,
+	 *  Reliable이면 연사가 신뢰 큐를 점유해 실제 게임플레이 RPC를 밀어낼 수 있다.
+	 */
+	UFUNCTION(NetMulticast, Unreliable)
+	void Multicast_PlayFireMontage(UAnimMontage* Montage);
+
+	/**
+	 *  대쉬 모션을 모든 인스턴스(서버 자신 + 전 클라)에 재생. 코스메틱 전용.
+	 *  Unreliable — 드랍돼도 이동/판정(서버 RootMotion)과 무관하다.
+	 *  서버 권위 코드(UREGA_Dash::ActivateAbility)에서만 호출한다.
+	 */
+	UFUNCTION(NetMulticast, Unreliable)
+	void Multicast_PlayDashMontage();
+
 protected:
 	/** 게임플레이 어빌리티 시스템 컴포넌트. Pawn 소유, Mixed 복제. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Abilities", meta = (AllowPrivateAccess = "true"))
@@ -72,6 +96,10 @@ protected:
 	/** 대쉬 목표 방향. Server_Dash → TryDash에서 세팅, 어빌리티 ActivateAbility에서 소비. */
 	FVector PendingDashDir = FVector::ForwardVector;
 
+	/** 대쉬 모션(AnimSequence — ABP DefaultSlot에 다이나믹 몽타주로 재생). 코스메틱. */
+	UPROPERTY()
+	TObjectPtr<UAnimSequence> DashAnim;
+
 	/** ASC ActorInfo 초기화 공용 헬퍼 (서버/클라 양쪽에서 호출). */
 	void InitASCActorInfo();
 
@@ -79,7 +107,7 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_Health, VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
 	float Health = 100.f;
 
-	/** 최대 체력. */
+	/** 최대 체력. 비복제 — 서버/클라 모두 생성자에서 같은 ini(UREStatsSettings)를 읽고 런타임 변경 코드가 없다 (#73). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stats")
 	float MaxHealth = 100.f;
 
