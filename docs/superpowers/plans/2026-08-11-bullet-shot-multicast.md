@@ -13,6 +13,7 @@
 ## Global Constraints
 
 - 브랜치: `feature/M5-bullet-sync` (이미 생성됨, 스펙 커밋 2건 있음)
+- ⚠️ **이 계획은 본체 작업트리(`E:\UnrealProjects\Project_RE`)에서 실행하는 것을 전제한다.** 아래 명령들의 `-Project` / `-project` 가 절대경로로 박혀 있다. 격리 worktree에서 그대로 돌리면 **worktree가 아니라 본체를 빌드하고** 캐시 때문에 수 초 만에 `Succeeded`가 떠서, 검증이 통과한 것처럼 보이지만 실제로는 아무것도 검증하지 않는다. 다른 트리에서 실행하려면 경로를 전부 그 트리 기준으로 바꿔라.
 - 빌드 게이트 — **Editor와 Server 타겟 둘 다** 통과해야 한다:
   ```powershell
   $BB = "E:\UnrealEngine-5.8\UnrealEngine-5.8\Engine\Build\BatchFiles\Build.bat"
