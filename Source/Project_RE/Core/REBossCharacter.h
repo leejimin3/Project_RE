@@ -31,6 +31,14 @@ public:
 	void Multicast_FireDirect(EBulletPattern Pattern, FVector_NetQuantize Origin,
 	                          float AngleDeg, int32 Count, float ServerTime);
 
+	/**
+	 *  곡사탄(Artillery) 1회 일제사 (#84). Line/PlayerAimed가 먹는 조준점과
+	 *  Random이 먹는 시드를 서버가 정해 보낸다 — 클라는 PhaseRng를 돌리지 않는다.
+	 */
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_FireArtillery(EArtilleryShape Shape, FVector_NetQuantize Origin,
+	                             FVector_NetQuantize AimLoc, int32 CallSeed, float ServerTime);
+
 	/** 페이즈 로테이션 발사 시작. Seed는 서버 전용 PhaseRng 초기화용 — 네트워크 미전송 (#84). */
 	void StartFiring(int32 Seed);
 	/** 발사 정지. 이미 뜬 탄은 수명까지 유지(일괄 소멸 안 함). */

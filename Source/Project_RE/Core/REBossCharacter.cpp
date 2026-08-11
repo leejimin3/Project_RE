@@ -188,17 +188,11 @@ void AREBossCharacter::FireArtillery()
 	{
 		return;
 	}
-	UREBulletSpawnSubsystem* Spawner = GetWorld() ? GetWorld()->GetSubsystem<UREBulletSpawnSubsystem>() : nullptr;
-	if (!Spawner)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[RE] Boss::FireArtillery: Spawner NULL"));
-		return;
-	}
 
 	const FVector BossLoc = GetActorLocation();
-	const float GroundZ = BossLoc.Z + MarkerGroundOffset;   // 착지 평면(보스 캡슐 바닥 근사)
 
-	// 플레이어 위치(조준/라인용). 없으면 보스 앞쪽 폴백.
+	// 조준점. 폰 없으면 보스 앞쪽 폴백. 클라는 이 값을 유도할 수 없다 → 페이로드로 보낸다.
+	// TODO: 멀티는 타깃 선택 정책 필요 — 지금은 첫 플레이어 고정 (#85).
 	FVector PlayerLoc = BossLoc + FVector(300.f, 0.f, 0.f);
 	if (const APlayerController* PC = GetWorld()->GetFirstPlayerController())
 	{
@@ -208,9 +202,32 @@ void AREBossCharacter::FireArtillery()
 		}
 	}
 
-	// 모양별 착지점 생성.
+	// Random 모양 전용 시드. 서버 스트림에서 1회 뽑아 넘긴다 —
+	// 클라는 PhaseRng가 없으므로 이 시드로 로컬 스트림을 만들어 같은 착지점을 얻는다.
+	const int32 CallSeed = (int32)PhaseRng.GetUnsignedInt();
+
+	Multicast_FireArtillery(CurrentArtilleryShape, BossLoc, PlayerLoc, CallSeed, GetServerNow());
+}
+
+void AREBossCharacter::Multicast_FireArtillery_Implementation(EArtilleryShape Shape, FVector_NetQuantize Origin,
+                                                              FVector_NetQuantize AimLoc, int32 CallSeed, float ServerTime)
+{
+	UREBulletSpawnSubsystem* Spawner = GetWorld() ? GetWorld()->GetSubsystem<UREBulletSpawnSubsystem>() : nullptr;
+	if (!Spawner)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[RE] Boss::FireArtillery: Spawner NULL"));
+		return;
+	}
+
+	const FVector BossLoc  = Origin;
+	const FVector PlayerLoc = AimLoc;
+	const float   GroundZ  = BossLoc.Z + MarkerGroundOffset;   // 착지 평면(보스 캡슐 바닥 근사)
+
+	// 서버가 넘긴 시드로 만든 로컬 스트림 — 양쪽이 같은 난수열을 본다.
+	FRandomStream CallRng(CallSeed);
+
 	TArray<FVector> Targets;
-	switch (CurrentArtilleryShape)
+	switch (Shape)
 	{
 	case EArtilleryShape::Ring:
 		Targets = REBulletPattern::GenRing(BossLoc, /*Radius=*/500.f, ArtilleryCount, GroundZ);
@@ -228,11 +245,19 @@ void AREBossCharacter::FireArtillery()
 		Targets = REBulletPattern::GenPlayerCluster(PlayerLoc, /*ClusterRadius=*/150.f, /*RingN=*/4, GroundZ);
 		break;
 	case EArtilleryShape::Random:
-		Targets = REBulletPattern::GenRandom(BossLoc, /*ArenaRadius=*/800.f, ArtilleryCount, PhaseRng, GroundZ);
+		Targets = REBulletPattern::GenRandom(BossLoc, /*ArenaRadius=*/800.f, ArtilleryCount, CallRng, GroundZ);
 		break;
 	}
 
-	// 착지점 → arc 스폰 파라미터. 발사 원점 = 보스.
+	// 지연 보정 — 이미 착지한 탄은 스폰하지 않는다.
+	const float Elapsed = GetElapsedSince(ServerTime);
+	if (Elapsed >= ArtilleryFlightTime)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[RE] Boss FireArtillery: skipped (Elapsed=%.3f >= FlightTime=%.2f)"),
+			Elapsed, ArtilleryFlightTime);
+		return;
+	}
+
 	TArray<REBulletPattern::FArcBulletSpawnParams> Shots;
 	Shots.Reserve(Targets.Num());
 	for (const FVector& T : Targets)
@@ -244,12 +269,13 @@ void AREBossCharacter::FireArtillery()
 		P.MaxHeight  = ArtilleryMaxHeight;
 		P.Damage     = ArtilleryDamage;
 		P.Radius     = ArtilleryRadius;
+		P.Elapsed    = Elapsed;
 		Shots.Add(P);
 	}
 	Spawner->SpawnArcBulletBatch(Shots);
 
-	UE_LOG(LogTemp, Log, TEXT("[RE] Boss Artillery: Shape=%d N=%d"),
-		(int32)CurrentArtilleryShape, Shots.Num());
+	UE_LOG(LogTemp, Log, TEXT("[RE] Boss FireArtillery: Shape=%d N=%d Elapsed=%.3f role=%s"),
+		(int32)Shape, Shots.Num(), Elapsed, *UEnum::GetValueAsString(GetLocalRole()));
 }
 
 void AREBossCharacter::EndPhase()
