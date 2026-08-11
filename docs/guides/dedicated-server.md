@@ -183,8 +183,8 @@ scripts\dedi-verify.ps1 -SelfTest    # 판정 로직만 검사(프로세스 미�
 
 | 대상 | 있어야 하는 것 | 없어야 하는 것 |
 |---|---|---|
-| 서버 | `IpNetDriver listening`, `Bringing World .../Main.Main`, `[Dash] dist=`(500~700), `[Dash] probe done` | `[Attack] fire montage`, `[Dash] anim len=` (데디 코스메틱 생략 가드 #74/#75), `Assertion failed`/`Critical error` |
-| 클라 | `[Attack] fire montage len=`, `[Dash] anim len=... (role=ROLE_AutonomousProxy)` | `Assertion failed`/`Critical error` |
+| 서버 | `IpNetDriver listening`, `Bringing World .../Main.Main`, `[Dash] dist=`(500~700), `[RE] Boss Fire(Direct\|Artillery):... role=ROLE_Authority`, `[Dash] probe done` | `[Attack] fire montage`, `[Dash] anim len=` (데디 코스메틱 생략 가드 #74/#75), `Assertion failed`/`Critical error` |
+| 클라 | `[Attack] fire montage len=`, `[Dash] anim len=... (role=ROLE_AutonomousProxy)`, `[RE] Boss Fire(Direct\|Artillery):... role=ROLE_SimulatedProxy` | `Assertion failed`/`Critical error` |
 
 종료 조건은 고정 대기가 아니다 — 서버측 프로브(`RunHeadlessDashProbe`)가 완주하며 `RequestExit` 하므로, 스크립트는 **서버 프로세스의 자체 종료**를 프로브 완료 신호로 쓴다. 클라 접속 후 약 4.4초.
 
