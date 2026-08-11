@@ -144,3 +144,51 @@ standalone 서버 exe는 배포 / 부하테스트 단계용이다. 코드 고칠
 5. **회귀 확인**: Net Mode `Standalone`으로 한 번 더 돌려 싱글에서 체력바/결과 위젯이 종전대로 동작하는지.
 
 **함정: PIE는 3번 항목의 검증에 쓸 수 없다.** `IsRunningDedicatedServer()`는 `-server` 커맨드라인으로 판정하므로(`Core/Public/Misc/CoreMisc.h:152`) 에디터 프로세스에선 항상 false다 → PIE의 데디 서버 월드는 위젯을 실제로 생성한다. 위젯 스킵을 실측하려면 스테이징된 `Project_REServer.exe`로 띄워야 한다(위 "실행" 절차).
+
+## 코드 수정 후 재검증 루프 (실측)
+
+첫 빌드 표(위)는 **환경 구축 1회** 비용이다. 일상적인 코드 수정 → 데디 재검증은 훨씬 싸다:
+
+| 단계 | 시간 | 커맨드 |
+|---|---|---|
+| Editor 타겟 증분 빌드 | 10~60초 | `Build.bat Project_REEditor Win64 Development -Project=...` |
+| Server 타겟 증분 빌드 | 87초 | `Build.bat Project_REServer Win64 Development -Project=...` |
+| 쿡 + 스테이징 (`-skipbuild`) | 약 2분 | `RunUAT BuildCookRun ... -cook -stage -pak -skipbuild` |
+
+`-skipbuild`를 빼먹지 마라 — 이미 빌드한 걸 다시 빌드한다.
+
+**에디터가 켜져 있으면 빌드가 실패한다:**
+```
+Unable to build while Live Coding is active. Exit the editor and game, or press Ctrl+Alt+F11
+```
+헤더를 건드린 변경은 Live Coding 패치로 안 붙는 경우가 많으니, 에디터를 닫고 빌드하는 편이 확실하다.
+
+**Config 변경은 반드시 재쿡해야 반영된다.** 스테이징 빌드의 `Config`는 pak 안에 들어간다(`Project_RE-WindowsServer.pak`) — `Config/*.ini`만 고치고 서버 exe를 다시 띄우면 옛 값이 그대로 쓰인다.
+
+## 서버 + 클라 2프로세스 검증 (자동화)
+
+PIE로는 데디 분기를 재현할 수 없으므로(`IsRunningDedicatedServer()`가 빌드 타깃 기준), 실제 검증은 프로세스 2개로 한다.
+
+```powershell
+$stage = "E:\UnrealProjects\Project_RE\Saved\StagedBuilds\WindowsServer\Project_RE"
+
+# 서버 — -unattended 를 주면 클라 접속 시 서버측 프로브(이동/발사/대쉬)가 자동 실행된다
+$srv = Start-Process "$stage\Binaries\Win64\Project_REServer.exe" `
+  -ArgumentList "-log","-port=7777","-unattended","-abslog=<서버로그경로>" -PassThru -WindowStyle Hidden
+Start-Sleep -Seconds 15
+
+# 클라 — 맵 자리에 IP:포트를 주면 접속한다. 클라는 HasAuthority()가 false라 프로브가 돌지 않는다
+$cli = Start-Process "<엔진>\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" `
+  -ArgumentList "<uproject>","127.0.0.1:7777","-game","-nullrhi","-unattended","-log","-abslog=<클라로그경로>" `
+  -PassThru -WindowStyle Hidden
+```
+
+**`-abslog=$var` 는 반드시 변수가 전개되는 형태로 넘겨라.** 리터럴 `$log` 가 그대로 들어가면 로그 파일이 아예 생성되지 않고, `Saved/Logs/Project_RE.log` 에도 안 남아 조용히 관측에 실패한다.
+
+판정은 두 로그를 대조한다 — 코스메틱(몽타주)은 **클라에만**, 판정/권위 로그는 **서버에만** 찍히는 것이 정상이다.
+
+## 함정 (검증편)
+
+- **접속 종료 후 클라 로그가 오염된다.** 서버가 먼저 종료되면 클라는 `Browse: /Game/Level/Main?closed` 로 **자기 스탠드얼론 월드**를 띄운다. 그 뒤로 나오는 `role=ROLE_Authority` 줄이나 두 번째 `Client_ShowResult`는 별개 게임의 로그다 — 데디 동작으로 오독하지 마라. 판정은 `Host closed the connection` **이전** 구간만 본다.
+
+- **무적 치트는 데디에서 동작하지 않는다.** `re.Cheat.PlayerInvincible` 은 클라 로컬 CVar이고 `TakeDamage` 는 서버에서 돈다(`RECharacterBase.cpp` 주석의 알려진 천장). 승리 경로를 확인하려면 치트 대신 **`Config/DefaultGame.ini` 의 `BossMaxHealth` 를 임시로 낮추고 재쿡**해라. 서버 프로브의 첫 명중(10 데미지)으로 보스가 죽어 `Boss died → EndGame: VICTORY → Client_ShowResult: VICTORY` 경로를 그대로 탄다. 확인 후 원복 + 재쿡을 잊지 마라.
