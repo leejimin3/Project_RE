@@ -130,10 +130,19 @@ void AREPlayerController::PlayerTick(float DeltaTime)
 		Move->bOrientRotationToMovement = false;
 	}
 
-	// 발사 직후 락 구간에는 커서 회전을 유지한다.
+	// 발사 직후 락 구간에는 커서 회전을 매 틱 다시 세운다.
+	// 한 번만 세우고 손을 놓으면, 그 사이 서버 보정이 회전을 되돌렸을 때 복구하지 못해
+	// "돌았다가 되돌아옴"이 된다 (#79 실측). 회전은 코스메틱이므로 재적용 비용은 무시할 만하다.
 	const double Now = GetWorld()->GetTimeSeconds();
 	if (FacingLockUntil >= 0.0 && Now < FacingLockUntil)
 	{
+		const FRotator Cur = Char->GetActorRotation();
+		if (FMath::Abs(FRotator::NormalizeAxis(Cur.Yaw - FacingLockYaw)) > 2.f)
+		{
+			// 누군가 우리 회전을 덮었다는 뜻 — 원인 추적용 근거를 남긴다.
+			UE_LOG(LogTemp, Log, TEXT("[Facing] reverted: cur=%.1f expected=%.1f"), Cur.Yaw, FacingLockYaw);
+		}
+		Char->SetActorRotation(FRotator(0.f, FacingLockYaw, 0.f));
 		return;
 	}
 
@@ -229,6 +238,8 @@ void AREPlayerController::OnFire(const FInputActionValue& Value)
 
 	// 발사 후 짧은 락 (#79) — 서버 StopMovement가 도달하기 전 남은 속도 때문에
 	// PlayerTick의 속도 기준 회전이 방금 세운 커서 회전을 덮는 것을 막는다.
+	// PlayerTick이 이 각도를 매 틱 다시 세우므로 서버 보정이 되돌려도 복구된다.
+	FacingLockYaw = Dir.Rotation().Yaw;
 	FacingLockUntil = Now + Attack->GetAttackInterval();
 
 	Server_RequestFire(Dir);

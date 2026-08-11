@@ -88,6 +88,9 @@ private:
 	 */
 	double FacingLockUntil = -1.0;
 
+	/** 락 구간에 매 틱 다시 세울 커서 방향 yaw (#79). */
+	float FacingLockYaw = 0.f;
+
 	/** 회전 구동 설정을 1회 적용하기 위한 폰 추적. 폰이 바뀌면 다시 적용한다 (#79). */
 	TWeakObjectPtr<APawn> FacingPawn;
 
