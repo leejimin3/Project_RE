@@ -16,6 +16,7 @@
 #include "REStatsSettings.h"
 #include "TimerManager.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/GameStateBase.h"
 
 /**
  *  측정용 클로즈드루프 오버라이드. 발사 시점 조회 — 재시작 없이 다음 발사부터 반영.
@@ -137,12 +138,48 @@ void AREBossCharacter::BeginPhase()
 
 void AREBossCharacter::FireCurrentPattern()
 {
+	if (bIsDead)
+	{
+		return;
+	}
 	if (CurrentPhasePattern == EBulletPattern::Artillery)
 	{
 		FireArtillery();
 		return;
 	}
-	TriggerBulletPattern(CurrentPhasePattern, /*Seed=*/12345, /*StartTime=*/0.f);
+	if (CurrentPhasePattern == EBulletPattern::Homing)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[RE] Boss: Homing 미구현 (#67)"));
+		return;
+	}
+
+	// 여기까지가 서버 전용 결정이다. 클라는 로테이션도 PhaseRng도 돌리지 않는다 (#84).
+	float AngleDeg = 0.f;
+	int32 Count    = 0;
+
+	if (CurrentPhasePattern == EBulletPattern::Spiral)
+	{
+		Count    = ResolveSpiralCount();
+		AngleDeg = SpiralBaseAngleDeg;
+		SpiralBaseAngleDeg += SpiralRotationStepDeg;   // 다음 발사에 회전
+	}
+	else   // Fan
+	{
+		Count = REBulletPattern::FFanParams().Count;
+		// 플레이어 방향 조준. 폰 없으면 0°(기존 기본) 폴백.
+		// 클라는 이 각을 유도할 수 없다(복제 위치가 서버와 다름) → 페이로드로 보낸다.
+		// TODO: 멀티는 타깃 선택 정책 필요 — 지금은 첫 플레이어 고정 (#85).
+		if (const APlayerController* PC = GetWorld()->GetFirstPlayerController())
+		{
+			if (const APawn* Target = PC->GetPawn())
+			{
+				const FVector D = Target->GetActorLocation() - GetActorLocation();
+				AngleDeg = FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X));
+			}
+		}
+	}
+
+	Multicast_FireDirect(CurrentPhasePattern, GetActorLocation(), AngleDeg, Count, GetServerNow());
 }
 
 void AREBossCharacter::FireArtillery()
@@ -223,117 +260,129 @@ void AREBossCharacter::EndPhase()
 		&AREBossCharacter::BeginPhase, RestSec, /*bLoop=*/false);
 }
 
-void AREBossCharacter::TriggerBulletPattern(EBulletPattern Pattern, int32 Seed, float StartTime)
+float AREBossCharacter::GetServerNow() const
 {
-	if (bIsDead)
+	const AGameStateBase* GS = GetWorld() ? GetWorld()->GetGameState() : nullptr;
+	return GS ? GS->GetServerWorldTimeSeconds() : 0.f;
+}
+
+float AREBossCharacter::GetElapsedSince(float ServerTime) const
+{
+	// 접속 직후 GameState 복제 전이면 GetServerWorldTimeSeconds가 0을 반환할 수 있다 →
+	// ServerTime을 그대로 빼면 큰 음수가 나오므로 Max로 막는다(보정 없음으로 폴백).
+	return FMath::Max(0.f, GetServerNow() - ServerTime);
+}
+
+int32 AREBossCharacter::ResolveSpiralCount()
+{
+	// 발사 시점 조회 — CVar 변경이 재시작/타이머 재설정 없이 다음 발사부터 반영된다.
+	// CVar ≥ 0 = 측정용 클로즈드루프(동시 탄수 유지 — M3 하네스 전제),
+	// -1(기본) = 오픈루프: Settings(BulletsPerShot) 고정 발수 → 링이 매 발사 균일.
+	const int32 CVarCount = CVarBulletCount.GetValueOnGameThread();
+	int32 Count;
+	if (CVarCount < 0)
 	{
-		return;
+		// 게임플레이 경로 — 발사당 탄수 고정. 동시 탄수는 발수×수명/주기로 자연 결정(제한 없음).
+		Count = GetDefault<UREStatsSettings>()->BulletsPerShot;
 	}
-
-	// TODO M5: Multicast_TriggerPattern RPC로 교체 (서버→클라 시드 브로드캐스트, 총알 자체는 미전송).
-	//          현재는 싱글 로컬 직접 스폰 경로.
-
-	UREBulletSpawnSubsystem* Spawner = GetWorld() ? GetWorld()->GetSubsystem<UREBulletSpawnSubsystem>() : nullptr;
-	if (!Spawner)
+	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[RE] Boss::TriggerBulletPattern: UREBulletSpawnSubsystem NULL"));
-		return;
-	}
+		const int32 TargetLive = CVarCount;
 
-	TArray<FBulletSpawnParams> Params;
-	switch (Pattern)
-	{
-	case EBulletPattern::Spiral:
-	{
-		// 발사 시점 조회 — CVar 변경이 재시작/타이머 재설정 없이 다음 발사부터 반영된다.
-		// CVar ≥ 0 = 측정용 클로즈드루프(동시 탄수 유지 — M3 하네스 전제),
-		// -1(기본) = 오픈루프: Settings(BulletsPerShot) 고정 발수 → 링이 매 발사 균일.
-		const int32 CVarCount = CVarBulletCount.GetValueOnGameThread();
-		int32 Count;
-		if (CVarCount < 0)
+		// 라이브 탄환 수 = ISM 인스턴스 수(렌더 프로세서가 매 프레임 엔티티 수로 동기화).
+		// 관측 불가(데디서버 등 ISM 없음)면 CurrentLive=-1 → 피드포워드 폴백.
+		int32 CurrentLive = -1;
+		if (const UREBulletRenderSubsystem* RS = GetWorld()->GetSubsystem<UREBulletRenderSubsystem>())
 		{
-			// 게임플레이 경로 — 발사당 탄수 고정. 동시 탄수는 발수×수명/주기로 자연 결정(제한 없음).
-			Count = GetDefault<UREStatsSettings>()->BulletsPerShot;
-		}
-		else
-		{
-			const int32 TargetLive = CVarCount;
-
-			// 라이브 탄환 수 = ISM 인스턴스 수(렌더 프로세서가 매 프레임 엔티티 수로 동기화).
-			// 관측 불가(데디서버 등 ISM 없음)면 CurrentLive=-1 → 피드포워드 폴백.
-			int32 CurrentLive = -1;
-			if (const UREBulletRenderSubsystem* RS = GetWorld()->GetSubsystem<UREBulletRenderSubsystem>())
+			if (const UInstancedStaticMeshComponent* ISM = RS->GetISM())
 			{
-				if (const UInstancedStaticMeshComponent* ISM = RS->GetISM())
-				{
-					CurrentLive = ISM->GetInstanceCount();
-				}
+				CurrentLive = ISM->GetInstanceCount();
 			}
+		}
 
-			const float FeedFwd = TargetLive * REBulletPattern::FireIntervalSec() / REBulletPattern::BulletLifetimeSec();
-			if (CurrentLive >= 0 && TargetLive > 0)
+		const float FeedFwd = TargetLive * REBulletPattern::FireIntervalSec() / REBulletPattern::BulletLifetimeSec();
+		if (CurrentLive >= 0 && TargetLive > 0)
+		{
+			// 클로즈드루프(적분 제어): 스폰율을 오차만큼 램프. 소멸률이 얼마든 라이브=목표에서 램프가 멎어 정상상태 오차 0.
+			// 단, 첫 1수명 동안은 아직 탄환이 채워지는 중이라 오차가 크게 양수 → 적분하면 와인드업으로 대폭 오버슈트한다.
+			// 그 구간은 피드포워드로 채우기만 하고, 채워진 뒤(정상상태 근처)부터 적분으로 소멸분을 보정한다.
+			const int32 FillShots = FMath::CeilToInt(REBulletPattern::BulletLifetimeSec() / REBulletPattern::FireIntervalSec());
+			if (SpiralShotCount < FillShots)
 			{
-				// 클로즈드루프(적분 제어): 스폰율을 오차만큼 램프. 소멸률이 얼마든 라이브=목표에서 램프가 멎어 정상상태 오차 0.
-				// 단, 첫 1수명 동안은 아직 탄환이 채워지는 중이라 오차가 크게 양수 → 적분하면 와인드업으로 대폭 오버슈트한다.
-				// 그 구간은 피드포워드로 채우기만 하고, 채워진 뒤(정상상태 근처)부터 적분으로 소멸분을 보정한다.
-				const int32 FillShots = FMath::CeilToInt(REBulletPattern::BulletLifetimeSec() / REBulletPattern::FireIntervalSec());
-				if (SpiralShotCount < FillShots)
-				{
-					SpiralSpawnRate = FeedFwd;
-				}
-				else
-				{
-					SpiralSpawnRate += CVarSpawnKi.GetValueOnGameThread() * (TargetLive - CurrentLive);
-					SpiralSpawnRate = FMath::Clamp(SpiralSpawnRate, 0.f, (float)TargetLive);  // anti-windup 상한
-				}
-				// 소수부 이월 내림 — 소형 타깃(rate~3.3)에서 round()가 매 발사 4로 올려 +20% 오버슛하는 것 방지.
-				SpiralSpawnAccum += SpiralSpawnRate;
-				Count = FMath::FloorToInt(SpiralSpawnAccum);
-				SpiralSpawnAccum -= Count;
+				SpiralSpawnRate = FeedFwd;
 			}
 			else
 			{
-				Count = FMath::RoundToInt(FeedFwd);  // 라이브 관측 불가(데디서버 등) → 오픈루프 폴백
+				SpiralSpawnRate += CVarSpawnKi.GetValueOnGameThread() * (TargetLive - CurrentLive);
+				SpiralSpawnRate = FMath::Clamp(SpiralSpawnRate, 0.f, (float)TargetLive);  // anti-windup 상한
 			}
-			++SpiralShotCount;
-
-			UE_LOG(LogTemp, Log, TEXT("[RE] Boss Spiral: Target=%d Live=%d Rate=%.1f"),
-				TargetLive, CurrentLive, SpiralSpawnRate);
+			// 소수부 이월 내림 — 소형 타깃(rate~3.3)에서 round()가 매 발사 4로 올려 +20% 오버슛하는 것 방지.
+			SpiralSpawnAccum += SpiralSpawnRate;
+			Count = FMath::FloorToInt(SpiralSpawnAccum);
+			SpiralSpawnAccum -= Count;
 		}
-
-		const REBulletPattern::FSpiralParams SP = REBulletPattern::MakeSpiralRing(Count, SpiralBaseAngleDeg);
-		Params = REBulletPattern::GenerateSpiral(GetActorLocation(), SP);
-		UE_LOG(LogTemp, Log, TEXT("[RE] Boss Spiral: N=%d"), Params.Num());
-		SpiralBaseAngleDeg += SpiralRotationStepDeg;  // 다음 호출 시 회전
-		break;
-	}
-	case EBulletPattern::Fan:
-	{
-		REBulletPattern::FFanParams FP;
-		// 플레이어 방향 조준. 폰 없으면 0°(기존 기본) 폴백.
-		// TODO M5: 멀티는 타깃 선택 필요 — 지금은 첫 플레이어 고정.
-		if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+		else
 		{
-			if (const APawn* Target = PC->GetPawn())
-			{
-				const FVector D = Target->GetActorLocation() - GetActorLocation();
-				FP.CenterAngleDeg = FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X));
-			}
+			Count = FMath::RoundToInt(FeedFwd);  // 라이브 관측 불가(데디서버 등) → 오픈루프 폴백
 		}
-		Params = REBulletPattern::GenerateFan(GetActorLocation(), FP);
-		UE_LOG(LogTemp, Log, TEXT("[RE] Boss Fan: Center=%.1f Spread=%.1f -> N=%d"),
-			FP.CenterAngleDeg, FP.SpreadDeg, Params.Num());
-		break;
+		++SpiralShotCount;
+
+		UE_LOG(LogTemp, Log, TEXT("[RE] Boss Spiral: Target=%d Live=%d Rate=%.1f"),
+			TargetLive, CurrentLive, SpiralSpawnRate);
 	}
-	case EBulletPattern::Homing:
-		// M1 범위 밖 — 슬롯만 유지, 미구현. 스폰 없이 종료.
-		UE_LOG(LogTemp, Warning, TEXT("[RE] Boss: Homing 미구현 (M1 범위 밖)"));
+	return Count;
+}
+
+void AREBossCharacter::Multicast_FireDirect_Implementation(EBulletPattern Pattern, FVector_NetQuantize Origin,
+                                                           float AngleDeg, int32 Count, float ServerTime)
+{
+	UREBulletSpawnSubsystem* Spawner = GetWorld() ? GetWorld()->GetSubsystem<UREBulletSpawnSubsystem>() : nullptr;
+	if (!Spawner)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[RE] Boss::FireDirect: UREBulletSpawnSubsystem NULL"));
 		return;
 	}
+
+	// Origin을 쓴다 — GetActorLocation()이 아니다. 클라의 보스 위치는 복제 지연으로 서버와 다를 수 있다.
+	TArray<FBulletSpawnParams> Params;
+	if (Pattern == EBulletPattern::Spiral)
+	{
+		const REBulletPattern::FSpiralParams SP = REBulletPattern::MakeSpiralRing(Count, AngleDeg);
+		Params = REBulletPattern::GenerateSpiral(Origin, SP);
+	}
+	else if (Pattern == EBulletPattern::Fan)
+	{
+		REBulletPattern::FFanParams FP;
+		FP.Count          = Count;
+		FP.CenterAngleDeg = AngleDeg;
+		Params = REBulletPattern::GenerateFan(Origin, FP);
+	}
+	else
+	{
+		return;
+	}
+
+	// 지연 보정. 서버는 발사 시각이 곧 현재라 Elapsed≈0 → 같은 코드가 무보정으로 동작한다.
+	const float Elapsed = GetElapsedSince(ServerTime);
+	if (Elapsed > 0.f)
+	{
+		for (int32 i = Params.Num() - 1; i >= 0; --i)
+		{
+			if (Elapsed >= Params[i].Lifetime)
+			{
+				Params.RemoveAtSwap(i);   // 이미 수명이 다한 탄 — 스폰하지 않는다
+				continue;
+			}
+			Params[i].Location += Params[i].Velocity * Elapsed;
+			Params[i].Lifetime -= Elapsed;
+		}
+	}
+
 	Spawner->SpawnBulletBatch(Params);
 
-	UE_LOG(LogTemp, Log, TEXT("[RE] Boss::TriggerBulletPattern: Pattern=%d Seed=%d Start=%.2f -> spawned %d entities at %s"),
-		(int32)Pattern, Seed, StartTime, Params.Num(), *GetActorLocation().ToString());
+	// role이 판정의 핵심 신호다 — 서버=ROLE_Authority, 클라=ROLE_SimulatedProxy 양쪽에 찍혀야 한다.
+	UE_LOG(LogTemp, Log, TEXT("[RE] Boss FireDirect: Pattern=%d Angle=%.1f N=%d Elapsed=%.3f role=%s"),
+		(int32)Pattern, AngleDeg, Params.Num(), Elapsed, *UEnum::GetValueAsString(GetLocalRole()));
 }
 
 float AREBossCharacter::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent,

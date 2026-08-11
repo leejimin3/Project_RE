@@ -23,12 +23,15 @@ public:
 	AREBossCharacter();
 
 	/**
-	 *  탄막 패턴 발사. M0 싱글: MassEntitySubsystem에 placeholder 엔티티 N개 직접 스폰.
-	 *  Seed/StartTime은 M5 데디에서 서버→클라 동일 시드 시뮬용 — M0에서는 저장/미사용.
+	 *  직선탄(Spiral/Fan) 1회 발사 (#84). 서버가 결정한 생성기 입력을 브로드캐스트하고
+	 *  서버·클라가 이 같은 구현체에서 같은 탄을 만든다 — 서버도 로컬 실행되므로 직접 스폰 경로가 없다.
+	 *  Reliable: 유실되면 그 발사분이 클라에 영영 안 보인다(회피 게임에서 치명적).
 	 */
-	void TriggerBulletPattern(EBulletPattern Pattern, int32 Seed, float StartTime);
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_FireDirect(EBulletPattern Pattern, FVector_NetQuantize Origin,
+	                          float AngleDeg, int32 Count, float ServerTime);
 
-	/** 페이즈 로테이션 발사 시작. Seed로 패턴 순서 결정(M5 시드 동기화 선행). */
+	/** 페이즈 로테이션 발사 시작. Seed는 서버 전용 PhaseRng 초기화용 — 네트워크 미전송 (#84). */
 	void StartFiring(int32 Seed);
 	/** 발사 정지. 이미 뜬 탄은 수명까지 유지(일괄 소멸 안 함). */
 	void StopFiring();
@@ -72,6 +75,13 @@ private:
 	float SpiralSpawnAccum = 0.f;
 	/** 누적 발사 횟수 — 첫 1수명(≈수명/발사주기 발) 동안은 적분 정지(피드포워드로 채우기)해 와인드업 방지. */
 	int32 SpiralShotCount = 0;
+
+	/** 서버 기준 현재 시각. GameState 미준비면 0. */
+	float GetServerNow() const;
+	/** ServerTime 이후 경과초(음수 클램프). 서버에서는 ≈0이라 보정이 자연히 무효화된다. */
+	float GetElapsedSince(float ServerTime) const;
+	/** Spiral 발사당 탄 수. 클로즈드루프는 서버 ISM 상태에 의존 — 서버 전용 결정. */
+	int32 ResolveSpiralCount();
 
 	/** 사망 여부. 서버 전용 — 클라 시각처리는 스코프 밖이라 비복제. */
 	bool bIsDead = false;
