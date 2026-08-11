@@ -33,6 +33,9 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
 
+	/** 오너 클라 회전 구동 (#79). 서버에서는 아무 것도 하지 않는다 — CMC가 담당. */
+	virtual void PlayerTick(float DeltaTime) override;
+
 	/** 우클릭 핸들러: 커서 아래 지점을 서버로 이동 요청 */
 	void OnClickMove(const FInputActionValue& Value);
 
@@ -78,6 +81,15 @@ private:
 
 	/** 클라 발사 페이싱 — 마지막 발사 요청 시각(월드초). 홀드 시 Triggered가 매 프레임 오는 것 억제. */
 	double LastFireRequestTime = -1.0;
+
+	/**
+	 *  발사 직후 커서 회전을 유지하는 구간의 종료 시각(월드초). -1 = 락 없음.
+	 *  서버 StopMovement가 도달하기 전 남은 속도가 커서 회전을 이동 방향으로 덮는 것을 막는다 (#79).
+	 */
+	double FacingLockUntil = -1.0;
+
+	/** 회전 구동 설정을 1회 적용하기 위한 폰 추적. 폰이 바뀌면 다시 적용한다 (#79). */
+	TWeakObjectPtr<APawn> FacingPawn;
 
 	/** 헤드리스(-unattended) 발사 프로브. 서버 권위에서만 발동. */
 	void RunHeadlessFireProbe();
