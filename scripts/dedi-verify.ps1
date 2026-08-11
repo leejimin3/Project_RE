@@ -168,6 +168,10 @@ if ($SelfTest) {
     $badServer = $goodServer + 'LogTemp: [Attack] fire montage len=1.20'   # 데디 가드 파손
     Invoke-Verdict -ServerLines $badServer -ClientLines @{ 'client1' = @('nothing') } -CheckVictory $false
     if ($script:Failures.Count -eq 0) { throw 'SelfTest: 고장 로그를 잡아내지 못했다' }
+    # 볼리 어서션 자체가 (다른 어서션과 무관하게) 고장을 잡는지 — 실패 목록에 그 항목이 실제로 있어야 한다.
+    # 'nothing'은 모든 클라 패턴에 안 걸리므로, 다른 어서션이 이미 실패해도 이 어서션이 조용히
+    # 빠졌다면(예: 패턴 오타로 무력화) 위 Count 체크만으론 못 잡는다 — 항목 자체를 찾는다.
+    if (-not ($script:Failures -match '탄막 수신·스폰')) { throw 'SelfTest: 볼리 수신 어서션이 고장을 못 잡는다' }
 
     Write-Host "`n[dedi-verify] SelfTest OK" -ForegroundColor Green
     exit 0

@@ -194,6 +194,24 @@ scripts\dedi-verify.ps1 -SelfTest    # 판정 로직만 검사(프로세스 미�
 
 **이 스크립트가 대체하지 못하는 것:** 캐릭터 회전처럼 로그에 안 남는 항목은 여전히 육안이다(#70에서 실증). 스크린샷/영상 캡처는 하지 않는다.
 
+### 궤도 일치 정량 측정 (#84)
+
+서버·클라가 같은 탄환 궤적을 그리는지는 로그 존재 여부(위 표)로는 안 잡힌다 — 좌표 자체를 비교해야 한다. 방법: `REBulletSimProcessor.cpp`의 `Execute`에 임시 프로브(커밋 안 함)를 넣어 서버·클라 양쪽에서 생존 탄 좌표를 `TrajDump`로 찍고, 각 서버 좌표에서 가장 가까운 클라 좌표까지의 거리 중 최댓값(worst nearest-neighbour distance)을 본다. **게이트: < 10 uu(10cm).**
+
+덤프 트리거는 로컬 `World->GetTimeSeconds()`가 아니라 **`AGameStateBase::GetServerWorldTimeSeconds()`**(서버 동기화 클럭)로 건다 — 로컬 월드 시각은 클라 접속 시 0으로 리셋돼 서버·클라가 "같은 실제 순간"을 가리키지 못한다. `dedi-verify.ps1`은 접속 유지 구간이 ~4.1초로 짧아(대쉬 프로브가 서버를 일찍 끔) 이 측정엔 쓰지 않는다 — `-unattended` 없이 서버·클라를 따로 띄운 전용 페어로 측정한다.
+
+실측(#84, 스파이럴 첫 볼리 16발): **worst = 6.61 uu — PASS.**
+
+**측정 하한(floor)이 있다.** 서버·클라는 각자의 틱에서 독립적으로 임계값 통과를 감지하므로 두 덤프는 최대 서버 넷틱 1개만큼 어긋날 수 있다 — 그 틱 사이 탄환은 계속 날아간다. 하한 크기는:
+
+```
+floor ≈ BulletSpeed / NetServerMaxTickRate
+```
+
+실측 조건(`BulletSpeed=200`, `NetServerMaxTickRate=30` 기본값)에서 floor ≈ 6.67 uu — 실측 6.61 uu와 일치한다. 즉 **6.61 uu는 대부분 덤프 타이밍 편차이지, 궤적 자체의 오차가 아니다.** (`FVector_NetQuantize`의 정수cm 반올림은 1 uu 미만이라 이 크기를 설명하지 못한다.)
+
+이 하한은 `BulletSpeed`에 비례한다 — 더 빠른 탄속 패턴은 이 방법만으로 10 uu 게이트에 근접·초과할 수 있다, 재동기화가 완전히 정상이어도. **나중에 `BulletSpeed`를 올렸을 때 이 게이트가 실패하면, 먼저 이 하한 공식부터 확인해라** — 팬텀 디싱크를 쫓기 전에.
+
 ## 함정 (검증편)
 
 - **접속 종료 후 클라 로그가 오염된다.** 서버가 먼저 종료되면 클라는 `Browse: /Game/Level/Main?closed` 로 **자기 스탠드얼론 월드**를 띄운다. 그 뒤로 나오는 `role=ROLE_Authority` 줄이나 두 번째 `Client_ShowResult`는 별개 게임의 로그다 — 데디 동작으로 오독하지 마라. 판정은 `Host closed the connection` **이전** 구간만 본다. (`dedi-verify.ps1` 은 이 절단을 자동으로 한다. 실측 1666줄 로그에서 마커는 1601줄이었고 그 뒤에 `[Dash] anim len=0.97 (role=ROLE_Authority)` 가 찍혔다 — 절단 없이는 오너 경로가 깨져도 통과한다.)
