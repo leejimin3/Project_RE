@@ -69,7 +69,7 @@ void UREBulletSpawnSubsystem::EnsureArcArchetype(FMassEntityManager& EntityManag
 }
 
 FMassEntityHandle UREBulletSpawnSubsystem::SpawnArcBullet(FVector Start, FVector Target, float FlightTime,
-                                                          float MaxHeight, float Damage, float Radius)
+                                                          float MaxHeight, float Damage, float Radius, float InElapsed)
 {
 	FMassEntityManager* EM = GetEntityManager();
 	if (!EM)
@@ -87,7 +87,7 @@ FMassEntityHandle UREBulletSpawnSubsystem::SpawnArcBullet(FVector Start, FVector
 	Arc.Start      = Start;
 	Arc.Target     = Target;
 	Arc.FlightTime = FlightTime;
-	Arc.Elapsed    = 0.f;
+	Arc.Elapsed    = InElapsed;
 	Arc.MaxHeight  = MaxHeight;
 	Arc.Damage     = Damage;
 	Arc.Radius     = Radius;
@@ -99,6 +99,6 @@ void UREBulletSpawnSubsystem::SpawnArcBulletBatch(TConstArrayView<REBulletPatter
 {
 	for (const REBulletPattern::FArcBulletSpawnParams& P : Params)
 	{
-		SpawnArcBullet(P.Start, P.Target, P.FlightTime, P.MaxHeight, P.Damage, P.Radius);
+		SpawnArcBullet(P.Start, P.Target, P.FlightTime, P.MaxHeight, P.Damage, P.Radius, P.Elapsed);
 	}
 }
