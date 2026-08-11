@@ -89,11 +89,11 @@
   ```
   **405uu 근처가 나오면 PR #59 회귀다 — 즉시 중단하고 `IgnoreRootMotion` 가드 위치를 재검토한다.**
 
-- [ ] **Step 2 — 데디 PIE:** `Play As Client` + `Run Dedicated Server`, 클라 1개.
-  - 클라 창에서 스페이스 → **대쉬 모션이 보이는가** (핵심 통과 조건)
-  - 클라 로그에 `[Dash] anim len=... (role=ROLE_AutonomousProxy)`
-  - **서버 로그에 `[Dash] anim len=` 이 찍히는지 확인** — 설계상 데디 서버는 `AnimInstance`가 null이라 no-op을 기대한다. 찍힌다면 서버가 실제로 재생 중이라는 뜻이고, `IgnoreRootMotion` 전환이 서버 이동에 개입할 수 있다 → #74처럼 `IsNetMode(NM_DedicatedServer)` 명시 가드를 추가해야 한다.
-  - 클라 대쉬 착지 위치가 서버와 어긋나지 않는가 (가드가 클라에 안 걸리면 여기서 드러난다)
+- [x] **Step 2 — 데디 실검증 (스테이징 서버 exe + 원격 클라):** PIE가 아니라 `Project_REServer.exe` + `UnrealEditor-Cmd 127.0.0.1:7777`로 검증했다. `IsRunningDedicatedServer()`가 빌드 타깃 기준이라 PIE로는 데디 분기를 재현할 수 없기 때문이다.
+  - 클라 로그 `[Dash] anim len=0.97 (role=ROLE_AutonomousProxy)` — Multicast 도달 확인
+  - **서버 로그 `[Dash] anim len=` — 초안 가정(데디는 AnimInstance null이라 no-op)은 반증됐다.** 서버에 `role=ROLE_Authority`로 2회 찍혔다 → `IgnoreRootMotion` 상태로 서버가 몽타주를 돌려 권위 이동에 개입 중이었다. `IsNetMode(NM_DedicatedServer)` 명시 가드를 추가(`ff3facf`)했고 재검증에서 **0회**로 떨어졌다.
+  - **클라 크래시 발견 → 수정.** 복귀 타이머 람다의 raw `UAnimInstance*` 캡처가 월드 정리 중 파괴된 객체를 역참조해 `UObjectArray.h:1083` assert. `TWeakObjectPtr`로 전환(`ff3facf`), 재현 없음.
+  - 서버 대쉬 거리 `[Dash] dist=596.0` — 가드 추가 후에도 유지
 
 - [ ] **Step 3 — 리슨/싱글 회귀:** 모션이 **1회만** 재생되고 대쉬 거리가 기존과 동일.
 
