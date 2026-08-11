@@ -167,28 +167,39 @@ Unable to build while Live Coding is active. Exit the editor and game, or press 
 
 ## 서버 + 클라 2프로세스 검증 (자동화)
 
-PIE로는 데디 분기를 재현할 수 없으므로(`IsRunningDedicatedServer()`가 빌드 타깃 기준), 실제 검증은 프로세스 2개로 한다.
+PIE로는 데디 분기를 재현할 수 없으므로(`IsRunningDedicatedServer()`가 빌드 타깃 기준), 실제 검증은 프로세스 2개로 한다. 기동·대기·종료·판정은 `scripts/dedi-verify.ps1` 이 전부 수행한다 (#82).
 
 ```powershell
-$stage = "E:\UnrealProjects\Project_RE\Saved\StagedBuilds\WindowsServer\Project_RE"
-
-# 서버 — -unattended 를 주면 클라 접속 시 서버측 프로브(이동/발사/대쉬)가 자동 실행된다
-$srv = Start-Process "$stage\Binaries\Win64\Project_REServer.exe" `
-  -ArgumentList "-log","-port=7777","-unattended","-abslog=<서버로그경로>" -PassThru -WindowStyle Hidden
-Start-Sleep -Seconds 15
-
-# 클라 — 맵 자리에 IP:포트를 주면 접속한다. 클라는 HasAuthority()가 false라 프로브가 돌지 않는다
-$cli = Start-Process "<엔진>\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" `
-  -ArgumentList "<uproject>","127.0.0.1:7777","-game","-nullrhi","-unattended","-log","-abslog=<클라로그경로>" `
-  -PassThru -WindowStyle Hidden
+scripts\dedi-verify.ps1              # 서버 + 클라 1개
+scripts\dedi-verify.ps1 -Clients 2   # 인자만 열려 있음 — 아래 천장 먼저 읽어라
+scripts\dedi-verify.ps1 -SelfTest    # 판정 로직만 검사(프로세스 미기동)
 ```
 
-**`-abslog=$var` 는 반드시 변수가 전개되는 형태로 넘겨라.** 리터럴 `$log` 가 그대로 들어가면 로그 파일이 아예 생성되지 않고, `Saved/Logs/Project_RE.log` 에도 안 남아 조용히 관측에 실패한다.
+전 항목 통과 시 종료 코드 `0`, 실패 시 `1` + 실패 항목·이유 출력.
 
-판정은 두 로그를 대조한다 — 코스메틱(몽타주)은 **클라에만**, 판정/권위 로그는 **서버에만** 찍히는 것이 정상이다.
+**이 스크립트는 이미 스테이징된 산출물을 전제한다.** 빌드/쿡은 하지 않는다 — 코드를 고쳤으면 위 "재검증 루프" 표대로 먼저 빌드+재쿡해라. 안 그러면 옛 산출물을 검증한다.
+
+판정 항목:
+
+| 대상 | 있어야 하는 것 | 없어야 하는 것 |
+|---|---|---|
+| 서버 | `IpNetDriver listening`, `Bringing World .../Main.Main`, `[Dash] dist=`(500~700), `[Dash] probe done` | `[Attack] fire montage`, `[Dash] anim len=` (데디 코스메틱 생략 가드 #74/#75), `Assertion failed`/`Critical error` |
+| 클라 | `[Attack] fire montage len=`, `[Dash] anim len=... (role=ROLE_AutonomousProxy)` | `Assertion failed`/`Critical error` |
+
+종료 조건은 고정 대기가 아니다 — 서버측 프로브(`RunHeadlessDashProbe`)가 완주하며 `RequestExit` 하므로, 스크립트는 **서버 프로세스의 자체 종료**를 프로브 완료 신호로 쓴다. 클라 접속 후 약 4.4초.
+
+**승리 경로(`-Victory`)는 기본 실행에서 통과하지 않는다.** 서버 프로브의 첫 명중은 10 데미지인데 쿡된 `BossMaxHealth` 는 1000이다. 아래 "무적 치트" 항목대로 값을 낮추고 재쿡한 상태에서만 `-Victory` 를 붙여라.
+
+**`-Clients 2` 이상은 아직 반쪽이다.** 첫 클라의 서버측 프로브가 완주하며 서버를 내리므로, 뒤 클라의 서버측 프로브는 시작도 못 하고 잘린다. 그런데 뒤 클라도 코스메틱 로그(발사/대쉬 몽타주)는 접속 직후 찍히므로 **판정은 전부 초록으로 뜬다** — 이걸 "2인 데디 검증 완료"로 읽으면 안 된다. 클라별 프로브 완주가 실제로 필요해지면 프로브에 클라 인덱스 게이트를 넣어야 한다(M5 몫).
+
+**이 스크립트가 대체하지 못하는 것:** 캐릭터 회전처럼 로그에 안 남는 항목은 여전히 육안이다(#70에서 실증). 스크린샷/영상 캡처는 하지 않는다.
 
 ## 함정 (검증편)
 
-- **접속 종료 후 클라 로그가 오염된다.** 서버가 먼저 종료되면 클라는 `Browse: /Game/Level/Main?closed` 로 **자기 스탠드얼론 월드**를 띄운다. 그 뒤로 나오는 `role=ROLE_Authority` 줄이나 두 번째 `Client_ShowResult`는 별개 게임의 로그다 — 데디 동작으로 오독하지 마라. 판정은 `Host closed the connection` **이전** 구간만 본다.
+- **접속 종료 후 클라 로그가 오염된다.** 서버가 먼저 종료되면 클라는 `Browse: /Game/Level/Main?closed` 로 **자기 스탠드얼론 월드**를 띄운다. 그 뒤로 나오는 `role=ROLE_Authority` 줄이나 두 번째 `Client_ShowResult`는 별개 게임의 로그다 — 데디 동작으로 오독하지 마라. 판정은 `Host closed the connection` **이전** 구간만 본다. (`dedi-verify.ps1` 은 이 절단을 자동으로 한다. 실측 1666줄 로그에서 마커는 1601줄이었고 그 뒤에 `[Dash] anim len=0.97 (role=ROLE_Authority)` 가 찍혔다 — 절단 없이는 오너 경로가 깨져도 통과한다.)
+
+- **`-abslog=$var` 는 반드시 변수가 전개되는 형태로 넘겨라.** 수동으로 프로세스를 띄울 때의 함정이다. 리터럴 `$log` 가 그대로 들어가면 로그 파일이 아예 생성되지 않고, `Saved/Logs/Project_RE.log` 에도 안 남아 조용히 관측에 실패한다.
+
+- **`.ps1` 은 UTF-8 BOM으로 저장해라.** Windows PowerShell 5.1은 BOM 없는 파일을 ANSI 코드페이지로 읽어 한글 주석·문자열이 깨지고, 깨진 바이트가 따옴표 짝을 무너뜨려 파싱 자체가 실패한다.
 
 - **무적 치트는 데디에서 동작하지 않는다.** `re.Cheat.PlayerInvincible` 은 클라 로컬 CVar이고 `TakeDamage` 는 서버에서 돈다(`RECharacterBase.cpp` 주석의 알려진 천장). 승리 경로를 확인하려면 치트 대신 **`Config/DefaultGame.ini` 의 `BossMaxHealth` 를 임시로 낮추고 재쿡**해라. 서버 프로브의 첫 명중(10 데미지)으로 보스가 죽어 `Boss died → EndGame: VICTORY → Client_ShowResult: VICTORY` 경로를 그대로 탄다. 확인 후 원복 + 재쿡을 잊지 마라.
