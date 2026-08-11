@@ -57,6 +57,14 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void Server_RequestFire(FVector Dir);
 
+	/**
+	 *  로컬 클라 준비 통지 (#84). 서버는 이 신호를 받고 보스 발사를 시작한다.
+	 *  PostLogin이 아니라 클라발인 이유: PostLogin은 서버측 PC 생성 시점이라
+	 *  클라 월드가 아직 Multicast를 받을 준비가 안 됐을 수 있다.
+	 */
+	UFUNCTION(Server, Reliable)
+	void Server_NotifyReady();
+
 	UPROPERTY()
 	UInputAction* ClickMoveAction;
 
