@@ -206,6 +206,26 @@ void AREGameMode::Logout(AController* Exiting)
 	Super::Logout(Exiting);
 }
 
+APawn* AREGameMode::SpawnDefaultPawnAtTransform_Implementation(AController* NewPlayer,
+                                                               const FTransform& SpawnTransform)
+{
+	// 맵에 PlayerStart가 하나뿐이라 N인이면 같은 자리에 겹친다 — 인덱스별로 흩는다 (#85).
+	// +Y인 이유(#56): 보스가 +X 600에 있어 +X로 흩으면 플레이어를 탄막 레인에 밀어넣는다.
+	// 1인이면 Half=0, SpawnedPawnCount=0 → 오프셋이 정확히 0이라 싱글 스폰 좌표가 불변이다.
+	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
+	const float Half = (Expected - 1) * 0.5f;
+	const FVector Offset(0.f, (SpawnedPawnCount - Half) * SpawnSpacing, 0.f);
+	++SpawnedPawnCount;
+
+	FTransform Adjusted = SpawnTransform;
+	Adjusted.AddToTranslation(Offset);
+
+	UE_LOG(LogTemp, Log, TEXT("[RE] Spawn player idx=%d offsetY=%.0f loc=%s"),
+		SpawnedPawnCount - 1, Offset.Y, *Adjusted.GetLocation().ToString());
+
+	return Super::SpawnDefaultPawnAtTransform_Implementation(NewPlayer, Adjusted);
+}
+
 void AREGameMode::TryStartBossFiring()
 {
 	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());

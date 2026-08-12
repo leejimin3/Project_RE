@@ -54,6 +54,9 @@ protected:
 
 	virtual void Logout(AController* Exiting) override;
 
+	virtual APawn* SpawnDefaultPawnAtTransform_Implementation(AController* NewPlayer,
+	                                                          const FTransform& SpawnTransform) override;
+
 private:
 	UPROPERTY()
 	TObjectPtr<AREBossCharacter> DemoBoss = nullptr;
@@ -72,6 +75,15 @@ private:
 	/** 사망한 PC 집합 (#85). ReadyPlayers를 채우면 전원 사망 = 패배. */
 	UPROPERTY()
 	TSet<TObjectPtr<APlayerController>> DeadPlayers;
+
+	/**
+	 *  스폰된 폰 수 = 다음 스폰의 오프셋 인덱스 (#85).
+	 *  감소시키지 않는다 — 나갔다 들어오면 오프셋이 바깥으로 밀리지만, 감소시키면 두 플레이어가
+	 *  같은 인덱스를 받아 겹칠 수 있다. 겹침이 드리프트보다 나쁘다(#54).
+	 */
+	int32 SpawnedPawnCount = 0;
+	/** 플레이어 간 이격 거리(uu). 캡슐 반경 대비 넉넉히. */
+	static constexpr float SpawnSpacing = 250.f;
 
 	/** 발사 시작 1회성 가드. */
 	bool bFiringStarted = false;
