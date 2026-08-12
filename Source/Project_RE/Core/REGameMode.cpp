@@ -12,6 +12,7 @@
 #include "TimerManager.h"
 #include "HAL/IConsoleManager.h"
 #include "REStatsSettings.h"
+#include "GameFramework/PawnMovementComponent.h"
 
 namespace
 {
@@ -24,6 +25,14 @@ namespace
 		0,
 		TEXT("측정 전용: 1이면 게임오버를 무시하고 보스 탄막 발사를 계속 유지."),
 		ECVF_Cheat);
+	// #85 협동 인원. ready가 이 수를 채우면 보스 발사 시작(RPG 던전 입장 모델).
+	// ini가 아니라 CVar인 이유: 스테이징 Config는 pak 안에 들어가서 ini면 인원을 바꿀 때마다
+	// 재쿡해야 한다. CVar면 서버 커맨드라인(-ExecCmds)으로 넘길 수 있어 데디 검증이 재쿡 없이 돈다.
+	static TAutoConsoleVariable<int32> CVarExpectedPlayers(
+		TEXT("re.Coop.ExpectedPlayers"),
+		1,
+		TEXT("협동 시작에 필요한 준비 완료 플레이어 수. 기본 1(싱글 동작 유지)."),
+		ECVF_Default);
 }
 
 AREGameMode::AREGameMode()
@@ -119,29 +128,124 @@ void AREGameMode::EndGame(bool bVictory)
 		DemoBoss->StopFiring();
 	}
 
-	APlayerController* PC = GetWorld()->GetFirstPlayerController();
-
-	// 2) 결과 화면 + 입력 차단 — 오너 클라 실행(싱글은 로컬 즉시).
-	if (AREPlayerController* REPC = Cast<AREPlayerController>(PC))
+	// 2) 결과 화면 + 입력 차단 — 전 클라에 보낸다 (#85).
+	//    이미 죽어서 입력이 차단된 플레이어도 결과 화면은 받아야 하므로 필터하지 않는다.
+	//    FConstPlayerControllerIterator는 약참조를 주므로 역참조 전에 유효성을 본다.
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 	{
-		REPC->Client_ShowResult(bVictory);
+		if (!It->IsValid())
+		{
+			continue;
+		}
+		if (AREPlayerController* REPC = Cast<AREPlayerController>(It->Get()))
+		{
+			REPC->Client_ShowResult(bVictory);
+		}
 	}
 }
 
-void AREGameMode::NotifyPlayerReady()
+void AREGameMode::NotifyPlayerReady(APlayerController* PC)
 {
-	bPlayerReady = true;
+	// TSet은 카운트 중복을 막아주지만 로그는 아니다 — 클라가 RPC를 연타하면 무한정 찍힌다.
+	// 실제로 새로 추가됐을 때만 로그.
+	bool bAlreadyInSet = false;
+	if (PC)
+	{
+		ReadyPlayers.Add(PC, &bAlreadyInSet);
+	}
+	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
+	if (PC && !bAlreadyInSet)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[RE] Player ready %d/%d"), ReadyPlayers.Num(), Expected);
+	}
 	TryStartBossFiring();
+}
+
+void AREGameMode::NotifyPlayerDied(APlayerController* PC)
+{
+	if (!PC || bGameOver)
+	{
+		return;
+	}
+	// 사망 시점에 아직 ReadyPlayers에 없을 수 있다 — 스폰이 ready RPC 왕복보다 먼저 끝나는 레이스.
+	// 죽었다는 사실 자체가 참가자라는 증거이므로 분모에도 넣는다: DeadPlayers는 항상 ReadyPlayers의
+	// 부분집합이어야 한다는 불변식을 지킨다. TryStartBossFiring()은 여기서 부르지 않는다 —
+	// 이 함수가 매치를 시작시키는 부작용을 가져서는 안 된다.
+	ReadyPlayers.Add(PC);
+	DeadPlayers.Add(PC);
+
+	if (AREPlayerController* REPC = Cast<AREPlayerController>(PC))
+	{
+		REPC->Client_NotifyDeath();
+	}
+	// 서버측: 마지막 이동 명령이 남아 시체가 계속 미끄러지는 것을 막는다.
+	PC->StopMovement();                                        // 우클릭 이동 패스팔로잉 중단
+	if (UPawnMovementComponent* Move = PC->GetPawn() ? PC->GetPawn()->GetMovementComponent() : nullptr)
+	{
+		Move->StopMovementImmediately();                       // 잔여 속도 제거
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[RE] Player died %d/%d"), DeadPlayers.Num(), ReadyPlayers.Num());
+
+	// 분모는 ExpectedPlayers가 아니라 실제 접속자 수다 — 중간에 나간 사람이 있으면
+	// 고정 분모로는 남은 사람이 다 죽어도 게임이 끝나지 않는다.
+	if (DeadPlayers.Num() >= ReadyPlayers.Num())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[RE] All %d players dead"), ReadyPlayers.Num());
+		EndGame(/*bVictory=*/false);
+	}
+}
+
+void AREGameMode::Logout(AController* Exiting)
+{
+	if (APlayerController* PC = Cast<APlayerController>(Exiting))
+	{
+		ReadyPlayers.Remove(PC);
+		DeadPlayers.Remove(PC);
+
+		UE_LOG(LogTemp, Log, TEXT("[RE] Player left — ready=%d dead=%d"),
+			ReadyPlayers.Num(), DeadPlayers.Num());
+
+		// 분모가 줄었으니 지금이 종료 시점일 수 있다. 남은 사람이 이미 다 죽어 있던 경우다.
+		// ReadyPlayers.Num() > 0 가드가 없으면 마지막 한 명이 나갈 때 0 >= 0 으로 DEFEAT가 떠서
+		// 받을 클라도 없는 상태로 게임이 끝난 것으로 기록된다.
+		if (!bGameOver && ReadyPlayers.Num() > 0 && DeadPlayers.Num() >= ReadyPlayers.Num())
+		{
+			EndGame(/*bVictory=*/false);
+		}
+	}
+	Super::Logout(Exiting);
+}
+
+APawn* AREGameMode::SpawnDefaultPawnAtTransform_Implementation(AController* NewPlayer,
+                                                               const FTransform& SpawnTransform)
+{
+	// 맵에 PlayerStart가 하나뿐이라 N인이면 같은 자리에 겹친다 — 인덱스별로 흩는다 (#85).
+	// +Y인 이유(#56): 보스가 +X 600에 있어 +X로 흩으면 플레이어를 탄막 레인에 밀어넣는다.
+	// 1인이면 Half=0, SpawnedPawnCount=0 → 오프셋이 정확히 0이라 싱글 스폰 좌표가 불변이다.
+	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
+	const float Half = (Expected - 1) * 0.5f;
+	const FVector Offset(0.f, (SpawnedPawnCount - Half) * SpawnSpacing, 0.f);
+	++SpawnedPawnCount;
+
+	FTransform Adjusted = SpawnTransform;
+	Adjusted.AddToTranslation(Offset);
+
+	UE_LOG(LogTemp, Log, TEXT("[RE] Spawn player idx=%d offsetY=%.0f loc=%s"),
+		SpawnedPawnCount - 1, Offset.Y, *Adjusted.GetLocation().ToString());
+
+	return Super::SpawnDefaultPawnAtTransform_Implementation(NewPlayer, Adjusted);
 }
 
 void AREGameMode::TryStartBossFiring()
 {
-	if (bFiringStarted || !bPlayerReady || !DemoBoss)
+	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
+	if (bFiringStarted || !DemoBoss || ReadyPlayers.Num() < Expected)
 	{
 		return;
 	}
 	bFiringStarted = true;
 	// 시드는 서버 전용 PhaseRng 초기화용 — 네트워크에 나가지 않는다 (#84).
 	DemoBoss->StartFiring(/*Seed=*/FMath::Rand());
-	UE_LOG(LogTemp, Log, TEXT("[RE] Boss firing started (player ready)"));
+	UE_LOG(LogTemp, Log, TEXT("[RE] Boss firing started (%d/%d ready)"), ReadyPlayers.Num(), Expected);
 }

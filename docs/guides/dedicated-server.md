@@ -192,6 +192,27 @@ scripts\dedi-verify.ps1 -SelfTest    # 판정 로직만 검사(프로세스 미�
 
 **`-Clients 2` 이상은 아직 반쪽이다.** 첫 클라의 서버측 프로브가 완주하며 서버를 내리므로, 뒤 클라의 서버측 프로브는 시작도 못 하고 잘린다. 그런데 뒤 클라도 코스메틱 로그(발사/대쉬 몽타주)는 접속 직후 찍히므로 **판정은 전부 초록으로 뜬다** — 이걸 "2인 데디 검증 완료"로 읽으면 안 된다. 클라별 프로브 완주가 실제로 필요해지면 프로브에 클라 인덱스 게이트를 넣어야 한다(M5 몫).
 
+### 2인 수동 페어 검증 (#85, 자동화는 #87 몫)
+
+`dedi-verify.ps1 -Clients 2`가 반쪽인 동안은 서버·클라 2개를 손으로 붙여서 본다.
+
+1. **서버에 `-ExecCmds="re.Coop.ExpectedPlayers 2"` 를 준다.** 협동 인원은 ini가 아니라 CVar다 — 스테이징 `Config`는 pak 안에 들어가 인원을 바꿀 때마다 재쿡해야 하지만, CVar면 커맨드라인만 바꾸면 되므로 재쿡 없이 인원 수를 바꿔가며 검증할 수 있다.
+2. **서버에 `-unattended`를 주지 않는다.** 주면 첫 클라 접속 시 서버측 헤드리스 프로브(위 "서버 + 클라 2프로세스 검증" 절 참조)가 켜져 약 4.4초 뒤 `RequestExit`으로 서버가 죽는다 — 둘째 클라가 붙기 전에 서버가 내려간다.
+   ```powershell
+   $srv = Start-Process ...\Project_REServer.exe -ArgumentList "-log","-port=7777","-ExecCmds=`"re.Coop.ExpectedPlayers 2`"","-abslog=..."
+   # 서버 리스닝 확인 후 클라 1, 이어서 클라 2를 붙인다(각각 UnrealEditor-Cmd.exe ... 127.0.0.1:7777 -game -nullrhi)
+   ```
+3. **확인할 판정 4개**(서버·클라 로그를 `Select-String`으로 grep):
+   - 클라 1만 접속한 상태에서는 `[RE] Player ready 1/2`만 있고 **`Boss firing started`는 없다** — 게이트가 인원을 세고 있다는 증거.
+   - 클라 2 접속 직후 `[RE] Spawn player idx=0 offsetY=...`와 `idx=1 offsetY=...`의 **오프셋 값이 서로 다르다**(대칭, `SpawnSpacing` 기준).
+   - 두 클라 로그 모두에 `Boss Fire(Direct|Artillery):... role=ROLE_SimulatedProxy`가 찍힌다 — 양쪽 다 탄막을 수신한다.
+   - 전원 사망 시 두 클라 로그 모두에 `[RE] Client_ShowResult: DEFEAT`가 찍힌다 — 결과 화면이 전 클라에 간다.
+4. 프로세스는 반드시 직접 정리한다(`Stop-Process -Force`) — `dedi-verify.ps1`처럼 자동 종료를 기다려주는 로직이 없다.
+
+**주의 — NavMesh 재검증(스폰 이격을 바꾼 뒤 필요)은 위 2번과 정반대 설정이다.** 헤드리스 이동 프로브(`RunHeadlessMoveProbe`)는 `-unattended`가 있어야만 켜지므로, 이번엔 서버에 `-unattended`를 주고 대쉬 프로브가 `RequestExit`을 부르기 전 약 4.4초 창 안에 클라 둘을 모두 접속시켜야 한다 — 판정은 각 클라 로그에 `[Move] probe start`가 있는지(프로브가 실제로 돌았다는 증거)와 실제 목표 좌표에 대한 `[Move] rejected: off-navmesh`가 없는지이며, 프로브가 일부러 맵 밖 좌표도 하나 요청하므로 그 좌표를 지목한 거부 로그 한두 줄은 오히려 거부 경로가 살아있다는 정상 증거다(무발동으로 인한 침묵 통과와 혼동하지 말 것).
+
+**주의 — #86이 살아있는 동안은 "전원 사망" 경로를 자연 전투로 재현할 수 없다.** `Mass/REBulletHitProcessor.cpp`와 `Mass/REArcHitProcessor.cpp`의 두 히트 프로세서가 피격 대상을 `UGameplayStatics::GetPlayerPawn(World, 0)`(플레이어 인덱스 0) 하나로 하드코딩하고 있어, 2인 이상 접속 시 인덱스 0이 아닌 플레이어는 탄막 데미지를 원천적으로 받지 못한다(실측: 1258회 피격 판정이 전부 인덱스 0에게만 적용, 나머지 플레이어는 9분 이상 관측해도 0회). 이 상태로는 판정 4번째 항목(전원 사망 → 양쪽 결과 화면)이 실전투로는 절대 도달하지 않는다 — 재시도해도 소용없다. #86이 고쳐지기 전까지는 (a) `NotifyPlayerDied`/`EndGame` 경로를 코드 리뷰로만 신뢰하거나, (b) 히트 프로세서를 임시로(커밋 금지) 전원 대상으로 바꿔 프로브하는 수밖에 없다. 다음에 이 절차를 돌리는 사람은 둘째 사망을 기다리며 시간을 태우기 전에 이 문단을 먼저 읽어라.
+
 **이 스크립트가 대체하지 못하는 것:** 캐릭터 회전처럼 로그에 안 남는 항목은 여전히 육안이다(#70에서 실증). 스크린샷/영상 캡처는 하지 않는다.
 
 ### 궤도 일치 정량 측정 (#84)

@@ -192,8 +192,19 @@ void AREPlayerController::OnDash(const FInputActionValue& Value)
 	}
 }
 
+bool AREPlayerController::IsPawnAlive() const
+{
+	const ARECharacterBase* Char = Cast<ARECharacterBase>(GetPawn());
+	return Char && Char->IsAlive();
+}
+
 void AREPlayerController::Server_Dash_Implementation(FVector Dir)
 {
+	// 서버 권위 — 죽은 폰의 RPC는 무시 (#85). 클라 DisableInput은 지연·조작에 뚫린다.
+	if (!IsPawnAlive())
+	{
+		return;
+	}
 	// 서버 권위 — 폰의 대쉬 어빌리티 활성(쿨다운은 어빌리티가 검사).
 	if (ARECharacterBase* Char = Cast<ARECharacterBase>(GetPawn()))
 	{
@@ -205,7 +216,7 @@ void AREPlayerController::Server_NotifyReady_Implementation()
 {
 	if (AREGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<AREGameMode>() : nullptr)
 	{
-		GM->NotifyPlayerReady();
+		GM->NotifyPlayerReady(this);
 	}
 }
 
@@ -271,6 +282,14 @@ void AREPlayerController::Client_ShowResult_Implementation(bool bVictory)
 	UE_LOG(LogTemp, Log, TEXT("[RE] Client_ShowResult: %s"), bVictory ? TEXT("VICTORY") : TEXT("DEFEAT"));
 }
 
+void AREPlayerController::Client_NotifyDeath_Implementation()
+{
+	// 입력만 끊는다. 결과 화면은 게임이 끝날 때 Client_ShowResult가 따로 띄운다.
+	DisableInput(this);
+
+	UE_LOG(LogTemp, Log, TEXT("[RE] Client_NotifyDeath: input disabled (spectating)"));
+}
+
 void AREPlayerController::OnToggleCheatPanel()
 {
 	if (!IsLocalPlayerController())
@@ -292,6 +311,13 @@ void AREPlayerController::OnToggleCheatPanel()
 
 void AREPlayerController::Server_RequestMove_Implementation(FVector Target)
 {
+	// 서버 권위 — 죽은 폰의 이동 요청 무시 (#85). 클라 DisableInput은 지연·조작에 뚫린다.
+	if (!IsPawnAlive())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Move] rejected: pawn dead"));
+		return;
+	}
+
 	// 서버 권위 — nav 검증 후 패스팔로잉 구동.
 	UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld());
 	FNavLocation NavLoc;
@@ -310,6 +336,12 @@ void AREPlayerController::Server_RequestFire_Implementation(FVector Dir)
 	// 게임오버 후 잔여 RPC 무시 — 구 AutoFire StopFiring의 대체.
 	AREGameMode* GM = GetWorld()->GetAuthGameMode<AREGameMode>();
 	if (GM && GM->IsGameOver())
+	{
+		return;
+	}
+
+	// 서버 권위 — 죽은 폰의 발사 요청 무시 (#85). 클라 DisableInput은 지연·조작에 뚫린다.
+	if (!IsPawnAlive())
 	{
 		return;
 	}

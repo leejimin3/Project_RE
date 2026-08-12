@@ -127,6 +127,12 @@ private:
 
 	EArtilleryShape CurrentArtilleryShape = EArtilleryShape::Ring;
 
+	/**
+	 *  최근접 생존 플레이어 폰 (#85). 없으면 nullptr.
+	 *  서버 결정 경로에서만 부른다 — 결과는 RPC 페이로드로 나가므로 RPC 계약은 안 바뀐다.
+	 */
+	const APawn* FindNearestLivingPlayerPawn() const;
+
 	/** 현재 페이즈 Artillery 1회 일제사(FireCurrentPattern에서 분기). */
 	void FireArtillery();
 };

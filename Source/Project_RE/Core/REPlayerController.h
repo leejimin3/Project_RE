@@ -29,6 +29,13 @@ public:
 	UFUNCTION(Client, Reliable)
 	void Client_ShowResult(bool bVictory);
 
+	/**
+	 *  사망 통지 (#85). 입력만 차단하고 폰·카메라는 그대로 둔다 —
+	 *  그 자리에서 동료 전투를 보는 것이 곧 관전 시점이다(별도 관전 카메라 없음).
+	 */
+	UFUNCTION(Client, Reliable)
+	void Client_NotifyDeath();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
@@ -81,6 +88,9 @@ protected:
 	UInputAction* CheatPanelAction;
 
 private:
+	/** 폰이 살아있는가. 서버 RPC 가드용 — 클라 DisableInput은 지연·조작에 뚫린다 (#85). */
+	bool IsPawnAlive() const;
+
 	/** 헤드리스(-unattended) 자기이동 프로브. 서버 권위에서만 발동. */
 	void RunHeadlessMoveProbe();
 
