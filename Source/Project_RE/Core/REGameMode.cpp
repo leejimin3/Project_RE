@@ -12,6 +12,7 @@
 #include "TimerManager.h"
 #include "HAL/IConsoleManager.h"
 #include "REStatsSettings.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 namespace
 {
@@ -160,7 +161,11 @@ void AREGameMode::NotifyPlayerDied(APlayerController* PC)
 		REPC->Client_NotifyDeath();
 	}
 	// 서버측: 마지막 이동 명령이 남아 시체가 계속 미끄러지는 것을 막는다.
-	PC->StopMovement();
+	PC->StopMovement();                                        // 우클릭 이동 패스팔로잉 중단
+	if (UPawnMovementComponent* Move = PC->GetPawn() ? PC->GetPawn()->GetMovementComponent() : nullptr)
+	{
+		Move->StopMovementImmediately();                       // 잔여 속도 제거
+	}
 
 	UE_LOG(LogTemp, Log, TEXT("[RE] Player died %d/%d"), DeadPlayers.Num(), ReadyPlayers.Num());
 
