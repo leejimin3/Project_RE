@@ -211,7 +211,7 @@ scripts\dedi-verify.ps1 -SelfTest    # 판정 로직만 검사(프로세스 미�
 
 **주의 — NavMesh 재검증(스폰 이격을 바꾼 뒤 필요)은 위 2번과 정반대 설정이다.** 헤드리스 이동 프로브(`RunHeadlessMoveProbe`)는 `-unattended`가 있어야만 켜지므로, 이번엔 서버에 `-unattended`를 주고 대쉬 프로브가 `RequestExit`을 부르기 전 약 4.4초 창 안에 클라 둘을 모두 접속시켜야 한다 — 판정은 각 클라 로그에 `[Move] probe start`가 있는지(프로브가 실제로 돌았다는 증거)와 실제 목표 좌표에 대한 `[Move] rejected: off-navmesh`가 없는지이며, 프로브가 일부러 맵 밖 좌표도 하나 요청하므로 그 좌표를 지목한 거부 로그 한두 줄은 오히려 거부 경로가 살아있다는 정상 증거다(무발동으로 인한 침묵 통과와 혼동하지 말 것).
 
-**주의 — #86이 살아있는 동안은 "전원 사망" 경로를 자연 전투로 재현할 수 없다.** `Mass/REBulletHitProcessor.cpp`와 `Mass/REArcHitProcessor.cpp`의 두 히트 프로세서가 피격 대상을 `UGameplayStatics::GetPlayerPawn(World, 0)`(플레이어 인덱스 0) 하나로 하드코딩하고 있어, 2인 이상 접속 시 인덱스 0이 아닌 플레이어는 탄막 데미지를 원천적으로 받지 못한다(실측: 1258회 피격 판정이 전부 인덱스 0에게만 적용, 나머지 플레이어는 9분 이상 관측해도 0회). 이 상태로는 판정 4번째 항목(전원 사망 → 양쪽 결과 화면)이 실전투로는 절대 도달하지 않는다 — 재시도해도 소용없다. #86이 고쳐지기 전까지는 (a) `NotifyPlayerDied`/`EndGame` 경로를 코드 리뷰로만 신뢰하거나, (b) 히트 프로세서를 임시로(커밋 금지) 전원 대상으로 바꿔 프로브하는 수밖에 없다. 다음에 이 절차를 돌리는 사람은 둘째 사망을 기다리며 시간을 태우기 전에 이 문단을 먼저 읽어라.
+**#86에서 해소됨 — "전원 사망" 경로가 자연 전투로 재현된다.** 두 히트 프로세서(`Mass/REBulletHitProcessor.cpp`, `Mass/REArcHitProcessor.cpp`)는 과거 `UGameplayStatics::GetPlayerPawn(World, 0)`(플레이어 인덱스 0) 하나로 피격 대상을 하드코딩해, 2인 이상 접속 시 인덱스 0이 아닌 플레이어는 탄막 데미지를 원천적으로 받지 못했다. #86이 공용 헬퍼 `GatherHitTargets`로 두 프로세서를 전원 생존자 대상 순회로 바꿨다. 실측(2026-08-13, Task 4): 서버 로그에 `Player died 1/2`와 `Player died 2/2`가 모두 찍혔고 `All 2 players dead` → `EndGame: DEFEAT`로 이어졌으며, 첫 사망 직후에도 `BulletHit: Applied=10`이 끊기지 않아 시체가 탄을 흡수하지 않음도 확인했다. 양 클라 로그 모두 임시 프로브 없이 `Client_ShowResult: DEFEAT`가 찍혔다. 아래 판정 4번째 항목은 이제 재시도 없이 실전투로 도달한다.
 
 **이 스크립트가 대체하지 못하는 것:** 캐릭터 회전처럼 로그에 안 남는 항목은 여전히 육안이다(#70에서 실증). 스크린샷/영상 캡처는 하지 않는다.
 
