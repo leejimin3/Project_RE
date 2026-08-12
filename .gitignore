@@ -27,3 +27,6 @@ Content/Collections/
 # Knowledge graph output
 graphify-out/
 Obsidian/graphify-out/
+
+# SDD 스크래치(계획 실행 원장·브리프·리뷰 패키지)
+.superpowers/

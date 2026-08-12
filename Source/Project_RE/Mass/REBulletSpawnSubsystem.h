@@ -35,7 +35,7 @@ public:
 
 	/** 곡사탄 1발 스폰 + arc Fragment 초기화. EntityManager 없으면 무효 핸들 반환. */
 	FMassEntityHandle SpawnArcBullet(FVector Start, FVector Target, float FlightTime,
-	                                 float MaxHeight, float Damage, float Radius);
+	                                 float MaxHeight, float Damage, float Radius, float InElapsed = 0.f);
 
 	/** N발 배치 스폰. 내부는 SpawnArcBullet 루프. */
 	void SpawnArcBulletBatch(TConstArrayView<REBulletPattern::FArcBulletSpawnParams> Params);

@@ -87,6 +87,9 @@ void AREPlayerController::BeginPlay()
 				Subsystem->AddMappingContext(TopDownMappingContext, 0);
 			}
 		}
+
+		// 준비 완료를 서버에 알린다 — 싱글/리슨에서는 권한 보유라 즉시 로컬 실행된다.
+		Server_NotifyReady();
 	}
 
 	// 헤드리스(-unattended) 서버권위 이동 프로브. 실플레이(PIE/에디터)엔 무발동.
@@ -195,6 +198,14 @@ void AREPlayerController::Server_Dash_Implementation(FVector Dir)
 	if (ARECharacterBase* Char = Cast<ARECharacterBase>(GetPawn()))
 	{
 		Char->TryDash(Dir);
+	}
+}
+
+void AREPlayerController::Server_NotifyReady_Implementation()
+{
+	if (AREGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<AREGameMode>() : nullptr)
+	{
+		GM->NotifyPlayerReady();
 	}
 }
 

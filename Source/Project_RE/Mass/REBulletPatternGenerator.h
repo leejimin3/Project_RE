@@ -61,6 +61,9 @@ namespace REBulletPattern
 		float   MaxHeight  = 400.f;
 		float   Damage     = 15.f;
 		float   Radius     = 120.f;
+
+		/** 스폰 시점의 비행 경과초 (#84 지연 보정). 0 = 갓 발사됨 — 기존 호출부는 무변경. */
+		float   Elapsed    = 0.f;
 	};
 
 	//~ 착지점 생성기 — 전부 월드 착지점(Z=GroundZ) 배열 반환. 순수함수(FRandomStream 제외).

@@ -74,10 +74,8 @@ void AREGameMode::BeginPlay()
 	if (AREBossCharacter* Boss = GetWorld()->SpawnActor<AREBossCharacter>(
 			AREBossCharacter::StaticClass(), FVector(600.f, 0.f, 90.f), FRotator::ZeroRotator, BossSpawnParams))
 	{
-		// #64: 발사 주체를 Boss로 이관 — 랜덤 패턴 페이즈 로테이션(M5 RPC 확장 대비).
+		// #64: 발사 주체를 Boss로 이관. 발사 시작은 클라 준비 후 (#84) — 여기서 켜지 않는다.
 		DemoBoss = Boss;
-		// 서버 권위 지점에서 랜덤 시드 1개 생성 → M5에서 클라 replicate하면 결정적 동기화.
-		Boss->StartFiring(/*Seed=*/FMath::Rand());
 	}
 
 	// #16 프로브: 패턴 제너레이터 수학 단위 검증 (순수 함수, 프레임 무관).
@@ -94,6 +92,9 @@ void AREGameMode::BeginPlay()
 		const float FAL = FMath::RadiansToDegrees(FMath::Atan2(Fn.Last().Velocity.Y, Fn.Last().Velocity.X));
 		UE_LOG(LogTemp, Log, TEXT("[RE] FanProbe: N=%d ang_first=%.1f ang_last=%.1f"), Fn.Num(), FA0, FAL);
 	}
+
+	// 준비 신호가 이미 와 있었다면 여기서 켜진다 — PC BeginPlay와 GameMode BeginPlay는 순서가 보장되지 않는다.
+	TryStartBossFiring();
 }
 
 void AREGameMode::EndGame(bool bVictory)
@@ -125,4 +126,22 @@ void AREGameMode::EndGame(bool bVictory)
 	{
 		REPC->Client_ShowResult(bVictory);
 	}
+}
+
+void AREGameMode::NotifyPlayerReady()
+{
+	bPlayerReady = true;
+	TryStartBossFiring();
+}
+
+void AREGameMode::TryStartBossFiring()
+{
+	if (bFiringStarted || !bPlayerReady || !DemoBoss)
+	{
+		return;
+	}
+	bFiringStarted = true;
+	// 시드는 서버 전용 PhaseRng 초기화용 — 네트워크에 나가지 않는다 (#84).
+	DemoBoss->StartFiring(/*Seed=*/FMath::Rand());
+	UE_LOG(LogTemp, Log, TEXT("[RE] Boss firing started (player ready)"));
 }

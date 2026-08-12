@@ -5,6 +5,19 @@
 - **날짜**: 2026-07-05
 - **라벨**: architecture, C++, networking
 
+> **⚠️ M5 전송 계약은 폐기됨 (2026-08-11, #84).**
+> 아래 `(패턴, 시드, 시작시각)` 계약은 **패턴 수학이 존재하지 않던 시점**에 정한 것이다.
+> 이후 M1~M5에서 생긴 세 가지가 시드만으로는 재현을 불가능하게 만들었다:
+> 조준 패턴이 플레이어 위치를 먹고(Fan `CenterAngleDeg`, Artillery `PlayerLoc`),
+> Spiral 기준각이 발사마다 누적되며(`SpiralBaseAngleDeg`),
+> Spiral 발사 수가 서버 ISM 상태 기반 클로즈드루프다.
+> 실제 계약은 **시드 대신 생성기 입력을 보내는 것**으로 대체됐다 —
+> `docs/superpowers/specs/2026-08-11-bullet-shot-multicast-design.md` 참조.
+>
+> **여전히 유효한 부분:** "총알 자체는 네트워크에 태우지 않는다", 서버/클라 각자 로컬 시뮬,
+> 서버만 피격 판정 권위, 클라는 비주얼만. 이 골격은 그대로 간다.
+> 아래 문서는 M0 시점의 기록으로 남긴다.
+
 ## 목표
 
 M5 데디 협동 시 '총알을 네트워크에 태우지 않는' 아키텍처의 토대를 M0에서 확립한다.
@@ -75,11 +88,24 @@ UMassEntitySubsystem
     → EntityManager.CreateEntity × N (placeholder fragment)
     → UREBulletSimProcessor 가 매 틱 시뮬 (실제 이동은 M1)
 
-[M5 데디]
+[M5 데디]  ← 이 블록은 #84에서 대체됨. 실제 계약은 2026-08-11 스펙 참조.
   서버: Multicast_TriggerPattern(Pattern, Seed, StartTime) RPC 발사
     → 서버 + 클라 각자 동일 시드로 로컬 시뮬
     → 서버만 피격 판정 권위 / 클라는 비주얼만
     → 총알 자체는 네트워크 미전송
+```
+
+실제로 구현된 M5 계약(#84):
+
+```
+[M5 데디 — 확정]
+  서버: Multicast_FireDirect(Pattern, Origin, AngleDeg, Count, ServerTime)
+        Multicast_FireArtillery(Shape, Origin, AimLoc, CallSeed, ServerTime)
+    → 서버도 자기 Multicast 구현체로 스폰 (양쪽 동일 코드)
+    → 클라는 ServerTime 기준 경과분만큼 앞당겨 스폰 (지연 보정)
+    → 클라는 페이즈 로테이션도 PhaseRng도 돌리지 않음 (시드 미전송)
+    → 서버만 피격 판정 권위 / 클라는 비주얼만
+    → 총알 자체는 네트워크 미전송  ← M0 골격 유지
 ```
 
 ## 완료 기준
