@@ -4,7 +4,7 @@
 
 **Goal:** 데디 클라 화면에 보스 탄막이 서버와 수 cm 이내로 일치하는 궤도로 보이게 한다 (#84).
 
-**Architecture:** 서버가 발사 1회의 **생성기 입력**을 Reliable Multicast로 보내고, 서버도 자기 Multicast 구현체를 통해 스폰한다(로컬 직접 호출을 대체). 양쪽이 같은 코드를 타므로 궤도 불일치의 여지가 구조적으로 없다. 클라는 `ServerTime` 기준 경과분만큼 앞당겨 스폰해 RPC 지연을 상쇄한다. 시드는 전송하지 않는다 — `PhaseRng`는 서버 전용 상태로 남는다.
+**Architecture:** 서버가 발사 1회의 **생성기 입력**을 Reliable Multicast로 보내고, 서버도 자기 Multicast 구현체를 통해 스폰한다(로컬 직접 호출을 대체). 양쪽이 같은 코드를 타므로 궤도 불일치의 여지가 구조적으로 없다. 클라는 `ServerTime` 기준 경과분만큼 앞당겨 스폰한다 — **정정(최종 리뷰 #84): 이 보정은 RPC 전송 지연을 상쇄하지 않는다.** `GetServerWorldTimeSeconds()`는 ping 보정 항이 없어 클라 시각 추정치의 뒤처짐과 RPC 도착 지연이 서로 상쇄되고, 이 경과분이 실제로 흡수하는 건 서버 자신의 발사~전송 큐잉/틱 잔차뿐이다(상세: 설계 스펙 "시간 보정" 절). 시드는 전송하지 않는다 — `PhaseRng`는 서버 전용 상태로 남는다.
 
 **Tech Stack:** UE 5.8, C++ (NetMulticast RPC, `FVector_NetQuantize`, `AGameStateBase::GetServerWorldTimeSeconds`, Mass Entity).
 
@@ -668,7 +668,7 @@ Select-String -Path "$d\server.log"  -Pattern "Boss FireDirect" | Select-Object 
 Select-String -Path "$d\client1.log" -Pattern "Boss FireDirect" | Select-Object -First 2
 ```
 
-기대: **양쪽에 찍힌다.** 서버는 `role=ROLE_Authority Elapsed=0.000`, 클라는 `role=ROLE_SimulatedProxy Elapsed=` 가 0보다 큰 값(RPC 지연).
+기대: **양쪽에 찍힌다.** 서버는 `role=ROLE_Authority Elapsed=0.000`, 클라는 `role=ROLE_SimulatedProxy Elapsed=` 가 0보다 큰 값(서버 자신의 발사~전송 큐잉/틱 잔차 — RPC 전송 지연이 아니다, 상세: 설계 스펙 "시간 보정" 절 정정 참조).
 클라에 0건이면 Multicast가 안 간 것 — `Server_NotifyReady` 도달 여부부터 확인.
 
 Reliable 큐 부담도 여기서 본다(스펙의 "측정해 기록" 항목). 초당 6.7회 발사에서 reliable 버퍼가 넘치면 UE가 클라를 끊는다:
@@ -691,10 +691,14 @@ void UREBulletSimProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 	TRACE_CPUPROFILER_EVENT_SCOPE(RE_BulletSim);
 	CSV_SCOPED_TIMING_STAT(REBullet, BulletSim);
 
-	// TEMP #84 probe — 커밋 금지: 10초 시점에 1회만 생존 탄 좌표를 덤프한다.
+	// TEMP #84 probe — 커밋 금지: 서버 동기화 클럭 기준 10초 시점에 1회만 생존 탄 좌표를 덤프한다.
+	// 주의(정정, 최종 리뷰 #84): 최초 버전은 로컬 World->GetTimeSeconds()로 이 트리거를 걸었으나,
+	// 클라의 로컬 월드 시각은 접속 시 0으로 리셋돼 서버와 "같은 실제 순간"을 가리키지 못한다 —
+	// 클라에서 영영 안 찍힐 수 있다. AGameStateBase::GetServerWorldTimeSeconds()로 걸어야 한다.
 	const UWorld* ProbeWorld = EntityManager.GetWorld();
+	const AGameStateBase* ProbeGS = ProbeWorld ? ProbeWorld->GetGameState() : nullptr;
 	static bool bDumped = false;
-	const bool bDumpNow = !bDumped && ProbeWorld && ProbeWorld->GetTimeSeconds() > 10.f;
+	const bool bDumpNow = !bDumped && ProbeGS && ProbeGS->GetServerWorldTimeSeconds() > 10.0;
 	if (bDumpNow) { bDumped = true; }
 	int32 DumpIdx = 0;
 
@@ -730,9 +734,14 @@ Editor + Server 빌드 후 재쿡.
 
 - [ ] **Step 4: 덤프 수집 + 좌표 차이 계산**
 
+**주의(정정, 최종 리뷰 #84):** `scripts\dedi-verify.ps1`로 이 측정을 구동하면 안 된다 — 대쉬 프로브가
+서버를 일찍 꺼서 접속 유지 구간이 ~4.1초뿐이라, 10초 시점 덤프가 찍히기 전에 접속이 끊긴다.
+실제로는 `-unattended` 없이 서버·클라를 별도 프로세스로 띄운 전용 페어로 측정한다 —
+절차는 `docs/guides/dedicated-server.md` "궤도 일치 정량 측정 (#84)" 절 참조.
+아래는 그렇게 얻은 `server.log` / `client1.log`로 좌표 차이를 계산하는 부분이다.
+
 ```powershell
-scripts\dedi-verify.ps1
-$d = (Get-ChildItem Saved\DediVerify | Sort-Object Name | Select-Object -Last 1).FullName
+$d = "<위 절차로 띄운 서버·클라 페어의 로그 디렉터리>"   # dedi-verify.ps1 산출물이 아니다
 $rx = 'TrajDump (\d+) X=([-\d.]+) Y=([-\d.]+) Z=([-\d.]+)'
 function Load($p) { @{} + (Select-String -Path $p -Pattern $rx | ForEach-Object {
     $m = $_.Matches[0]; @{ K = [int]$m.Groups[1].Value

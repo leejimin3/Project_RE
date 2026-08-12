@@ -219,6 +219,15 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EArtilleryShape Sh
 		return;
 	}
 
+	// 지연 보정 — 이미 착지한 탄은 스폰하지 않는다. 착지점 생성·난수 뽑기보다 먼저 검사해 헛수고를 막는다.
+	const float Elapsed = GetElapsedSince(ServerTime);
+	if (Elapsed >= ArtilleryFlightTime)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[RE] Boss FireArtillery: skipped (Elapsed=%.3f >= FlightTime=%.2f)"),
+			Elapsed, ArtilleryFlightTime);
+		return;
+	}
+
 	const FVector BossLoc  = Origin;
 	const FVector PlayerLoc = AimLoc;
 	const float   GroundZ  = BossLoc.Z + MarkerGroundOffset;   // 착지 평면(보스 캡슐 바닥 근사)
@@ -247,15 +256,6 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EArtilleryShape Sh
 	case EArtilleryShape::Random:
 		Targets = REBulletPattern::GenRandom(BossLoc, /*ArenaRadius=*/800.f, ArtilleryCount, CallRng, GroundZ);
 		break;
-	}
-
-	// 지연 보정 — 이미 착지한 탄은 스폰하지 않는다.
-	const float Elapsed = GetElapsedSince(ServerTime);
-	if (Elapsed >= ArtilleryFlightTime)
-	{
-		UE_LOG(LogTemp, Log, TEXT("[RE] Boss FireArtillery: skipped (Elapsed=%.3f >= FlightTime=%.2f)"),
-			Elapsed, ArtilleryFlightTime);
-		return;
 	}
 
 	TArray<REBulletPattern::FArcBulletSpawnParams> Shots;
@@ -289,14 +289,17 @@ void AREBossCharacter::EndPhase()
 float AREBossCharacter::GetServerNow() const
 {
 	const AGameStateBase* GS = GetWorld() ? GetWorld()->GetGameState() : nullptr;
-	return GS ? GS->GetServerWorldTimeSeconds() : 0.f;
+	return GS ? static_cast<float>(GS->GetServerWorldTimeSeconds()) : 0.f;
 }
 
 float AREBossCharacter::GetElapsedSince(float ServerTime) const
 {
 	// 접속 직후 GameState 복제 전이면 GetServerWorldTimeSeconds가 0을 반환할 수 있다 →
-	// ServerTime을 그대로 빼면 큰 음수가 나오므로 Max로 막는다(보정 없음으로 폴백).
-	return FMath::Max(0.f, GetServerNow() - ServerTime);
+	// ServerTime을 그대로 빼면 큰 음수가 나오므로 하한 0으로 막는다(보정 없음으로 폴백).
+	// 상한 1초 — 클라 시각 추정치가 아직 EMA 수렴 중이거나 서버 재시작으로 시각이 리셋된
+	// 직후면 큰 양수가 나올 수 있다. 막지 않으면 볼리의 모든 탄이 "이미 수명 다함"으로
+	// 스킵되어 N=0으로 조용히 빈 화면이 된다 — 이 브랜치가 고친 원래 버그와 같은 증상이다.
+	return FMath::Clamp(GetServerNow() - ServerTime, 0.f, 1.f);
 }
 
 int32 AREBossCharacter::ResolveSpiralCount()

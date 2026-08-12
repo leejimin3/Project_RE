@@ -208,9 +208,13 @@ scripts\dedi-verify.ps1 -SelfTest    # 판정 로직만 검사(프로세스 미�
 floor ≈ BulletSpeed / NetServerMaxTickRate
 ```
 
-실측 조건(`BulletSpeed=200`, `NetServerMaxTickRate=30` 기본값)에서 floor ≈ 6.67 uu — 실측 6.61 uu와 일치한다. 즉 **6.61 uu는 대부분 덤프 타이밍 편차이지, 궤적 자체의 오차가 아니다.** (`FVector_NetQuantize`의 정수cm 반올림은 1 uu 미만이라 이 크기를 설명하지 못한다.)
+실측 조건(`BulletSpeed=200`, `NetServerMaxTickRate=30` 기본값)에서 floor ≈ 6.67 uu — 실측 6.61 uu와 일치한다. 즉 **6.61 uu는 대부분 덤프 타이밍 편차이지, 궤적 자체의 오차가 아니다.** (`FVector_NetQuantize`의 정수cm 반올림은 1 uu 미만이라 이 크기를 설명하지 못한다.) 다시 말해 **이 방법으로는 floor보다 작은 실제 궤적 오차를 구분해낼 수 없다** — worst가 floor 근처거나 밑이면 "일치했다"가 아니라 "이 측정 해상도로는 안 보인다"로 읽어야 한다.
 
 이 하한은 `BulletSpeed`에 비례한다 — 더 빠른 탄속 패턴은 이 방법만으로 10 uu 게이트에 근접·초과할 수 있다, 재동기화가 완전히 정상이어도. **나중에 `BulletSpeed`를 올렸을 때 이 게이트가 실패하면, 먼저 이 하한 공식부터 확인해라** — 팬텀 디싱크를 쫓기 전에.
+
+**측정 상한(ceiling)도 있다 — 시간 보정이 상쇄하는 건 전송 지연이 아니다.** UE 5.8 `AGameStateBase::GetServerWorldTimeSeconds()`는 ping/RTT 보정 항이 없는 EMA 추정치라(`Engine/Private/GameStateBase.cpp:168-192`), 클라 시각 추정치의 뒤처짐과 RPC 도착 지연이 서로 상쇄되고 `Elapsed`는 서버 자신의 큐잉/틱 잔차만 흡수한다(상세: 설계 스펙 "시간 보정" 절 정정). 따라서 실제 링크에서는 클라의 탄이 서버 권위 위치보다 대략 편도 지연 하나만큼 뒤처진 채로 그려진다 — `BulletSpeed=200`·RTT 100ms(편도 50ms)에서 약 10uu, 지연·탄속에 선형 비례한다. 로컬호스트 측정(위 floor)은 ping≈0이라 이 어긋남을 재현하지 못한다 — floor가 통과해도 실링크 편도 지연분은 이 게이트 밖의 별개 오차다. 개선 경로는 클라측에 `PlayerState->ExactPing * 0.0005f`(편도 추정) 항을 더하는 것인데, 실지연 테스트 환경이 생겨 이 항의 효과를 검증할 수 있을 때만 넣는다 — 로컬호스트로는 검증 자체가 불가능하다.
+
+**피격 탄이 클라에서 안 사라지는 것도 이 측정 밖이다.** `REBulletHitProcessor`(`Standalone|Server`)는 명중한 탄을 서버에서만 파괴하고, `REBulletSimProcessor`(`AllNetModes`)는 수명이 다할 때만 파괴한다 — 플레이어를 맞춘 탄이 서버에서는 사라져도 클라 화면에는 `BulletLifetime=15`초 동안 계속 날아다닌다(최대 약 10발 유계, HP 100 / 히트당 10뎀). 곡사탄은 해당 없음 — `REArcSimProcessor`는 착지 시 양쪽 다 파괴한다. worst nearest-neighbour 측정은 서버 좌표마다 최근접 클라 좌표까지의 거리이므로, 클라에만 남는 이 여분 엔티티는 어느 서버 좌표의 최근접도 아니라 최댓값 계산에 전혀 안 잡힌다 — worst가 정상이어도 이 유령 탄의 반증이 아니다. 디스폰 브로드캐스트가 필요한 수정이라 이 이슈 범위 밖이다.
 
 ## 함정 (검증편)
 

@@ -124,7 +124,22 @@ void Multicast_FireArtillery(EArtilleryShape Shape, FVector_NetQuantize Origin,
 
 ## 시간 보정
 
-RPC 도착 지연만큼 클라가 뒤처진다. `BulletSpeed=200`에서 50ms 지연은 10cm 어긋남이므로 "수 cm 이내" 요구를 못 지킨다. 수신 시 경과분을 앞당겨 스폰한다.
+> **정정(2026-08-12, 최종 리뷰 #84):** 최초 버전은 "RPC 도착 지연만큼 클라가 뒤처진다"고 썼는데 틀렸다.
+> UE 5.8 `AGameStateBase::GetServerWorldTimeSeconds()`는 클라에서 `복제값 − 로컬 WorldTime`을 패킷
+> 도착 시점에 샘플링해 EMA로 평활한 값이고, ping/RTT 보정 항이 **없다**(`Engine/Private/GameStateBase.cpp:168-192`).
+> 이 프로젝트는 커스텀 GameState 없이 이 기본 구현을 그대로 쓴다.
+> 그 결과 **클라의 시각 추정치는 실제 서버 시각보다 편도 지연(one-way latency)만큼 뒤처지고,
+> RPC 자체도 편도 지연만큼 늦게 도착한다 — 이 둘이 상쇄된다.** 아래 `Elapsed`가 실제로 흡수하는
+> 것은 서버 자신의 발사~전송 사이 큐잉/틱 잔차뿐이다(로컬호스트 실측 0.039~0.137초가 그 잔차이지,
+> 전송 지연이 아니다). 실제 링크에서는 클라의 탄이 서버 권위 위치보다 대략 편도 지연 하나만큼
+> 뒤처진 채로 그려진다 — `BulletSpeed=200`·RTT 100ms(편도 50ms)에서 약 10uu, 지연·탄속에 선형
+> 비례한다. 다른 모든 SimulatedProxy 액터와 같은 성격의 어긋남이라 이 브랜치만의 결함은 아니지만,
+> 아래 메커니즘이 "전송 지연을 상쇄한다"는 설명은 사실이 아니었다.
+> 개선하려면 클라측에 `PlayerState->ExactPing * 0.0005f`(편도 추정, ms→sec 절반) 항을 더해야
+> 하는데, 로컬호스트는 ping≈0이라 이 항의 효과를 검증할 수 없다 — 실지연 테스트 환경이 생기기
+> 전까지는 보류한다. 아래 공식·클램프 로직 자체는 정정 대상이 아니다.
+
+수신 시 경과분을 앞당겨 스폰한다.
 
 ```cpp
 const float RawElapsed = FMath::Max(0.f, ServerWorldTime - ServerTime);
@@ -203,6 +218,19 @@ void TryStartBossFiring()
 - **N인 조준 타깃 정책** → #85. 지금은 `AimLoc`을 서버가 정해 보내므로 정책이 바뀌어도 RPC 계약은 그대로다
 - **Homing 패턴** → #67
 - **Niagara 렌더 전환** → #50
+
+## 알려진 천장 (최종 리뷰 #84)
+
+- **피격 탄이 클라에서 안 사라진다.** `REBulletHitProcessor`는 `Standalone|Server`라 명중한 탄을
+  서버에서만 파괴하고(`REBulletHitProcessor.cpp`), `REBulletSimProcessor`는 `AllNetModes`라
+  수명이 다할 때만 파괴한다. 그래서 플레이어를 맞춘 탄은 서버에서는 사라지지만 클라 화면에서는
+  `BulletLifetime=15`초 동안 계속 날아간다 — 이미 피해를 준 탄이 살아있고 위협적인 것처럼 보인다.
+  실전에서는 최대 10발 정도로 유계다(HP 100 / 히트당 10뎀). **곡사탄은 해당 없음** —
+  `REArcSimProcessor`는 착지 시 양쪽 다 파괴한다. 고치려면 디스폰 브로드캐스트가 필요한데
+  이 이슈 범위 밖이다.
+- **궤도 일치 측정은 이 유령 탄을 구조적으로 못 잡는다.** 측정 방법이 "서버 좌표마다 가장 가까운
+  클라 좌표까지의 거리"이므로, 클라에만 남아있는 여분의 엔티티는 어느 서버 좌표의 최근접도 아니라서
+  최댓값 계산에 전혀 기여하지 않는다 — `worst` 수치가 정상이어도 유령 탄 존재를 반증하지 못한다.
 
 ## 참고
 
