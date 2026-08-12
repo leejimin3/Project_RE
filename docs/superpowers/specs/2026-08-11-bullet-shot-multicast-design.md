@@ -137,18 +137,26 @@ void Multicast_FireArtillery(EArtilleryShape Shape, FVector_NetQuantize Origin,
 > 아래 메커니즘이 "전송 지연을 상쇄한다"는 설명은 사실이 아니었다.
 > 개선하려면 클라측에 `PlayerState->ExactPing * 0.0005f`(편도 추정, ms→sec 절반) 항을 더해야
 > 하는데, 로컬호스트는 ping≈0이라 이 항의 효과를 검증할 수 없다 — 실지연 테스트 환경이 생기기
-> 전까지는 보류한다. 아래 공식·클램프 로직 자체는 정정 대상이 아니다.
+> 전까지는 보류한다. 아래 공식은 최종 리뷰에서 상한 클램프가 추가돼 갱신됐다(그 사유는 공식 옆 주석 참조).
 
 수신 시 경과분을 앞당겨 스폰한다.
 
 ```cpp
-const float RawElapsed = FMath::Max(0.f, ServerWorldTime - ServerTime);
+// 하한 0: GameState 복제 전이면 GetServerWorldTimeSeconds가 0을 반환해 큰 음수가 나온다.
+// 상한 1초: 클라 시각 추정이 EMA 수렴 중이거나 서버 재시작으로 리셋된 직후면 큰 양수가 나오고,
+//           막지 않으면 볼리 전체가 "수명 다함"으로 스킵돼 N=0 빈 화면이 된다(원래 버그와 같은 증상).
+const float Elapsed = FMath::Clamp(ServerWorldTime - ServerTime, 0.f, 1.f);
 ```
 
-상한은 탄 종류마다 다르다 — 상한을 넘긴 탄은 이미 수명이 다했으므로 스폰 자체를 건너뛴다.
+수명을 넘긴 탄은 스폰 자체를 건너뛴다:
 
-- **직선탄** — `RawElapsed >= Lifetime`이면 스킵. 아니면 `Location += Velocity * RawElapsed;  Lifetime -= RawElapsed;`
-- **포물선탄** — `RawElapsed >= FlightTime`이면 스킵(이미 착지). 아니면 `FArcBulletFragment.Elapsed = RawElapsed`
+- **직선탄** — `Elapsed >= Lifetime`이면 스킵. 아니면 `Location += Velocity * Elapsed;  Lifetime -= Elapsed;`
+- **포물선탄** — `Elapsed >= FlightTime`이면 스킵(이미 착지). 아니면 `FArcBulletFragment.Elapsed = Elapsed`
+
+> **현재 설정값에서 이 두 스킵은 발동하지 않는다.** 상한 1.0초가 `BulletLifetime=15.0`·`ArtilleryFlightTime=1.5f`
+> 둘 다보다 작기 때문이다. 즉 지금은 "상한 클램프가 스킵보다 먼저 막는" 구조이고, 스킵은 두 상수 중
+> 하나가 1.0초 아래로 내려가면 그때 되살아나는 안전망이다. 그 튜닝을 할 때 이 결합을 기억해라 —
+> 예컨대 `ArtilleryFlightTime`을 0.8초로 낮추면 지연이 큰 클라에서 일제사가 통째로 사라지기 시작한다.
 
 서버에서는 발사 시각이 곧 현재이므로 `Elapsed ≈ 0`이 자연히 나온다. **같은 코드가 서버에선 무보정, 클라에선 보정으로 동작한다** — 분기가 필요 없다.
 
