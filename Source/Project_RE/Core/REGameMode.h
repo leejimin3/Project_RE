@@ -52,6 +52,8 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
+	virtual void Logout(AController* Exiting) override;
+
 private:
 	UPROPERTY()
 	TObjectPtr<AREBossCharacter> DemoBoss = nullptr;

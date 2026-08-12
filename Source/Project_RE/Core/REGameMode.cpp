@@ -128,12 +128,19 @@ void AREGameMode::EndGame(bool bVictory)
 		DemoBoss->StopFiring();
 	}
 
-	APlayerController* PC = GetWorld()->GetFirstPlayerController();
-
-	// 2) 결과 화면 + 입력 차단 — 오너 클라 실행(싱글은 로컬 즉시).
-	if (AREPlayerController* REPC = Cast<AREPlayerController>(PC))
+	// 2) 결과 화면 + 입력 차단 — 전 클라에 보낸다 (#85).
+	//    이미 죽어서 입력이 차단된 플레이어도 결과 화면은 받아야 하므로 필터하지 않는다.
+	//    FConstPlayerControllerIterator는 약참조를 주므로 역참조 전에 유효성을 본다.
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 	{
-		REPC->Client_ShowResult(bVictory);
+		if (!It->IsValid())
+		{
+			continue;
+		}
+		if (AREPlayerController* REPC = Cast<AREPlayerController>(It->Get()))
+		{
+			REPC->Client_ShowResult(bVictory);
+		}
 	}
 }
 
@@ -176,6 +183,27 @@ void AREGameMode::NotifyPlayerDied(APlayerController* PC)
 		UE_LOG(LogTemp, Log, TEXT("[RE] All %d players dead"), ReadyPlayers.Num());
 		EndGame(/*bVictory=*/false);
 	}
+}
+
+void AREGameMode::Logout(AController* Exiting)
+{
+	if (APlayerController* PC = Cast<APlayerController>(Exiting))
+	{
+		ReadyPlayers.Remove(PC);
+		DeadPlayers.Remove(PC);
+
+		UE_LOG(LogTemp, Log, TEXT("[RE] Player left — ready=%d dead=%d"),
+			ReadyPlayers.Num(), DeadPlayers.Num());
+
+		// 분모가 줄었으니 지금이 종료 시점일 수 있다. 남은 사람이 이미 다 죽어 있던 경우다.
+		// ReadyPlayers.Num() > 0 가드가 없으면 마지막 한 명이 나갈 때 0 >= 0 으로 DEFEAT가 떠서
+		// 받을 클라도 없는 상태로 게임이 끝난 것으로 기록된다.
+		if (!bGameOver && ReadyPlayers.Num() > 0 && DeadPlayers.Num() >= ReadyPlayers.Num())
+		{
+			EndGame(/*bVictory=*/false);
+		}
+	}
+	Super::Logout(Exiting);
 }
 
 void AREGameMode::TryStartBossFiring()
