@@ -6,6 +6,7 @@
 #include "Net/UnrealNetwork.h"
 #include "REHealthBarComponent.h"
 #include "REGameMode.h"
+#include "RECharacterBase.h"
 #include "HAL/IConsoleManager.h"
 #include "REBulletRenderSubsystem.h"                        // 라이브 카운트(ISM) 조회 (#51)
 #include "Components/InstancedStaticMeshComponent.h"
@@ -168,18 +169,47 @@ void AREBossCharacter::FireCurrentPattern()
 		Count = REBulletPattern::FFanParams().Count;
 		// 플레이어 방향 조준. 폰 없으면 0°(기존 기본) 폴백.
 		// 클라는 이 각을 유도할 수 없다(복제 위치가 서버와 다름) → 페이로드로 보낸다.
-		// TODO: 멀티는 타깃 선택 정책 필요 — 지금은 첫 플레이어 고정 (#85).
-		if (const APlayerController* PC = GetWorld()->GetFirstPlayerController())
+		// 최근접 생존자를 조준한다 (#85). 전원 사망이면 0° 폴백 — 곧 EndGame이 발사를 끊는다.
+		if (const APawn* Target = FindNearestLivingPlayerPawn())
 		{
-			if (const APawn* Target = PC->GetPawn())
-			{
-				const FVector D = Target->GetActorLocation() - GetActorLocation();
-				AngleDeg = FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X));
-			}
+			const FVector D = Target->GetActorLocation() - GetActorLocation();
+			AngleDeg = FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X));
 		}
 	}
 
 	Multicast_FireDirect(CurrentPhasePattern, GetActorLocation(), AngleDeg, Count, GetServerNow());
+}
+
+const APawn* AREBossCharacter::FindNearestLivingPlayerPawn() const
+{
+	const UWorld* W = GetWorld();
+	if (!W)
+	{
+		return nullptr;
+	}
+	const FVector BossLoc = GetActorLocation();
+	const APawn* Best = nullptr;
+	float BestDistSq = TNumericLimits<float>::Max();
+
+	for (FConstPlayerControllerIterator It = W->GetPlayerControllerIterator(); It; ++It)
+	{
+		if (!It->IsValid())
+		{
+			continue;
+		}
+		const ARECharacterBase* P = Cast<ARECharacterBase>(It->Get()->GetPawn());
+		if (!P || !P->IsAlive())
+		{
+			continue;   // 사망자를 빼지 않으면 시체를 조준한다
+		}
+		const float D = FVector::DistSquared2D(P->GetActorLocation(), BossLoc);
+		if (D < BestDistSq)
+		{
+			BestDistSq = D;
+			Best = P;
+		}
+	}
+	return Best;
 }
 
 void AREBossCharacter::FireArtillery()
@@ -192,14 +222,11 @@ void AREBossCharacter::FireArtillery()
 	const FVector BossLoc = GetActorLocation();
 
 	// 조준점. 폰 없으면 보스 앞쪽 폴백. 클라는 이 값을 유도할 수 없다 → 페이로드로 보낸다.
-	// TODO: 멀티는 타깃 선택 정책 필요 — 지금은 첫 플레이어 고정 (#85).
+	// 최근접 생존자를 조준한다 (#85). 전원 사망이면 보스 앞쪽 폴백.
 	FVector PlayerLoc = BossLoc + FVector(300.f, 0.f, 0.f);
-	if (const APlayerController* PC = GetWorld()->GetFirstPlayerController())
+	if (const APawn* P = FindNearestLivingPlayerPawn())
 	{
-		if (const APawn* P = PC->GetPawn())
-		{
-			PlayerLoc = P->GetActorLocation();
-		}
+		PlayerLoc = P->GetActorLocation();
 	}
 
 	// Random 모양 전용 시드. 서버 스트림에서 1회 뽑아 넘긴다 —

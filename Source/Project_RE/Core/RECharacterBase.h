@@ -51,6 +51,9 @@ public:
 	/** 대쉬 어빌리티가 읽을 목표 방향(로컬이 계산해 서버로 전달한 값). */
 	FVector GetPendingDashDir() const { return PendingDashDir; }
 
+	/** 생존 여부 (#85 보스 타깃 선택). bIsDead는 서버 전용이라 서버에서만 의미 있다. */
+	bool IsAlive() const { return !bIsDead; }
+
 	/**
 	 *  전 클라 발사 모션 재생 (M4 #74). 코스메틱 전용 — 판정·데미지·rate limit과 무관.
 	 *
