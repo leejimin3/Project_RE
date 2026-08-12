@@ -205,7 +205,7 @@ void AREPlayerController::Server_NotifyReady_Implementation()
 {
 	if (AREGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<AREGameMode>() : nullptr)
 	{
-		GM->NotifyPlayerReady();
+		GM->NotifyPlayerReady(this);
 	}
 }
 

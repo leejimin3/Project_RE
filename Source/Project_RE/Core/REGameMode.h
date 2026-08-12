@@ -43,8 +43,8 @@ public:
 	/** 승패 확정 여부 — 게임오버 후 잔여 발사 RPC 무시용 (REPlayerController가 조회). */
 	bool IsGameOver() const { return bGameOver; }
 
-	/** 클라 준비 통지 수신 (#84). 보스 발사 시작 조건을 재평가한다. */
-	void NotifyPlayerReady();
+	/** 클라 준비 통지 수신 (#84/#85). 보스 발사 시작 조건을 재평가한다. */
+	void NotifyPlayerReady(APlayerController* PC);
 
 protected:
 	virtual void BeginPlay() override;
@@ -56,8 +56,13 @@ private:
 	/** 승패 확정 여부. 같은 프레임에 양쪽이 죽는 경우 선착순 처리. */
 	bool bGameOver = false;
 
-	/** 클라 준비 신호 도착 여부. #85에서 전원 입장 카운트로 대체될 자리. */
-	bool bPlayerReady = false;
+	/**
+	 *  준비를 알린 PC 집합 (#85). Num()이 곧 실제 접속자 수라 승패 판정 분모로도 쓴다.
+	 *  int32 카운터가 아니라 집합인 이유: 클라가 Server_NotifyReady를 두 번 보내도
+	 *  수가 부풀지 않는다. 카운터였다면 연타 한 번에 게이트가 뚫린다.
+	 */
+	UPROPERTY()
+	TSet<TObjectPtr<APlayerController>> ReadyPlayers;
 	/** 발사 시작 1회성 가드. */
 	bool bFiringStarted = false;
 	/** 준비 신호와 보스 스폰이 모두 끝났으면 발사 시작. 둘의 순서는 보장되지 않는다. */

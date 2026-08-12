@@ -24,6 +24,14 @@ namespace
 		0,
 		TEXT("측정 전용: 1이면 게임오버를 무시하고 보스 탄막 발사를 계속 유지."),
 		ECVF_Cheat);
+	// #85 협동 인원. ready가 이 수를 채우면 보스 발사 시작(RPG 던전 입장 모델).
+	// ini가 아니라 CVar인 이유: 스테이징 Config는 pak 안에 들어가서 ini면 인원을 바꿀 때마다
+	// 재쿡해야 한다. CVar면 서버 커맨드라인(-ExecCmds)으로 넘길 수 있어 데디 검증이 재쿡 없이 돈다.
+	static TAutoConsoleVariable<int32> CVarExpectedPlayers(
+		TEXT("re.Coop.ExpectedPlayers"),
+		1,
+		TEXT("협동 시작에 필요한 준비 완료 플레이어 수. 기본 1(싱글 동작 유지)."),
+		ECVF_Default);
 }
 
 AREGameMode::AREGameMode()
@@ -128,20 +136,26 @@ void AREGameMode::EndGame(bool bVictory)
 	}
 }
 
-void AREGameMode::NotifyPlayerReady()
+void AREGameMode::NotifyPlayerReady(APlayerController* PC)
 {
-	bPlayerReady = true;
+	if (PC)
+	{
+		ReadyPlayers.Add(PC);
+	}
+	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
+	UE_LOG(LogTemp, Log, TEXT("[RE] Player ready %d/%d"), ReadyPlayers.Num(), Expected);
 	TryStartBossFiring();
 }
 
 void AREGameMode::TryStartBossFiring()
 {
-	if (bFiringStarted || !bPlayerReady || !DemoBoss)
+	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
+	if (bFiringStarted || !DemoBoss || ReadyPlayers.Num() < Expected)
 	{
 		return;
 	}
 	bFiringStarted = true;
 	// 시드는 서버 전용 PhaseRng 초기화용 — 네트워크에 나가지 않는다 (#84).
 	DemoBoss->StartFiring(/*Seed=*/FMath::Rand());
-	UE_LOG(LogTemp, Log, TEXT("[RE] Boss firing started (player ready)"));
+	UE_LOG(LogTemp, Log, TEXT("[RE] Boss firing started (%d/%d ready)"), ReadyPlayers.Num(), Expected);
 }
