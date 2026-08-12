@@ -90,6 +90,8 @@ void AREGameMode::TryStartBossFiring()
 void AREGameMode::NotifyPlayerDied(APlayerController* PC)
 {
     if (!PC || bGameOver) { return; }
+    // DeadPlayers ⊆ ReadyPlayers 불변식 — 아래 "분자가 분모 밖에 있으면" 참조.
+    ReadyPlayers.Add(PC);
     DeadPlayers.Add(PC);
 
     if (AREPlayerController* REPC = Cast<AREPlayerController>(PC))
@@ -104,6 +106,16 @@ void AREGameMode::NotifyPlayerDied(APlayerController* PC)
 ```
 
 **판정 분모는 `ExpectedPlayers`가 아니라 `ReadyPlayers.Num()`(실제 접속자)다.** 중간에 한 명이 끊겼는데 분모가 고정값이면 남은 사람이 다 죽어도 게임이 끝나지 않는다.
+
+### 분자가 분모 밖에 있으면 조기 패배가 난다
+
+두 집합은 **서로 다른 이벤트로 채워지고 순서 관계가 없다** — `ReadyPlayers`는 클라 RPC(`Server_NotifyReady`), `DeadPlayers`는 서버 데미지 콜백이다. 늦게 접속한 플레이어의 폰은 ready RPC가 왕복하기 전에 이미 살아있는 탄막 속에 스폰돼 있을 수 있고, 그 창에서 죽으면 분자가 분모에 도달한다:
+
+`ReadyPlayers={A}`(1), `DeadPlayers={B}`(1) → `1 >= 1` → **A가 멀쩡히 싸우는 중에 DEFEAT.**
+
+그래서 사망자를 `ReadyPlayers`에도 넣어 `DeadPlayers ⊆ ReadyPlayers` 불변식을 강제한다. 죽었다는 사실 자체가 참가자라는 증거다.
+
+**단 이 경로에서 `TryStartBossFiring()`을 부르면 안 된다** — 사망이 매치를 시작시키는 부작용을 갖게 된다.
 
 ### 접속 종료를 반드시 처리해야 한다
 
@@ -130,7 +142,24 @@ void AREGameMode::Logout(AController* Exiting)
 
 `Client_NotifyDeath`는 `Client_ShowResult`(`REPlayerController.cpp:260-272`)와 같은 패턴 — `DisableInput(this)` 한 줄이다. 폰은 그 자리에 서 있고 카메라가 붙어 있으므로 자연히 동료 전투를 본다. **별도 관전 카메라를 만들지 않는다.**
 
-서버측에서는 죽은 폰의 이동을 멈춘다(`StopMovement`). 안 그러면 마지막 이동 명령이 남아 시체가 미끄러진다.
+서버측에서는 죽은 폰의 이동을 멈춘다(`StopMovement` + `StopMovementImmediately`). 앞의 것만으로는 패스팔로잉만 끊기고 `CharacterMovementComponent`의 잔여 속도가 남아 시체가 미끄러진다 — 같은 저장소의 공격 정지 경로(`REPlayerController.cpp`)가 이미 두 호출을 짝지어 쓴다.
+
+### 입력 차단은 클라만으로 부족하다 — 서버 가드가 함께 필요하다
+
+`Client_NotifyDeath`의 `DisableInput`은 **클라 로컬 차단**이다. 이것만 두면 두 가지가 뚫린다:
+
+1. **지연** — 서버에서 죽은 시점부터 통지가 도착하기까지 클라가 보낸 입력이 전부 실행된다. 시체가 미끄러지고 회전하고 마지막 한 발을 쏜다.
+2. **조작된 클라** — 무한정. 죽은 플레이어가 보스를 계속 때려 **무덤에서 VICTORY를 낼 수 있다.**
+
+이 프로젝트는 이미 "클라 입력은 신뢰 대상이 아니므로 차단은 서버에 둔다"를 규칙으로 갖고 있다. 그래서 `AREPlayerController`에 `IsPawnAlive()`(폰 캐스트 + `ARECharacterBase::IsAlive()`)를 두고 **서버 RPC 세 곳**에서 조기 반환한다:
+
+- `Server_RequestMove_Implementation`
+- `Server_Dash_Implementation`
+- `Server_RequestFire_Implementation`
+
+**`Server_NotifyReady`는 가드하지 않는다** — 준비는 죽기 전 행위이고, 가드하면 시작 시퀀스가 깨진다.
+
+이 가드가 필요해진 것은 이 이슈 때문이다. 이전에는 "1명 사망 = 게임오버"였기 때문에 `Server_RequestFire`의 `IsGameOver()` 검사가 이 경로를 덮고 있었는데, **전원 사망 규칙으로 바꾸면서 그 등식이 사라졌고 서버측 차단도 같이 사라졌다.**
 
 ## 3. 결과 화면 — 전 클라 전파
 
