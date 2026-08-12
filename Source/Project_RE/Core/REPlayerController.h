@@ -88,6 +88,9 @@ protected:
 	UInputAction* CheatPanelAction;
 
 private:
+	/** 폰이 살아있는가. 서버 RPC 가드용 — 클라 DisableInput은 지연·조작에 뚫린다 (#85). */
+	bool IsPawnAlive() const;
+
 	/** 헤드리스(-unattended) 자기이동 프로브. 서버 권위에서만 발동. */
 	void RunHeadlessMoveProbe();
 

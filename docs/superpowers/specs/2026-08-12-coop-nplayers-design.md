@@ -201,10 +201,11 @@ const FVector Offset(0.f, (SpawnedPawnCount - Half) * SpawnSpacing, 0.f);   // S
 게이트가 안 열릴 때 이유가 보여야 한다. 지금은 보스가 조용히 안 쏘면 원인을 알 수 없다.
 
 ```
-[RE] Player ready 1/2 — waiting
+[RE] Player ready 1/2
 [RE] Boss firing started (2/2 ready)
-[RE] Player died 1/2 — game continues
-[RE] EndGame: DEFEAT (all 2 players dead)
+[RE] Player died 1/2
+[RE] All 2 players dead
+[RE] EndGame: DEFEAT
 ```
 
 ## 검증

@@ -12,7 +12,7 @@
 #include "TimerManager.h"
 #include "HAL/IConsoleManager.h"
 #include "REStatsSettings.h"
-#include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PawnMovementComponent.h"
 
 namespace
 {
@@ -146,12 +146,18 @@ void AREGameMode::EndGame(bool bVictory)
 
 void AREGameMode::NotifyPlayerReady(APlayerController* PC)
 {
+	// TSet은 카운트 중복을 막아주지만 로그는 아니다 — 클라가 RPC를 연타하면 무한정 찍힌다.
+	// 실제로 새로 추가됐을 때만 로그.
+	bool bAlreadyInSet = false;
 	if (PC)
 	{
-		ReadyPlayers.Add(PC);
+		ReadyPlayers.Add(PC, &bAlreadyInSet);
 	}
 	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
-	UE_LOG(LogTemp, Log, TEXT("[RE] Player ready %d/%d"), ReadyPlayers.Num(), Expected);
+	if (PC && !bAlreadyInSet)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[RE] Player ready %d/%d"), ReadyPlayers.Num(), Expected);
+	}
 	TryStartBossFiring();
 }
 
@@ -161,6 +167,11 @@ void AREGameMode::NotifyPlayerDied(APlayerController* PC)
 	{
 		return;
 	}
+	// 사망 시점에 아직 ReadyPlayers에 없을 수 있다 — 스폰이 ready RPC 왕복보다 먼저 끝나는 레이스.
+	// 죽었다는 사실 자체가 참가자라는 증거이므로 분모에도 넣는다: DeadPlayers는 항상 ReadyPlayers의
+	// 부분집합이어야 한다는 불변식을 지킨다. TryStartBossFiring()은 여기서 부르지 않는다 —
+	// 이 함수가 매치를 시작시키는 부작용을 가져서는 안 된다.
+	ReadyPlayers.Add(PC);
 	DeadPlayers.Add(PC);
 
 	if (AREPlayerController* REPC = Cast<AREPlayerController>(PC))
