@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **실행 완료 (2026-08-12).** 전 태스크 구현·검증·리뷰 완료. 실행 중 발견된 계획 결함 2건(궤도 덤프 트리거, 측정 실행 방식)은 본문에 정정 반영됨.
+
 **Goal:** 데디 클라 화면에 보스 탄막이 서버와 수 cm 이내로 일치하는 궤도로 보이게 한다 (#84).
 
 **Architecture:** 서버가 발사 1회의 **생성기 입력**을 Reliable Multicast로 보내고, 서버도 자기 Multicast 구현체를 통해 스폰한다(로컬 직접 호출을 대체). 양쪽이 같은 코드를 타므로 궤도 불일치의 여지가 구조적으로 없다. 클라는 `ServerTime` 기준 경과분만큼 앞당겨 스폰한다 — **정정(최종 리뷰 #84): 이 보정은 RPC 전송 지연을 상쇄하지 않는다.** `GetServerWorldTimeSeconds()`는 ping 보정 항이 없어 클라 시각 추정치의 뒤처짐과 RPC 도착 지연이 서로 상쇄되고, 이 경과분이 실제로 흡수하는 건 서버 자신의 발사~전송 큐잉/틱 잔차뿐이다(상세: 설계 스펙 "시간 보정" 절). 시드는 전송하지 않는다 — `PhaseRng`는 서버 전용 상태로 남는다.
@@ -64,7 +66,7 @@
 **Interfaces:**
 - Produces: `REBulletPattern::FArcBulletSpawnParams::Elapsed` (float, 기본 0). Task 3이 소비한다.
 
-- [ ] **Step 1: `FArcBulletSpawnParams`에 필드 추가**
+- [x] **Step 1: `FArcBulletSpawnParams`에 필드 추가**
 
 `REBulletPatternGenerator.h`의 구조체 끝(`float Radius = 120.f;` 아래)에:
 
@@ -73,11 +75,11 @@
 		float   Elapsed    = 0.f;
 ```
 
-- [ ] **Step 2: `SpawnArcBullet` 시그니처에 인자 추가**
+- [x] **Step 2: `SpawnArcBullet` 시그니처에 인자 추가**
 
 `REBulletSpawnSubsystem.h`의 선언과 `.cpp`의 정의 양쪽에 마지막 인자로 `float InElapsed = 0.f` 를 추가하고, 프래그먼트 초기화에 `Arc.Elapsed = InElapsed;` 를 넣는다. 기본값이 있으므로 기존 호출부는 컴파일이 유지된다.
 
-- [ ] **Step 3: `SpawnArcBulletBatch`가 전달하도록 수정**
+- [x] **Step 3: `SpawnArcBulletBatch`가 전달하도록 수정**
 
 `REBulletSpawnSubsystem.cpp:98-104`:
 
@@ -91,12 +93,12 @@ void UREBulletSpawnSubsystem::SpawnArcBulletBatch(TConstArrayView<REBulletPatter
 }
 ```
 
-- [ ] **Step 4: 빌드 게이트**
+- [x] **Step 4: 빌드 게이트**
 
 Editor 타겟만으로 충분하다(이 태스크는 서버 전용 코드가 아니다).
 기대: `Result: Succeeded`, 에러 0.
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add Source/Project_RE/Mass/REBulletPatternGenerator.h Source/Project_RE/Mass/REBulletSpawnSubsystem.h Source/Project_RE/Mass/REBulletSpawnSubsystem.cpp
@@ -121,7 +123,7 @@ git commit -m "feat(mass): 곡사탄 스폰에 비행 경과초 전달 경로 �
   - `float AREBossCharacter::GetElapsedSince(float ServerTime) const`
   - Task 3이 `GetServerNow` / `GetElapsedSince`를 재사용한다.
 
-- [ ] **Step 1: 헤더 — 선언 교체**
+- [x] **Step 1: 헤더 — 선언 교체**
 
 `REBossCharacter.h`에서 `TriggerBulletPattern` 선언(`:25-29`)을 **삭제**하고 그 자리에:
 
@@ -154,7 +156,7 @@ git commit -m "feat(mass): 곡사탄 스폰에 비행 경과초 전달 경로 �
 	int32 ResolveSpiralCount();
 ```
 
-- [ ] **Step 2: cpp — include 추가**
+- [x] **Step 2: cpp — include 추가**
 
 `REBossCharacter.cpp` include 블록에:
 
@@ -162,7 +164,7 @@ git commit -m "feat(mass): 곡사탄 스폰에 비행 경과초 전달 경로 �
 #include "GameFramework/GameStateBase.h"
 ```
 
-- [ ] **Step 3: 시간 헬퍼 2개 구현**
+- [x] **Step 3: 시간 헬퍼 2개 구현**
 
 `EndPhase`(`:218-224`) 아래에 추가:
 
@@ -181,7 +183,7 @@ float AREBossCharacter::GetElapsedSince(float ServerTime) const
 }
 ```
 
-- [ ] **Step 4: Spiral 발사 수 결정을 헬퍼로 분리**
+- [x] **Step 4: Spiral 발사 수 결정을 헬퍼로 분리**
 
 `TriggerBulletPattern`의 `case EBulletPattern::Spiral:` 안에 있는 발사 수 결정 블록을 **한 글자도 바꾸지 말고** 새 함수로 옮긴다. 이 블록은 클로즈드루프 적분 제어(#51)와 와인드업 방지 로직이라 재작성하면 M3 측정 하네스가 깨진다.
 
@@ -202,7 +204,7 @@ int32 AREBossCharacter::ResolveSpiralCount()
 
 붙여넣은 블록은 `int32 Count;` 를 선언하고 두 분기에서 대입하므로 `return Count;` 가 그대로 성립한다. `SpiralSpawnRate` / `SpiralSpawnAccum` / `SpiralShotCount` 멤버를 변형하는데, 이 함수는 **서버에서만** 불리므로 클라 상태와 무관하다.
 
-- [ ] **Step 5: `FireCurrentPattern`을 서버 전용 결정부로 교체**
+- [x] **Step 5: `FireCurrentPattern`을 서버 전용 결정부로 교체**
 
 `REBossCharacter.cpp:138-146`을 아래로 대체:
 
@@ -254,7 +256,7 @@ void AREBossCharacter::FireCurrentPattern()
 }
 ```
 
-- [ ] **Step 6: `TriggerBulletPattern`을 Multicast 구현체로 교체**
+- [x] **Step 6: `TriggerBulletPattern`을 Multicast 구현체로 교체**
 
 `REBossCharacter.cpp:226-337` 전체를 아래로 대체:
 
@@ -312,11 +314,11 @@ void AREBossCharacter::Multicast_FireDirect_Implementation(EBulletPattern Patter
 }
 ```
 
-- [ ] **Step 7: 빌드 게이트 (Editor + Server 둘 다)**
+- [x] **Step 7: 빌드 게이트 (Editor + Server 둘 다)**
 
 기대: 양쪽 `Result: Succeeded`, 에러 0.
 
-- [ ] **Step 8: 싱글 회귀 프로브 — Multicast 로컬 실행 전제 확인**
+- [x] **Step 8: 싱글 회귀 프로브 — Multicast 로컬 실행 전제 확인**
 
 이 설계는 "넷드라이버 없는 월드에서도 NetMulticast 구현체가 로컬 실행된다"를 전제한다. 깨지면 싱글에서 탄이 0발이 된다.
 
@@ -334,7 +336,7 @@ grep -n "Boss FireDirect" Saved/Logs/RE_84_single.log | head -3
 기대: 카운트 > 0, `role=ROLE_Authority`, `Elapsed=0.000`, `N=`이 종전 발수(`BulletsPerShot=16`)와 일치.
 **카운트가 0이면 전제가 깨진 것이다** — superpowers:systematic-debugging으로 원인 규명. 로컬 실행이 안 되면 서버 경로만 직접 호출로 되돌리고 클라만 Multicast로 받는 구조로 설계를 수정해야 한다(스펙 갱신 필요).
 
-- [ ] **Step 9: 커밋**
+- [x] **Step 9: 커밋**
 
 ```bash
 git add Source/Project_RE/Core/REBossCharacter.h Source/Project_RE/Core/REBossCharacter.cpp
@@ -355,7 +357,7 @@ git commit -m "feat(net): 직선탄 발사를 Multicast로 전환, 시드 대신
 - Consumes: `GetServerNow()` / `GetElapsedSince()` (Task 2), `FArcBulletSpawnParams::Elapsed` (Task 1)
 - Produces: `AREBossCharacter::Multicast_FireArtillery(EArtilleryShape, FVector_NetQuantize Origin, FVector_NetQuantize AimLoc, int32 CallSeed, float ServerTime)`
 
-- [ ] **Step 1: 헤더 — RPC 선언 추가**
+- [x] **Step 1: 헤더 — RPC 선언 추가**
 
 `Multicast_FireDirect` 선언 아래에:
 
@@ -369,7 +371,7 @@ git commit -m "feat(net): 직선탄 발사를 Multicast로 전환, 시드 대신
 	                             FVector_NetQuantize AimLoc, int32 CallSeed, float ServerTime);
 ```
 
-- [ ] **Step 2: `FireArtillery`를 서버 전용 결정부로 교체**
+- [x] **Step 2: `FireArtillery`를 서버 전용 결정부로 교체**
 
 `REBossCharacter.cpp:148-216`을 아래로 대체:
 
@@ -402,7 +404,7 @@ void AREBossCharacter::FireArtillery()
 }
 ```
 
-- [ ] **Step 3: Multicast 구현체 추가**
+- [x] **Step 3: Multicast 구현체 추가**
 
 `FireArtillery` 아래에:
 
@@ -477,11 +479,11 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EArtilleryShape Sh
 }
 ```
 
-- [ ] **Step 4: 빌드 게이트 (Editor + Server 둘 다)**
+- [x] **Step 4: 빌드 게이트 (Editor + Server 둘 다)**
 
 기대: 양쪽 `Result: Succeeded`.
 
-- [ ] **Step 5: 싱글 회귀 프로브 — Artillery 경로**
+- [x] **Step 5: 싱글 회귀 프로브 — Artillery 경로**
 
 Task 2 Step 8과 같은 명령으로 로그를 새로 받되, Artillery 페이즈가 나올 때까지 충분히 돌린다(로테이션 랜덤이라 수십 초 필요할 수 있다). `-unattended`는 프로브가 ~4.4초에 프로세스를 종료시키므로 **빼고** 실행한다:
 
@@ -499,7 +501,7 @@ grep -n "Boss FireArtillery\|Boss Phase: Artillery" Saved/Logs/RE_84_artillery.l
 
 기대: `Boss FireArtillery: Shape=... N=12 Elapsed=0.000 role=ROLE_Authority`. `N=0`이면 착지점 생성기가 실패한 것.
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add Source/Project_RE/Core/REBossCharacter.h Source/Project_RE/Core/REBossCharacter.cpp
@@ -520,7 +522,7 @@ git commit -m "feat(net): 곡사탄 발사를 Multicast로 전환, 조준점·�
 - Consumes: `AREBossCharacter::StartFiring(int32)` (기존)
 - Produces: `AREGameMode::NotifyPlayerReady()`, `AREPlayerController::Server_NotifyReady()`
 
-- [ ] **Step 1: GameMode 헤더 — 진입점과 상태 추가**
+- [x] **Step 1: GameMode 헤더 — 진입점과 상태 추가**
 
 `REGameMode.h`의 `public:`에 `EndGame` 선언 아래:
 
@@ -540,7 +542,7 @@ git commit -m "feat(net): 곡사탄 발사를 Multicast로 전환, 조준점·�
 	void TryStartBossFiring();
 ```
 
-- [ ] **Step 2: GameMode cpp — 발사 시작을 BeginPlay에서 분리**
+- [x] **Step 2: GameMode cpp — 발사 시작을 BeginPlay에서 분리**
 
 `REGameMode.cpp:75-82`의 보스 스폰 블록에서 `Boss->StartFiring(/*Seed=*/FMath::Rand());` 한 줄을 **삭제**한다(`DemoBoss = Boss;`는 남긴다). 그 자리 주석도 갱신:
 
@@ -578,7 +580,7 @@ void AREGameMode::TryStartBossFiring()
 }
 ```
 
-- [ ] **Step 3: PlayerController 헤더 — Server RPC 선언**
+- [x] **Step 3: PlayerController 헤더 — Server RPC 선언**
 
 `REPlayerController.h`의 `Server_RequestFire` 선언 아래:
 
@@ -592,7 +594,7 @@ void AREGameMode::TryStartBossFiring()
 	void Server_NotifyReady();
 ```
 
-- [ ] **Step 4: PlayerController cpp — 통지 + 수신 구현**
+- [x] **Step 4: PlayerController cpp — 통지 + 수신 구현**
 
 `BeginPlay()`의 `if (IsLocalPlayerController())` 블록 **안 끝부분**(매핑 컨텍스트 추가 뒤)에:
 
@@ -613,11 +615,11 @@ void AREPlayerController::Server_NotifyReady_Implementation()
 }
 ```
 
-- [ ] **Step 5: 빌드 게이트 (Editor + Server 둘 다)**
+- [x] **Step 5: 빌드 게이트 (Editor + Server 둘 다)**
 
 기대: 양쪽 `Result: Succeeded`.
 
-- [ ] **Step 6: 싱글 회귀 프로브 — 게이트가 싱글을 막지 않는지**
+- [x] **Step 6: 싱글 회귀 프로브 — 게이트가 싱글을 막지 않는지**
 
 ```bash
 MSYS_NO_PATHCONV=1 "E:/UnrealEngine-5.8/UnrealEngine-5.8/Engine/Binaries/Win64/UnrealEditor-Cmd.exe" \
@@ -632,7 +634,7 @@ grep -n "Boss firing started\|Boss FireDirect" Saved/Logs/RE_84_gate.log | head 
 기대: `[RE] Boss firing started (player ready)` 1회 후 `Boss FireDirect`가 이어진다.
 **둘 다 없으면** 게이트가 싱글을 막은 것이다 — `TryStartBossFiring`의 두 진입점(BeginPlay 끝 / NotifyPlayerReady) 중 어느 쪽도 조건을 만족하지 못한 것이므로 각각에 임시 로그를 넣어 원인 규명.
 
-- [ ] **Step 7: 커밋**
+- [x] **Step 7: 커밋**
 
 ```bash
 git add Source/Project_RE/Core/REGameMode.h Source/Project_RE/Core/REGameMode.cpp Source/Project_RE/Core/REPlayerController.h Source/Project_RE/Core/REPlayerController.cpp
@@ -650,11 +652,11 @@ git commit -m "feat(net): 보스 발사 시작을 클라 준비 신호로 게이
 - Modify: `scripts/dedi-verify.ps1`
 - Modify: `docs/guides/dedicated-server.md`
 
-- [ ] **Step 1: 재쿡**
+- [x] **Step 1: 재쿡**
 
 Global Constraints의 `BuildCookRun` 명령 실행. 기대: 성공. **이걸 빼먹으면 옛 산출물을 검증한다.**
 
-- [ ] **Step 2: 데디 2프로세스 — 클라 스폰 확인**
+- [x] **Step 2: 데디 2프로세스 — 클라 스폰 확인**
 
 ```powershell
 scripts\dedi-verify.ps1
@@ -679,7 +681,7 @@ Select-String -Path "$d\*.log" -Pattern "reliable buffer|Closing connection.*rel
 
 기대: **0건.** 걸리면 Artillery 주기(`ArtilleryFireInterval=1.8`)나 `re.Profiling.KeepFiring` 연발 경로가 원인이므로 발사 빈도를 측정해 기록하고 스펙에 천장으로 남긴다.
 
-- [ ] **Step 3: 임시 궤도 덤프 프로브 삽입 (⚠️ 커밋 금지)**
+- [x] **Step 3: 임시 궤도 덤프 프로브 삽입 (⚠️ 커밋 금지)**
 
 **기존 `ForEachEntityChunk` 안에서 덤프한다.** 같은 `Execute` 안에서 `ForEachEntityChunk`를 두 번 부르지 마라 — 청크 순회는 실행 컨텍스트를 소비하므로 두 번째 호출의 동작이 보장되지 않는다.
 
@@ -732,7 +734,7 @@ void UREBulletSimProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 
 Editor + Server 빌드 후 재쿡.
 
-- [ ] **Step 4: 덤프 수집 + 좌표 차이 계산**
+- [x] **Step 4: 덤프 수집 + 좌표 차이 계산**
 
 **주의(정정, 최종 리뷰 #84):** `scripts\dedi-verify.ps1`로 이 측정을 구동하면 안 된다 — 대쉬 프로브가
 서버를 일찍 꺼서 접속 유지 구간이 ~4.1초뿐이라, 10초 시점 덤프가 찍히기 전에 접속이 끊긴다.
@@ -768,7 +770,7 @@ foreach ($s in $S) {
 **게이트: `worst` < 10 uu (10cm).** 초과하면 시간 보정이나 생성기 입력 중 하나가 어긋난 것 — superpowers:systematic-debugging.
 덤프 건수가 양쪽에서 크게 다르면(예: 클라가 절반) 스폰 유실이므로 그것부터 해결한다.
 
-- [ ] **Step 5: 실RHI 클라 스크린샷**
+- [x] **Step 5: 실RHI 클라 스크린샷**
 
 서버를 별도로 띄운 뒤 클라를 창모드로 접속시켜 탄막이 화면에 보이는지 PNG로 남긴다. `-nullrhi`로는 검증 불가하다.
 
@@ -784,7 +786,7 @@ Start-Sleep -Seconds 20
 창에서 `` ` `` 콘솔 → `shot` 으로 스크린샷. 산출물은 `Saved/Screenshots/`.
 기대: **클라 화면에 보스 탄막이 보인다.** #70이 "안 보이는 게 정상"으로 남긴 항목의 해소 증거다. 확인 후 서버 프로세스 종료.
 
-- [ ] **Step 6: 임시 프로브 revert + 재빌드 + 재쿡**
+- [x] **Step 6: 임시 프로브 revert + 재빌드 + 재쿡**
 
 ```bash
 git checkout -- Source/Project_RE/Mass/REBulletSimProcessor.cpp
@@ -793,7 +795,7 @@ git status --short
 
 기대: `REBulletSimProcessor.cpp` 변경 없음. 이후 Editor + Server 빌드, 재쿡.
 
-- [ ] **Step 7: `dedi-verify.ps1` 판정 추가**
+- [x] **Step 7: `dedi-verify.ps1` 판정 추가**
 
 `Invoke-Verdict`의 서버 블록에:
 
@@ -814,11 +816,11 @@ scripts\dedi-verify.ps1 -SelfTest    # 기대: SelfTest OK
 scripts\dedi-verify.ps1              # 기대: 전 항목 통과, EXIT=0
 ```
 
-- [ ] **Step 8: 가이드 갱신**
+- [x] **Step 8: 가이드 갱신**
 
 `docs/guides/dedicated-server.md`의 판정 항목 표에서 **클라** 행 "있어야 하는 것"에 `[RE] Boss FireDirect:... role=ROLE_SimulatedProxy` 를, **서버** 행에 `role=ROLE_Authority` 버전을 추가한다.
 
-- [ ] **Step 9: M3 프로파일 회귀**
+- [x] **Step 9: M3 프로파일 회귀**
 
 시작 게이트가 발사 시점을 PC BeginPlay로 옮겼으므로 측정 창이 오염되지 않았는지 본다.
 
@@ -828,7 +830,7 @@ scripts\profile.ps1 -Bullets 1000
 
 기대: 산출물 `frames.csv`가 생성되고 `run.log`의 `RenderProbe` 유지 탄수가 종전 수준. 0발이면 게이트가 프로파일 경로를 막은 것이다.
 
-- [ ] **Step 10: 커밋**
+- [x] **Step 10: 커밋**
 
 ```bash
 git add scripts/dedi-verify.ps1 docs/guides/dedicated-server.md
