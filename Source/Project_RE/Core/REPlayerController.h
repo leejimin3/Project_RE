@@ -29,6 +29,13 @@ public:
 	UFUNCTION(Client, Reliable)
 	void Client_ShowResult(bool bVictory);
 
+	/**
+	 *  사망 통지 (#85). 입력만 차단하고 폰·카메라는 그대로 둔다 —
+	 *  그 자리에서 동료 전투를 보는 것이 곧 관전 시점이다(별도 관전 카메라 없음).
+	 */
+	UFUNCTION(Client, Reliable)
+	void Client_NotifyDeath();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;

@@ -192,7 +192,8 @@ float ARECharacterBase::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 		UE_LOG(LogTemp, Log, TEXT("[RE] Player died (Health<=0)"));
 		if (AREGameMode* GM = GetWorld()->GetAuthGameMode<AREGameMode>())
 		{
-			GM->EndGame(/*bVictory=*/false);
+			// 전원 사망이어야 패배다 — 판정은 GameMode가 한다 (#85).
+			GM->NotifyPlayerDied(Cast<APlayerController>(GetController()));
 		}
 	}
 

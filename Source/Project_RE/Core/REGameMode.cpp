@@ -147,6 +147,32 @@ void AREGameMode::NotifyPlayerReady(APlayerController* PC)
 	TryStartBossFiring();
 }
 
+void AREGameMode::NotifyPlayerDied(APlayerController* PC)
+{
+	if (!PC || bGameOver)
+	{
+		return;
+	}
+	DeadPlayers.Add(PC);
+
+	if (AREPlayerController* REPC = Cast<AREPlayerController>(PC))
+	{
+		REPC->Client_NotifyDeath();
+	}
+	// 서버측: 마지막 이동 명령이 남아 시체가 계속 미끄러지는 것을 막는다.
+	PC->StopMovement();
+
+	UE_LOG(LogTemp, Log, TEXT("[RE] Player died %d/%d"), DeadPlayers.Num(), ReadyPlayers.Num());
+
+	// 분모는 ExpectedPlayers가 아니라 실제 접속자 수다 — 중간에 나간 사람이 있으면
+	// 고정 분모로는 남은 사람이 다 죽어도 게임이 끝나지 않는다.
+	if (DeadPlayers.Num() >= ReadyPlayers.Num())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[RE] All %d players dead"), ReadyPlayers.Num());
+		EndGame(/*bVictory=*/false);
+	}
+}
+
 void AREGameMode::TryStartBossFiring()
 {
 	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());

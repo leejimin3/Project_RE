@@ -46,6 +46,9 @@ public:
 	/** 클라 준비 통지 수신 (#84/#85). 보스 발사 시작 조건을 재평가한다. */
 	void NotifyPlayerReady(APlayerController* PC);
 
+	/** 플레이어 사망 통지 (#85). 전원 사망이면 EndGame(DEFEAT)까지 간다. */
+	void NotifyPlayerDied(APlayerController* PC);
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -63,6 +66,11 @@ private:
 	 */
 	UPROPERTY()
 	TSet<TObjectPtr<APlayerController>> ReadyPlayers;
+
+	/** 사망한 PC 집합 (#85). ReadyPlayers를 채우면 전원 사망 = 패배. */
+	UPROPERTY()
+	TSet<TObjectPtr<APlayerController>> DeadPlayers;
+
 	/** 발사 시작 1회성 가드. */
 	bool bFiringStarted = false;
 	/** 준비 신호와 보스 스폰이 모두 끝났으면 발사 시작. 둘의 순서는 보장되지 않는다. */

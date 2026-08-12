@@ -271,6 +271,14 @@ void AREPlayerController::Client_ShowResult_Implementation(bool bVictory)
 	UE_LOG(LogTemp, Log, TEXT("[RE] Client_ShowResult: %s"), bVictory ? TEXT("VICTORY") : TEXT("DEFEAT"));
 }
 
+void AREPlayerController::Client_NotifyDeath_Implementation()
+{
+	// 입력만 끊는다. 결과 화면은 게임이 끝날 때 Client_ShowResult가 따로 띄운다.
+	DisableInput(this);
+
+	UE_LOG(LogTemp, Log, TEXT("[RE] Client_NotifyDeath: input disabled (spectating)"));
+}
+
 void AREPlayerController::OnToggleCheatPanel()
 {
 	if (!IsLocalPlayerController())
