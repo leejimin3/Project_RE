@@ -6,12 +6,10 @@
 #include "MassExecutionContext.h"
 #include "Mass/EntityFragments.h"  // FTransformFragment
 #include "Core/RECharacterBase.h"
-#include "Abilities/REGameplayTags.h"
-#include "AbilitySystemComponent.h"
 #include "Engine/DamageEvents.h"
 #include "Engine/World.h"
-#include "Kismet/GameplayStatics.h"
 #include "ProfilingDebugging/CsvProfiler.h"
+#include "REHitTargets.h"
 
 CSV_DECLARE_CATEGORY_EXTERN(REBullet);  // 정의는 REBulletSimProcessor.cpp
 
@@ -47,25 +45,13 @@ void UREBulletHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 	TRACE_CPUPROFILER_EVENT_SCOPE(RE_BulletHit);
 	CSV_SCOPED_TIMING_STAT(REBullet, BulletHit);
 
-	UWorld* World = EntityManager.GetWorld();
-	APawn* Pawn = World ? UGameplayStatics::GetPlayerPawn(World, 0) : nullptr;
-	ARECharacterBase* Player = Cast<ARECharacterBase>(Pawn);
-	if (!Player)
+	// 살아있고 대쉬 중이 아닌 플레이어 전원 (#86). 대상이 없으면 탄을 순회할 이유가 없다.
+	TArray<FREHitTarget> Targets;
+	GatherHitTargets(EntityManager.GetWorld(), Targets);
+	if (Targets.IsEmpty())
 	{
-		return;  // 플레이어 없으면 no-op (레벨 전환 등)
-	}
-
-	// 대쉬 중 무적 — #25가 부여하는 State.Dashing 태그를 여기서 소비.
-	// 판정 자체를 스킵(탄환 미파괴) — 대쉬는 탄막을 "통과"하지 "지우지" 않는다.
-	const UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent();
-	if (ASC && ASC->HasMatchingGameplayTag(RETag_State_Dashing))
-	{
-		// 대쉬 중엔 매 프레임 찍히므로 Verbose — 검증 시 -LogCmds="LogTemp Verbose"로 관측.
-		UE_LOG(LogTemp, Verbose, TEXT("[RE] BulletHit: skipped (State.Dashing)"));
 		return;
 	}
-
-	const FVector PlayerLoc = Player->GetActorLocation();
 
 	EntityQuery.ForEachEntityChunk(Context, [&](FMassExecutionContext& Ctx)
 	{
@@ -75,12 +61,16 @@ void UREBulletHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 		for (int32 i = 0; i < Num; ++i)
 		{
 			// 탑다운 — XY 평면 거리만 비교 (탄환 Z와 캡슐 중심 Z 불일치 함정 회피)
-			if (FVector::DistSquaredXY(Transforms[i].GetTransform().GetLocation(), PlayerLoc)
-				<= HitRadius * HitRadius)
+			const FVector BulletLoc = Transforms[i].GetTransform().GetLocation();
+			for (const FREHitTarget& T : Targets)
 			{
-				const float Applied = Player->TakeDamage(BulletDamage, FDamageEvent(), nullptr, nullptr);
-				Ctx.Defer().DestroyEntity(Ctx.GetEntity(i));
-				UE_LOG(LogTemp, Log, TEXT("[RE] BulletHit: Applied=%.0f"), Applied);
+				if (FVector::DistSquaredXY(BulletLoc, T.Location) <= HitRadius * HitRadius)
+				{
+					const float Applied = T.Player->TakeDamage(BulletDamage, FDamageEvent(), nullptr, nullptr);
+					Ctx.Defer().DestroyEntity(Ctx.GetEntity(i));
+					UE_LOG(LogTemp, Log, TEXT("[RE] BulletHit: Applied=%.0f"), Applied);
+					break;   // 투사체 하나는 한 명만 — 몸으로 막는 탱 플레이가 성립한다
+				}
 			}
 		}
 	});
