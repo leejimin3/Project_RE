@@ -85,7 +85,8 @@ function Assert-Log {
 }
 
 function Assert-Range {
-    <# 캡처그룹 1의 수치가 범위 안인지. 대쉬 거리처럼 "있기만" 하면 안 되는 항목용. #>
+    <# 캡처그룹 1의 수치가 범위 안인지. 대쉬 거리처럼 "있기만" 하면 안 되는 항목용.
+       매치가 N건이면(N인) 전부 검사한다 — 마지막 것만 보면 앞쪽 클라의 이상값을 놓친다. #>
     param(
         [string]$Scope,
         [string]$Desc,
@@ -100,12 +101,17 @@ function Assert-Range {
         $script:Failures += ("{0}: {1} — 패턴 없음" -f $Scope, $Desc)
         return
     }
-    $val = [double]$m[-1].Matches[0].Groups[1].Value
-    if ($val -ge $Min -and $val -le $Max) {
-        Write-Host ("  [PASS] {0}: {1} (={2})" -f $Scope, $Desc, $val)
+    $vals = @($m | ForEach-Object { [double]$_.Matches[0].Groups[1].Value })
+    # 어느 occurrence가 고장인지 짚어야 클라 여럿일 때 원인을 가른다.
+    $bad = @()
+    for ($i = 0; $i -lt $vals.Count; $i++) {
+        if ($vals[$i] -lt $Min -or $vals[$i] -gt $Max) { $bad += ("#{0}={1}" -f ($i + 1), $vals[$i]) }
+    }
+    if ($bad.Count -eq 0) {
+        Write-Host ("  [PASS] {0}: {1} ({2}건, ={3})" -f $Scope, $Desc, $vals.Count, ($vals -join ', '))
     } else {
-        Write-Host ("  [FAIL] {0}: {1} — {2} 가 [{3}, {4}] 밖" -f $Scope, $Desc, $val, $Min, $Max) -ForegroundColor Red
-        $script:Failures += ("{0}: {1} — {2} 가 [{3}, {4}] 밖" -f $Scope, $Desc, $val, $Min, $Max)
+        Write-Host ("  [FAIL] {0}: {1} — [{2}, {3}] 밖: {4}" -f $Scope, $Desc, $Min, $Max, ($bad -join ', ')) -ForegroundColor Red
+        $script:Failures += ("{0}: {1} — [{2}, {3}] 밖: {4}" -f $Scope, $Desc, $Min, $Max, ($bad -join ', '))
     }
 }
 
@@ -163,6 +169,11 @@ function Invoke-Verdict {
         # 제외하지 않으면 이 판정은 항상 실패한다.
         $realTargetLines = @($ServerLines | Where-Object { $_ -notmatch '100000' })
         Assert-Log 'server' 'NavMesh 거부 없음(실목표)' $realTargetLines '\[Move\] rejected: off-navmesh' -Expect Absent
+
+        # 위 판정은 거부 로그가 통째로 없어도(=투사가 항상 성공하는 회귀로 거부 경로 자체가 죽어도)
+        # 통과해버린다 — 맵 밖 좌표가 실제로 거부됐는지 별도로 확인해야 이 침묵 통과를 못 잡는다.
+        $offMapLines = @($ServerLines | Where-Object { $_ -match '100000' })
+        Assert-Log 'server' 'NavMesh 거부 확인(맵밖 좌표)' $offMapLines '\[Move\] rejected: off-navmesh'
 
         # 코스메틱은 NM_DedicatedServer 가드로 생략되어야 한다 (#74/#75).
         # 결과 모드에서는 재생을 시도할 계기 자체가 없어 부재가 가드 덕인지 구분 불가 → 프로브 모드 전용.
@@ -222,6 +233,7 @@ if ($SelfTest) {
         'LogNet: IpNetDriver listening on port 7777',
         'LogWorld: Bringing World /Game/Level/Main.Main up for play',
         'LogTemp: [Move] probe start: pawn=X=0 target=X=0',
+        'LogTemp: [Move] rejected: off-navmesh X=100000.000 Y=100000.000 Z=0.000',
         'LogTemp: [Dash] dist=602.4 (기대 ~600)',
         'LogTemp: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.000 role=ROLE_Authority',
         'LogTemp: [Dash] probe done'
@@ -257,6 +269,64 @@ if ($SelfTest) {
     Invoke-Verdict -ServerLines $goodServer -ClientLines @{ 'client1' = $goodClient; 'client2' = $goodClient } `
                    -CheckVictory $false -Mode Probe -ClientCount 2
     if (-not ($script:Failures -match '프로브 완주')) { throw 'SelfTest: 프로브 완주 개수 부족을 잡아내지 못했다' }
+
+    # Assert-Range 가 마지막 occurrence만 보던 버그 재현 — 1번 클라 대쉬거리가 범위 밖, 2번은 정상.
+    # 구버전은 $m[-1](마지막=정상값)만 봐서 이 상황을 통과시켰다 — 그 회귀를 다시 잡는지 확인한다.
+    $script:Failures = @()
+    $twoDashServer = @(
+        'LogNet: IpNetDriver listening on port 7777',
+        'LogWorld: Bringing World /Game/Level/Main.Main up for play',
+        'LogTemp: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.000 role=ROLE_Authority',
+        'LogTemp: [Move] probe start: pawn=X=0 target=X=0',
+        'LogTemp: [Dash] dist=50.0 (기대 ~600)',
+        'LogTemp: [Dash] probe done',
+        'LogTemp: [Move] probe start: pawn=X=0 target=X=0',
+        'LogTemp: [Dash] dist=602.4 (기대 ~600)',
+        'LogTemp: [Dash] probe done'
+    )
+    Invoke-Verdict -ServerLines $twoDashServer -ClientLines @{ 'client1' = $goodClient; 'client2' = $goodClient } `
+                   -CheckVictory $false -Mode Probe -ClientCount 2
+    if (-not ($script:Failures -match '대쉬 이동거리.*#1')) { throw 'SelfTest: 대쉬 거리 범위 검사가 1번 클라(앞쪽 occurrence)의 이상값을 놓쳤다' }
+
+    # NavMesh 거부 경로 자체가 죽은 회귀(=투사가 항상 성공) — 맵 밖 좌표 거부 로그가 아예 없는 상황을 합성한다.
+    # 기존 "실목표 거부 없음" 판정은 거부 로그가 0건이어도 통과해버려 이 회귀를 못 잡는다.
+    $script:Failures = @()
+    $noRejectServer = @($goodServer | Where-Object { $_ -notmatch '100000' })
+    Invoke-Verdict -ServerLines $noRejectServer -ClientLines @{ 'client1' = $goodClient } -CheckVictory $false -Mode Probe -ClientCount 1
+    if (-not ($script:Failures -match 'NavMesh 거부 확인')) { throw 'SelfTest: NavMesh 거부 경로 소실(맵 밖 좌표 거부 부재)을 잡아내지 못했다' }
+
+    # --- 결과 모드(-Outcome) 자체 검사. 여태까지는 전부 Probe 모드였다 — 결과 모드의 스폰이격
+    # 계산·포맷 정규식은 이 브랜치에서 새로 짠 손코드라 별도로 검사해야 한다.
+    $script:Failures = @()
+    $goodServerOutcome = @(
+        'LogNet: IpNetDriver listening on port 7777',
+        'LogWorld: Bringing World /Game/Level/Main.Main up for play',
+        'LogTemp: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.000 role=ROLE_Authority',
+        'LogTemp: [RE] Spawn player idx=0 offsetY=-125 loc=X=0.000 Y=-125.000 Z=0.000',
+        'LogTemp: [RE] Spawn player idx=1 offsetY=125 loc=X=0.000 Y=125.000 Z=0.000',
+        'LogTemp: [RE] Boss firing started (2/2 ready)',
+        'LogTemp: [RE] Player died 1/2',
+        'LogTemp: [RE] Player died 2/2',
+        'LogTemp: [RE] All 2 players dead',
+        'LogTemp: [RE] EndGame: DEFEAT'
+    )
+    $goodClientOutcome = @(
+        'LogTemp: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.084 role=ROLE_SimulatedProxy',
+        'LogTemp: [RE] Client_ShowResult: DEFEAT'
+    )
+    Invoke-Verdict -ServerLines $goodServerOutcome `
+                   -ClientLines @{ 'client1' = $goodClientOutcome; 'client2' = $goodClientOutcome } `
+                   -CheckVictory $false -Mode Outcome -ClientCount 2
+    if ($script:Failures.Count -ne 0) { throw "SelfTest: 결과 모드 정상 로그가 통과하지 못했다 ($($script:Failures.Count)건)" }
+
+    # 결과 모드의 손코드(스폰 이격 상이 계산)를 겨냥한 고장 — 두 스폰 offsetY가 우연히 같은 값으로 겹친 상황.
+    # Assert-Count(스폰 로그 2건)는 여전히 통과하므로 공용 어서션으로는 못 잡고, distinctness 계산만 잡아야 한다.
+    $script:Failures = @()
+    $dupOffsetServerOutcome = $goodServerOutcome -replace 'idx=1 offsetY=125', 'idx=1 offsetY=-125'
+    Invoke-Verdict -ServerLines $dupOffsetServerOutcome `
+                   -ClientLines @{ 'client1' = $goodClientOutcome; 'client2' = $goodClientOutcome } `
+                   -CheckVictory $false -Mode Outcome -ClientCount 2
+    if (-not ($script:Failures -match '스폰 이격 상이')) { throw 'SelfTest: 결과 모드 스폰 이격 중복(#54 겹침 회귀)을 잡아내지 못했다' }
 
     Write-Host "`n[dedi-verify] SelfTest OK" -ForegroundColor Green
     exit 0
