@@ -315,9 +315,16 @@ try {
         # 느린 머신에서 Start-Sleep 은 조용히 어긋난다(#82가 리스닝 대기를 폴링으로 바꾼 것과 같은 이유).
         if ($Outcome -and $i -lt $Clients) {
             $readyDeadline = (Get-Date).AddSeconds(60)
+            $found = $false
             while ((Get-Date) -lt $readyDeadline) {
-                if ((Select-String -Path $ServerLog -Pattern ("\[RE\] Player ready {0}/" -f $i) -Quiet)) { break }
+                if ((Select-String -Path $ServerLog -Pattern ("\[RE\] Player ready {0}/" -f $i) -Quiet)) {
+                    $found = $true
+                    break
+                }
                 Start-Sleep -Milliseconds 300
+            }
+            if (-not $found) {
+                throw "클라 ${i} ready 타임아웃 60s — 패턴 '[RE] Player ready ${i}/' 미발생. 로그: $ServerLog"
             }
             Write-Host "[dedi-verify] client$i ready 확인 — 다음 클라 투입"
         }
@@ -331,6 +338,9 @@ try {
             if ($srv.HasExited) { break }
             if (Select-String -Path $ServerLog -Pattern '\[RE\] EndGame:' -Quiet) { $ended = $true; break }
             Start-Sleep -Milliseconds 500
+        }
+        if ($srv.HasExited -and -not $ended) {
+            throw "서버 예기치 않게 종료 (exit=$($srv.ExitCode)). EndGame 미발생. 로그: $ServerLog"
         }
         if (-not $ended) {
             throw "결과 타임아웃 ${OutcomeTimeoutSec}s — EndGame 미발생. 로그: $ServerLog"
