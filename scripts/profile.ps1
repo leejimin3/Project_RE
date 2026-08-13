@@ -36,13 +36,17 @@ if (-not (Test-Path $Uproject)) { throw "uproject 없음: $Uproject" }
 
 $Stamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
 # re.Profiling.KeepFiring 1: 즉사 DEFEAT가 보스 발사를 끊어 Mass 탄환이 0발로 측정되는 것을 막는다 (#46).
+# re.Cheat.PlayerInvincible 1: #86부터 사망한 플레이어는 GatherHitTargets 대상에서 빠져
+# 두 히트 프로세서가 청크 순회 전에 조기 반환한다 — 즉 DEFEAT 이후로는 탄이 아예 소멸하지 않는
+# "타겟 없음" 원가만 재는 캡처가 된다. 무적으로 죽지 않게 고정해 원래 측정 의미를 되살린다.
+# (클라 로컬 CVar라 이 -game standalone 실행에서만 유효, 데디에는 안 먹는다.)
 # Mass 경로: re.Bullets.Count N (Actor는 기본 0). Actor 경로: Mass boss(기본 480)를 0으로 죽이고 액터만.
 if ($Actor) {
     $Tag     = 'Actor'
-    $ExecCmd = "re.Profiling.KeepFiring 1,re.Bullets.Count 0,re.ActorBullets.Count $Bullets"
+    $ExecCmd = "re.Profiling.KeepFiring 1,re.Cheat.PlayerInvincible 1,re.Bullets.Count 0,re.ActorBullets.Count $Bullets"
 } else {
     $Tag     = 'Mass'
-    $ExecCmd = "re.Profiling.KeepFiring 1,re.Bullets.Count $Bullets"
+    $ExecCmd = "re.Profiling.KeepFiring 1,re.Cheat.PlayerInvincible 1,re.Bullets.Count $Bullets"
 }
 if ($Ki -gt 0) { $ExecCmd += ",re.Bullets.SpawnKi $Ki" }
 $RunDir = Join-Path $Root "Saved\Profiling\RE_${Tag}_${Bullets}_${Stamp}"
