@@ -507,9 +507,13 @@ void AREPlayerController::RunHeadlessDashProbe()
 				bReactivated = Pn->TryDash(FVector::ForwardVector);
 			}
 			UE_LOG(LogTemp, Log, TEXT("[Dash] re-activate ok=%d (기대 1, 쿨다운 만료)"), bReactivated);
-			UE_LOG(LogTemp, Log, TEXT("[Dash] probe done — exiting"));
-			// headless 프로세스 자체 종료(결정적 실행).
-			FPlatformMisc::RequestExit(false);
+			UE_LOG(LogTemp, Log, TEXT("[Dash] probe done"));
+			// 종료 결정은 GameMode가 한다 (#87). 이 PC는 자기 프로브만 알아서,
+			// 먼저 끝난 하나가 서버를 내리면 뒤 클라의 프로브가 시작조차 못 한다.
+			if (AREGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<AREGameMode>() : nullptr)
+			{
+				GM->NotifyProbeComplete();
+			}
 		});
 		GetWorld()->GetTimerManager().SetTimer(ReTimer, ReDel, 2.1f, false);
 	});

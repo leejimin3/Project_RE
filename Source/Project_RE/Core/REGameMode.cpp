@@ -11,6 +11,7 @@
 #include "REBulletPatternGenerator.h"
 #include "TimerManager.h"
 #include "HAL/IConsoleManager.h"
+#include "HAL/PlatformMisc.h"
 #include "REStatsSettings.h"
 #include "GameFramework/PawnMovementComponent.h"
 
@@ -215,6 +216,20 @@ void AREGameMode::Logout(AController* Exiting)
 		}
 	}
 	Super::Logout(Exiting);
+}
+
+void AREGameMode::NotifyProbeComplete()
+{
+	++CompletedProbes;
+	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
+	UE_LOG(LogTemp, Log, TEXT("[RE] Probe complete %d/%d"), CompletedProbes, Expected);
+
+	if (CompletedProbes >= Expected)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[RE] All probes done — exiting"));
+		// 헤드리스 프로세스 자체 종료(결정적 실행). 전원 완주 후에만 부른다.
+		FPlatformMisc::RequestExit(false);
+	}
 }
 
 APawn* AREGameMode::SpawnDefaultPawnAtTransform_Implementation(AController* NewPlayer,

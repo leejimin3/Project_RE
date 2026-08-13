@@ -49,6 +49,13 @@ public:
 	/** 플레이어 사망 통지 (#85). 전원 사망이면 EndGame(DEFEAT)까지 간다. */
 	void NotifyPlayerDied(APlayerController* PC);
 
+	/**
+	 *  서버측 헤드리스 프로브 완주 통지 (#87). 전원 완주 시 프로세스를 종료한다.
+	 *  종료 결정이 개별 PC가 아니라 여기 있는 이유: PC는 자기 프로브만 알기 때문에,
+	 *  먼저 끝난 하나가 서버를 내리면 뒤 클라의 프로브는 시작조차 못 한다.
+	 */
+	void NotifyProbeComplete();
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -87,6 +94,13 @@ private:
 
 	/** 발사 시작 1회성 가드. */
 	bool bFiringStarted = false;
+
+	/**
+	 *  완주한 서버측 프로브 수 (#87). ReadyPlayers처럼 TSet이 아니라 카운터인 이유:
+	 *  프로브 완주는 서버 자신의 타이머가 컨트롤러당 정확히 1회 발화시키므로 중복 경로가 없다.
+	 */
+	int32 CompletedProbes = 0;
+
 	/** 준비 신호와 보스 스폰이 모두 끝났으면 발사 시작. 둘의 순서는 보장되지 않는다. */
 	void TryStartBossFiring();
 };

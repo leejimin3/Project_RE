@@ -7,24 +7,29 @@
   이미 스테이징된 산출물을 전제한다 — 빌드/쿡은 하지 않는다.
   선행 절차는 docs/guides/dedicated-server.md "빌드" / "쿡 + 스테이징" 참조.
 
-  서버 프로브(REPlayerController::RunHeadlessDashProbe)가 마지막에 RequestExit 하므로
-  서버는 클라 접속 후 약 4.4초에 스스로 종료한다 — 이 스크립트는 고정 대기가 아니라
-  서버 프로세스 종료를 기다린다.
+  서버측 프로브가 전원 완주하면 GameMode가 종료한다(#87). 이 스크립트는 고정 대기가 아니라
+  모드에 따라 다르게 신호를 감지한다 — 프로브 모드는 서버 프로세스 종료를, 결과 모드는
+  로그의 EndGame 라인을 기다린다.
 
 .EXAMPLE
-  scripts/dedi-verify.ps1
-  scripts/dedi-verify.ps1 -Clients 2
+  scripts/dedi-verify.ps1 -Clients 2            # 프로브 모드 — 이동·발사·대쉬·NavMesh
+  scripts/dedi-verify.ps1 -Clients 2 -Outcome   # 결과 모드 — 게이트·스폰이격·전원사망·결과화면
   scripts/dedi-verify.ps1 -Victory      # BossMaxHealth 임시 하향 + 재쿡 후에만
   scripts/dedi-verify.ps1 -SelfTest     # 판정 로직만 검사(프로세스 미기동)
 #>
 param(
-    # 접속시킬 클라 개수 (M5 N인 협동 대비). 기본 1.
+    # 접속시킬 클라 개수. 기본 1.
     [int]$Clients = 1,
     [int]$Port = 7777,
     # 서버 리스닝 대기 상한(초). 첫 실행은 pak 마운트로 느리다.
     [int]$ListenTimeoutSec = 90,
     # 클라 접속 후 서버 자체 종료 대기 상한(초). 프로브 완주는 약 4.4초.
     [int]$ProbeTimeoutSec = 60,
+    # 결과 모드: -unattended 없이 순수 전투를 돌려 게이트·스폰이격·전원사망·결과화면을 판정한다.
+    # 프로브 모드(기본)와 타이밍이 양립하지 않아 분리했다 — 프로브 완주 ~4.1초, 전멸 ~5.3초 (#87).
+    [switch]$Outcome,
+    # 결과 모드에서 EndGame 대기 상한(초).
+    [int]$OutcomeTimeoutSec = 120,
     # 승리 경로(Client_ShowResult: VICTORY)까지 판정한다.
     # DefaultGame.ini 의 BossMaxHealth 를 프로브 1히트(10 데미지) 이하로 낮추고 재쿡한 상태에서만 성립.
     [switch]$Victory,
@@ -80,7 +85,8 @@ function Assert-Log {
 }
 
 function Assert-Range {
-    <# 캡처그룹 1의 수치가 범위 안인지. 대쉬 거리처럼 "있기만" 하면 안 되는 항목용. #>
+    <# 캡처그룹 1의 수치가 범위 안인지. 대쉬 거리처럼 "있기만" 하면 안 되는 항목용.
+       매치가 N건이면(N인) 전부 검사한다 — 마지막 것만 보면 앞쪽 클라의 이상값을 놓친다. #>
     param(
         [string]$Scope,
         [string]$Desc,
@@ -95,42 +101,124 @@ function Assert-Range {
         $script:Failures += ("{0}: {1} — 패턴 없음" -f $Scope, $Desc)
         return
     }
-    $val = [double]$m[-1].Matches[0].Groups[1].Value
-    if ($val -ge $Min -and $val -le $Max) {
-        Write-Host ("  [PASS] {0}: {1} (={2})" -f $Scope, $Desc, $val)
+    $vals = @($m | ForEach-Object { [double]$_.Matches[0].Groups[1].Value })
+    # 어느 occurrence가 고장인지 짚어야 클라 여럿일 때 원인을 가른다.
+    $bad = @()
+    for ($i = 0; $i -lt $vals.Count; $i++) {
+        if ($vals[$i] -lt $Min -or $vals[$i] -gt $Max) { $bad += ("#{0}={1}" -f ($i + 1), $vals[$i]) }
+    }
+    if ($bad.Count -eq 0) {
+        Write-Host ("  [PASS] {0}: {1} ({2}건, ={3})" -f $Scope, $Desc, $vals.Count, ($vals -join ', '))
     } else {
-        Write-Host ("  [FAIL] {0}: {1} — {2} 가 [{3}, {4}] 밖" -f $Scope, $Desc, $val, $Min, $Max) -ForegroundColor Red
-        $script:Failures += ("{0}: {1} — {2} 가 [{3}, {4}] 밖" -f $Scope, $Desc, $val, $Min, $Max)
+        Write-Host ("  [FAIL] {0}: {1} — [{2}, {3}] 밖: {4}" -f $Scope, $Desc, $Min, $Max, ($bad -join ', ')) -ForegroundColor Red
+        $script:Failures += ("{0}: {1} — [{2}, {3}] 밖: {4}" -f $Scope, $Desc, $Min, $Max, ($bad -join ', '))
+    }
+}
+
+function Assert-Count {
+    <# 정확히 N건이어야 성공. N인 판정의 핵심 — "있나"가 아니라 "몇 개인가"를 본다. #>
+    param(
+        [string]$Scope,
+        [string]$Desc,
+        [string[]]$Lines,
+        [string]$Pattern,
+        [int]$Expected
+    )
+    $n = @($Lines | Select-String -Pattern $Pattern).Count
+    if ($n -eq $Expected) {
+        Write-Host ("  [PASS] {0}: {1} ({2}건)" -f $Scope, $Desc, $n)
+    } else {
+        # 기대치를 함께 출력해야 실패 원인이 보인다 — "적다"인지 "많다"인지가 원인을 가른다.
+        Write-Host ("  [FAIL] {0}: {1} — {2}건, 기대 {3}건" -f $Scope, $Desc, $n, $Expected) -ForegroundColor Red
+        $script:Failures += ("{0}: {1} — {2}건, 기대 {3}건" -f $Scope, $Desc, $n, $Expected)
     }
 }
 
 function Invoke-Verdict {
-    <# 서버 로그 1개 + 클라 로그 N개를 받아 전체 판정. 프로세스와 무관하게 순수 함수라 SelfTest가 가능하다. #>
-    param([string[]]$ServerLines, [hashtable]$ClientLines, [bool]$CheckVictory)
+    <#
+      서버 로그 1개 + 클라 로그 N개를 받아 전체 판정. 프로세스와 무관한 순수 함수라 SelfTest가 가능하다.
+      모드에 따라 적용 판정이 다르다 (#87) — 결과 모드는 -unattended 없이 돌아 프로브가 만들어내던
+      로그(몽타주·대쉬 거리·이동 프로브)가 아예 없기 때문이다. 그대로 적용하면 항상 빨간불이 된다.
+    #>
+    param(
+        [string[]]$ServerLines,
+        [hashtable]$ClientLines,
+        [bool]$CheckVictory,
+        [ValidateSet('Probe', 'Outcome')][string]$Mode = 'Probe',
+        [int]$ClientCount = 1
+    )
 
-    Write-Host "`n[dedi-verify] 판정"
+    Write-Host "`n[dedi-verify] 판정 (mode=$Mode clients=$ClientCount)"
 
-    # --- 서버: 기동 + 권위 판정이 여기에만 찍혀야 한다.
+    # --- 공통: 기동과 권위 발사는 두 모드 모두에서 성립해야 한다.
     Assert-Log 'server' '넷드라이버 리스닝'   $ServerLines 'IpNetDriver listening'
     Assert-Log 'server' '월드 기동'          $ServerLines 'Bringing World /Game/Level/Main\.Main'
-    Assert-Log 'server' '프로브 완주'         $ServerLines '\[Dash\] probe done'
-    Assert-Range 'server' '대쉬 이동거리'      $ServerLines '\[Dash\] dist=([0-9.]+)' 500 700
     # 보스 첫 볼리는 Spiral/Fan(FireDirect) 또는 Artillery(FireArtillery) 중 랜덤이라 둘 다 인정한다 (#84).
     Assert-Log 'server' '탄막 발사(권위)'    $ServerLines '\[RE\] Boss Fire(Direct|Artillery):.*role=ROLE_Authority'
-    # 코스메틱은 NM_DedicatedServer 가드로 생략되어야 한다 (#74/#75).
-    Assert-Log 'server' '발사 몽타주 생략'     $ServerLines '\[Attack\] fire montage' -Expect Absent
-    Assert-Log 'server' '대쉬 몽타주 생략'     $ServerLines '\[Dash\] anim len=' -Expect Absent
     Assert-Log 'server' '크래시 없음'         $ServerLines 'Assertion failed|Critical error' -Expect Absent
 
-    # --- 클라: 코스메틱은 여기에만. 접속 유지 구간만 본다.
+    if ($Mode -eq 'Probe') {
+        # 프로브가 클라 수만큼 완주했는가 — 이 이슈의 핵심 판정 (#87).
+        Assert-Count 'server' '프로브 완주'      $ServerLines '\[Dash\] probe done'   $ClientCount
+        Assert-Count 'server' '이동 프로브 기동'  $ServerLines '\[Move\] probe start'  $ClientCount
+        Assert-Count 'server' '대쉬 거리 측정'    $ServerLines '\[Dash\] dist='        $ClientCount
+        Assert-Range 'server' '대쉬 이동거리'     $ServerLines '\[Dash\] dist=([0-9.]+)' 500 700
+
+        # 이동 프로브는 오프메시 거부 경로 확인용으로 맵 밖 좌표(100000)를 일부러 1회 요청한다.
+        # 그 좌표를 지목한 거부는 정상이고 오히려 거부 경로가 살아있다는 증거 — 판정에서 제외한다.
+        # 제외하지 않으면 이 판정은 항상 실패한다.
+        $realTargetLines = @($ServerLines | Where-Object { $_ -notmatch '100000' })
+        Assert-Log 'server' 'NavMesh 거부 없음(실목표)' $realTargetLines '\[Move\] rejected: off-navmesh' -Expect Absent
+
+        # 위 판정은 거부 로그가 통째로 없어도(=투사가 항상 성공하는 회귀로 거부 경로 자체가 죽어도)
+        # 통과해버린다 — 맵 밖 좌표가 실제로 거부됐는지 별도로 확인해야 이 침묵 통과를 못 잡는다.
+        $offMapLines = @($ServerLines | Where-Object { $_ -match '100000' })
+        Assert-Log 'server' 'NavMesh 거부 확인(맵밖 좌표)' $offMapLines '\[Move\] rejected: off-navmesh'
+
+        # 코스메틱은 NM_DedicatedServer 가드로 생략되어야 한다 (#74/#75).
+        # 결과 모드에서는 재생을 시도할 계기 자체가 없어 부재가 가드 덕인지 구분 불가 → 프로브 모드 전용.
+        Assert-Log 'server' '발사 몽타주 생략'    $ServerLines '\[Attack\] fire montage' -Expect Absent
+        Assert-Log 'server' '대쉬 몽타주 생략'    $ServerLines '\[Dash\] anim len='      -Expect Absent
+    }
+    else {
+        # --- 결과 모드: 게이트 → 스폰 이격 → 전원 사망 → 승패 확정 (#85/#86이 손으로 보던 것).
+        Assert-Log   'server' '발사 시작(전원 준비)' $ServerLines ("\[RE\] Boss firing started \({0}/{0} ready\)" -f $ClientCount)
+        Assert-Count 'server' '스폰 로그'           $ServerLines '\[RE\] Spawn player idx=' $ClientCount
+
+        # 오프셋이 서로 달라야 겹치지 않는다 (#54 겹침 즉사 전례).
+        $offsets = @($ServerLines |
+            Select-String -Pattern '\[RE\] Spawn player idx=\d+ offsetY=(-?[0-9.]+)' |
+            ForEach-Object { $_.Matches[0].Groups[1].Value })
+        $distinct = @($offsets | Select-Object -Unique).Count
+        if ($distinct -eq $ClientCount) {
+            Write-Host ("  [PASS] server: 스폰 이격 상이 ({0}종)" -f $distinct)
+        } else {
+            Write-Host ("  [FAIL] server: 스폰 이격 상이 — 서로 다른 값 {0}종, 기대 {1}종 (값: {2})" -f $distinct, $ClientCount, ($offsets -join ',')) -ForegroundColor Red
+            $script:Failures += ("server: 스폰 이격 상이 — {0}종, 기대 {1}종" -f $distinct, $ClientCount)
+        }
+
+        Assert-Log 'server' '전원 사망'   $ServerLines ("\[RE\] All {0} players dead" -f $ClientCount)
+        Assert-Log 'server' '승패 확정'   $ServerLines '\[RE\] EndGame: DEFEAT'
+    }
+
+    # --- 클라: 접속 유지 구간만 본다 (#82 — 접속 종료 후 폴백 월드 로그가 섞인다).
     foreach ($name in ($ClientLines.Keys | Sort-Object)) {
         $span = Get-ConnectedSpan $ClientLines[$name]
-        Assert-Log $name '발사 몽타주 재생'    $span '\[Attack\] fire montage len='
-        Assert-Log $name '대쉬 몽타주 재생(오너)' $span '\[Dash\] anim len=.*role=ROLE_AutonomousProxy'
-        Assert-Log $name '탄막 수신·스폰'     $span '\[RE\] Boss Fire(Direct|Artillery):.*role=ROLE_SimulatedProxy'
-        Assert-Log $name '크래시 없음'        $span 'Assertion failed|Critical error'  -Expect Absent
+
+        Assert-Log $name '탄막 수신·스폰' $span '\[RE\] Boss Fire(Direct|Artillery):.*role=ROLE_SimulatedProxy'
+        Assert-Log $name '크래시 없음'    $span 'Assertion failed|Critical error' -Expect Absent
+
+        if ($Mode -eq 'Probe') {
+            # 이 둘은 서버측 프로브가 발사·대쉬를 유발해야 찍힌다 → 결과 모드에는 없다.
+            Assert-Log $name '발사 몽타주 재생'      $span '\[Attack\] fire montage len='
+            Assert-Log $name '대쉬 몽타주 재생(오너)' $span '\[Dash\] anim len=.*role=ROLE_AutonomousProxy'
+        }
+        else {
+            Assert-Log $name '결과 화면 도달' $span '\[RE\] Client_ShowResult: DEFEAT'
+        }
+
         if ($CheckVictory) {
-            Assert-Log $name '결과 화면 도달'  $span '\[RE\] Client_ShowResult: VICTORY'
+            Assert-Log $name '결과 화면(VICTORY)' $span '\[RE\] Client_ShowResult: VICTORY'
         }
     }
 }
@@ -144,9 +232,11 @@ if ($SelfTest) {
     $goodServer = @(
         'LogNet: IpNetDriver listening on port 7777',
         'LogWorld: Bringing World /Game/Level/Main.Main up for play',
+        'LogTemp: [Move] probe start: pawn=X=0 target=X=0',
+        'LogTemp: [Move] rejected: off-navmesh X=100000.000 Y=100000.000 Z=0.000',
         'LogTemp: [Dash] dist=602.4 (기대 ~600)',
         'LogTemp: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.000 role=ROLE_Authority',
-        'LogTemp: [Dash] probe done — exiting'
+        'LogTemp: [Dash] probe done'
     )
     $goodClient = @(
         'LogTemp: [Attack] fire montage len=1.20',
@@ -156,7 +246,7 @@ if ($SelfTest) {
         'LogTemp: [Dash] anim len=0.97 (role=ROLE_Authority)'   # 폴백 구간 — 잘려야 한다
     )
 
-    Invoke-Verdict -ServerLines $goodServer -ClientLines @{ 'client1' = $goodClient } -CheckVictory $false
+    Invoke-Verdict -ServerLines $goodServer -ClientLines @{ 'client1' = $goodClient } -CheckVictory $false -Mode Probe -ClientCount 1
     if ($script:Failures.Count -ne 0) { throw "SelfTest: 정상 로그가 통과하지 못했다 ($($script:Failures.Count)건)" }
 
     # 폴백 구간 절단이 실제로 동작하는지 — 마커 뒤의 ROLE_Authority 줄은 안 보여야 한다.
@@ -166,12 +256,77 @@ if ($SelfTest) {
     # 고장 로그는 반드시 잡혀야 한다 — 통과만 확인하면 항상-PASS 버그를 못 잡는다.
     $script:Failures = @()
     $badServer = $goodServer + 'LogTemp: [Attack] fire montage len=1.20'   # 데디 가드 파손
-    Invoke-Verdict -ServerLines $badServer -ClientLines @{ 'client1' = @('nothing') } -CheckVictory $false
+    Invoke-Verdict -ServerLines $badServer -ClientLines @{ 'client1' = @('nothing') } -CheckVictory $false -Mode Probe -ClientCount 1
     if ($script:Failures.Count -eq 0) { throw 'SelfTest: 고장 로그를 잡아내지 못했다' }
     # 볼리 어서션 자체가 (다른 어서션과 무관하게) 고장을 잡는지 — 실패 목록에 그 항목이 실제로 있어야 한다.
     # 'nothing'은 모든 클라 패턴에 안 걸리므로, 다른 어서션이 이미 실패해도 이 어서션이 조용히
     # 빠졌다면(예: 패턴 오타로 무력화) 위 Count 체크만으론 못 잡는다 — 항목 자체를 찾는다.
     if (-not ($script:Failures -match '탄막 수신·스폰')) { throw 'SelfTest: 볼리 수신 어서션이 고장을 못 잡는다' }
+
+    # Assert-Count 가 개수 부족을 잡는지 — 클라 2인데 프로브 완주가 1건뿐인 상황을 합성한다.
+    # 이것이 바로 #87 이전의 실제 증상이다(첫 프로브가 서버를 내려 뒤 프로브가 안 돎).
+    $script:Failures = @()
+    Invoke-Verdict -ServerLines $goodServer -ClientLines @{ 'client1' = $goodClient; 'client2' = $goodClient } `
+                   -CheckVictory $false -Mode Probe -ClientCount 2
+    if (-not ($script:Failures -match '프로브 완주')) { throw 'SelfTest: 프로브 완주 개수 부족을 잡아내지 못했다' }
+
+    # Assert-Range 가 마지막 occurrence만 보던 버그 재현 — 1번 클라 대쉬거리가 범위 밖, 2번은 정상.
+    # 구버전은 $m[-1](마지막=정상값)만 봐서 이 상황을 통과시켰다 — 그 회귀를 다시 잡는지 확인한다.
+    $script:Failures = @()
+    $twoDashServer = @(
+        'LogNet: IpNetDriver listening on port 7777',
+        'LogWorld: Bringing World /Game/Level/Main.Main up for play',
+        'LogTemp: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.000 role=ROLE_Authority',
+        'LogTemp: [Move] probe start: pawn=X=0 target=X=0',
+        'LogTemp: [Dash] dist=50.0 (기대 ~600)',
+        'LogTemp: [Dash] probe done',
+        'LogTemp: [Move] probe start: pawn=X=0 target=X=0',
+        'LogTemp: [Dash] dist=602.4 (기대 ~600)',
+        'LogTemp: [Dash] probe done'
+    )
+    Invoke-Verdict -ServerLines $twoDashServer -ClientLines @{ 'client1' = $goodClient; 'client2' = $goodClient } `
+                   -CheckVictory $false -Mode Probe -ClientCount 2
+    if (-not ($script:Failures -match '대쉬 이동거리.*#1')) { throw 'SelfTest: 대쉬 거리 범위 검사가 1번 클라(앞쪽 occurrence)의 이상값을 놓쳤다' }
+
+    # NavMesh 거부 경로 자체가 죽은 회귀(=투사가 항상 성공) — 맵 밖 좌표 거부 로그가 아예 없는 상황을 합성한다.
+    # 기존 "실목표 거부 없음" 판정은 거부 로그가 0건이어도 통과해버려 이 회귀를 못 잡는다.
+    $script:Failures = @()
+    $noRejectServer = @($goodServer | Where-Object { $_ -notmatch '100000' })
+    Invoke-Verdict -ServerLines $noRejectServer -ClientLines @{ 'client1' = $goodClient } -CheckVictory $false -Mode Probe -ClientCount 1
+    if (-not ($script:Failures -match 'NavMesh 거부 확인')) { throw 'SelfTest: NavMesh 거부 경로 소실(맵 밖 좌표 거부 부재)을 잡아내지 못했다' }
+
+    # --- 결과 모드(-Outcome) 자체 검사. 여태까지는 전부 Probe 모드였다 — 결과 모드의 스폰이격
+    # 계산·포맷 정규식은 이 브랜치에서 새로 짠 손코드라 별도로 검사해야 한다.
+    $script:Failures = @()
+    $goodServerOutcome = @(
+        'LogNet: IpNetDriver listening on port 7777',
+        'LogWorld: Bringing World /Game/Level/Main.Main up for play',
+        'LogTemp: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.000 role=ROLE_Authority',
+        'LogTemp: [RE] Spawn player idx=0 offsetY=-125 loc=X=0.000 Y=-125.000 Z=0.000',
+        'LogTemp: [RE] Spawn player idx=1 offsetY=125 loc=X=0.000 Y=125.000 Z=0.000',
+        'LogTemp: [RE] Boss firing started (2/2 ready)',
+        'LogTemp: [RE] Player died 1/2',
+        'LogTemp: [RE] Player died 2/2',
+        'LogTemp: [RE] All 2 players dead',
+        'LogTemp: [RE] EndGame: DEFEAT'
+    )
+    $goodClientOutcome = @(
+        'LogTemp: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.084 role=ROLE_SimulatedProxy',
+        'LogTemp: [RE] Client_ShowResult: DEFEAT'
+    )
+    Invoke-Verdict -ServerLines $goodServerOutcome `
+                   -ClientLines @{ 'client1' = $goodClientOutcome; 'client2' = $goodClientOutcome } `
+                   -CheckVictory $false -Mode Outcome -ClientCount 2
+    if ($script:Failures.Count -ne 0) { throw "SelfTest: 결과 모드 정상 로그가 통과하지 못했다 ($($script:Failures.Count)건)" }
+
+    # 결과 모드의 손코드(스폰 이격 상이 계산)를 겨냥한 고장 — 두 스폰 offsetY가 우연히 같은 값으로 겹친 상황.
+    # Assert-Count(스폰 로그 2건)는 여전히 통과하므로 공용 어서션으로는 못 잡고, distinctness 계산만 잡아야 한다.
+    $script:Failures = @()
+    $dupOffsetServerOutcome = $goodServerOutcome -replace 'idx=1 offsetY=125', 'idx=1 offsetY=-125'
+    Invoke-Verdict -ServerLines $dupOffsetServerOutcome `
+                   -ClientLines @{ 'client1' = $goodClientOutcome; 'client2' = $goodClientOutcome } `
+                   -CheckVictory $false -Mode Outcome -ClientCount 2
+    if (-not ($script:Failures -match '스폰 이격 상이')) { throw 'SelfTest: 결과 모드 스폰 이격 중복(#54 겹침 회귀)을 잡아내지 못했다' }
 
     Write-Host "`n[dedi-verify] SelfTest OK" -ForegroundColor Green
     exit 0
@@ -195,9 +350,12 @@ Write-Host "[dedi-verify] run dir: $RunDir"
 
 try {
     # -abslog 은 반드시 전개된 경로로 넘긴다. 리터럴이 들어가면 로그가 조용히 사라진다(가이드 함정).
-    $srv = Start-Process $Server -PassThru -WindowStyle Hidden -ArgumentList @(
-        '-log', "-port=$Port", '-unattended', "-abslog=`"$ServerLog`""
-    )
+    # 협동 인원은 CVar로 넘긴다 — ini면 pak 안이라 인원을 바꿀 때마다 재쿡해야 한다 (#85).
+    # -unattended 는 프로브 모드에서만: 결과 모드는 프로브가 플레이어를 +X로 대쉬시켜
+    # 보스 탄막 레인(X=600)으로 밀어넣어(#56) 측정 대상인 사망 타이밍을 교란한다.
+    $srvArgs = @('-log', "-port=$Port", "-ExecCmds=`"re.Coop.ExpectedPlayers $Clients`"", "-abslog=`"$ServerLog`"")
+    if (-not $Outcome) { $srvArgs += '-unattended' }
+    $srv = Start-Process $Server -PassThru -WindowStyle Hidden -ArgumentList $srvArgs
     $Procs += $srv
 
     # 고정 대기 대신 리스닝 로그를 폴링한다 — 첫 실행(pak 마운트)과 재실행의 편차를 흡수한다.
@@ -221,18 +379,53 @@ try {
             "`"$Uproject`"", "127.0.0.1:$Port", '-game', '-nullrhi', '-unattended', '-log', "-abslog=`"$log`""
         )
         Write-Host "[dedi-verify] client$i 접속 요청"
+
+        # 결과 모드는 "클라 N-1명만으로는 발사가 시작되지 않는다"를 판정한다 —
+        # 그 상태가 실제로 존재하려면 순차 투입이어야 한다. 고정 대기가 아니라 로그로 동기화한다:
+        # 느린 머신에서 Start-Sleep 은 조용히 어긋난다(#82가 리스닝 대기를 폴링으로 바꾼 것과 같은 이유).
+        if ($Outcome -and $i -lt $Clients) {
+            $readyDeadline = (Get-Date).AddSeconds(60)
+            $found = $false
+            while ((Get-Date) -lt $readyDeadline) {
+                if ((Select-String -Path $ServerLog -Pattern ("\[RE\] Player ready {0}/" -f $i) -Quiet)) {
+                    $found = $true
+                    break
+                }
+                Start-Sleep -Milliseconds 300
+            }
+            if (-not $found) {
+                throw "클라 ${i} ready 타임아웃 60s — 패턴 '[RE] Player ready ${i}/' 미발생. 로그: $ServerLog"
+            }
+            Write-Host "[dedi-verify] client$i ready 확인 — 다음 클라 투입"
+        }
     }
 
-    # 서버측 프로브가 완주하면 RequestExit 로 스스로 죽는다 — 그 종료가 곧 "프로브 완료" 신호다.
-    # ponytail: 첫 클라의 프로브 완주가 서버를 내리므로 -Clients 2 이상이면 뒤 클라의 서버측 프로브는
-    #           잘린다. 클라별 완주가 필요해지면 프로브에 클라 인덱스 게이트를 넣어야 한다 (M5 몫).
-    if (-not $srv.WaitForExit($ProbeTimeoutSec * 1000)) {
-        throw "프로브 타임아웃 ${ProbeTimeoutSec}s — 서버가 스스로 종료하지 않았다. 로그: $ServerLog"
+    if ($Outcome) {
+        # 결과 모드: 서버가 스스로 죽지 않는다(-unattended 없음). EndGame 을 보고 정리한다.
+        $endDeadline = (Get-Date).AddSeconds($OutcomeTimeoutSec)
+        $ended = $false
+        while ((Get-Date) -lt $endDeadline) {
+            if ($srv.HasExited) { break }
+            if (Select-String -Path $ServerLog -Pattern '\[RE\] EndGame:' -Quiet) { $ended = $true; break }
+            Start-Sleep -Milliseconds 500
+        }
+        if ($srv.HasExited -and -not $ended) {
+            throw "서버 예기치 않게 종료 (exit=$($srv.ExitCode)). EndGame 미발생. 로그: $ServerLog"
+        }
+        if (-not $ended) {
+            throw "결과 타임아웃 ${OutcomeTimeoutSec}s — EndGame 미발생. 로그: $ServerLog"
+        }
+        Write-Host '[dedi-verify] EndGame 확인'
+        Start-Sleep -Seconds 3   # 결과 RPC가 클라 로그에 도달할 여유
     }
-    Write-Host '[dedi-verify] 서버 자체 종료 확인 (프로브 완주)'
-
-    # 클라는 서버 종료를 감지하고 폴백 월드를 띄우므로 스스로 안 죽는다. 로그 플러시만 주고 정리한다.
-    Start-Sleep -Seconds 3
+    else {
+        # 프로브 모드: 서버측 프로브가 전원 완주하면 GameMode가 RequestExit 한다 (#87).
+        if (-not $srv.WaitForExit($ProbeTimeoutSec * 1000)) {
+            throw "프로브 타임아웃 ${ProbeTimeoutSec}s — 서버가 스스로 종료하지 않았다. 로그: $ServerLog"
+        }
+        Write-Host '[dedi-verify] 서버 자체 종료 확인 (전원 프로브 완주)'
+        Start-Sleep -Seconds 3
+    }
 }
 finally {
     foreach ($p in $Procs) {
@@ -250,7 +443,9 @@ foreach ($name in $ClientLogs.Keys) {
     if ($clientLines[$name].Count -eq 0) { throw "클라 로그가 비었다: $($ClientLogs[$name])" }
 }
 
-Invoke-Verdict -ServerLines $serverLines -ClientLines $clientLines -CheckVictory $Victory.IsPresent
+$mode = if ($Outcome) { 'Outcome' } else { 'Probe' }
+Invoke-Verdict -ServerLines $serverLines -ClientLines $clientLines -CheckVictory $Victory.IsPresent `
+               -Mode $mode -ClientCount $Clients
 
 Write-Host "`n[dedi-verify] 로그: $RunDir"
 if ($script:Failures.Count -gt 0) {
