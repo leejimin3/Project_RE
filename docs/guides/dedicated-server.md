@@ -184,7 +184,7 @@ scripts\dedi-verify.ps1 -SelfTest             # 판정 로직만 검사(프로�
 
 | 모드 | 대상 | 있어야 하는 것 | 없어야 하는 것 |
 |---|---|---|---|
-| 프로브(기본) | 서버 | `IpNetDriver listening`, `Bringing World .../Main.Main`, `[RE] Boss Fire(Direct\|Artillery):... role=ROLE_Authority`, `[Dash] probe done`·`[Move] probe start`·`[Dash] dist=`(500~700) 각 N건 | `[Attack] fire montage`, `[Dash] anim len=` (데디 코스메틱 생략 가드 #74/#75), 실목표에 대한 `[Move] rejected: off-navmesh`, `Assertion failed`/`Critical error` |
+| 프로브(기본) | 서버 | `IpNetDriver listening`, `Bringing World .../Main.Main`, `[RE] Boss Fire(Direct\|Artillery):... role=ROLE_Authority`, `[Dash] probe done`·`[Move] probe start`·`[Dash] dist=`(각 500~700) 각 N건, **맵 밖 좌표에 대한 `[Move] rejected: off-navmesh`**(거부 경로 생존 증거) | `[Attack] fire montage`, `[Dash] anim len=` (데디 코스메틱 생략 가드 #74/#75), 실목표에 대한 `[Move] rejected: off-navmesh`, `Assertion failed`/`Critical error` |
 | 프로브(기본) | 클라 | `[Attack] fire montage len=`, `[Dash] anim len=... (role=ROLE_AutonomousProxy)`, `[RE] Boss Fire(Direct\|Artillery):... role=ROLE_SimulatedProxy` | `Assertion failed`/`Critical error` |
 | 결과(`-Outcome`) | 서버 | `[RE] Boss firing started (N/N ready)`, `[RE] Spawn player idx=` N건(오프셋 N종 상이), `[RE] All N players dead`, `[RE] EndGame: DEFEAT` | `Assertion failed`/`Critical error` |
 | 결과(`-Outcome`) | 클라 | `[RE] Boss Fire(Direct\|Artillery):... role=ROLE_SimulatedProxy`, `[RE] Client_ShowResult: DEFEAT` | `Assertion failed`/`Critical error` |
@@ -193,7 +193,9 @@ scripts\dedi-verify.ps1 -SelfTest             # 판정 로직만 검사(프로�
 
 **승리 경로(`-Victory`)는 기본 실행에서 통과하지 않는다.** 서버 프로브의 첫 명중은 10 데미지인데 쿡된 `BossMaxHealth` 는 1000이다. 아래 "무적 치트" 항목대로 값을 낮추고 재쿡한 상태에서만 `-Victory` 를 붙여라.
 
-**NavMesh 재검증(스폰 이격을 바꾼 뒤 필요)도 프로브 모드 그대로 쓰면 된다.** 헤드리스 이동 프로브(`RunHeadlessMoveProbe`)는 N인 각각에 대해 실행되므로(위 표의 `[Move] probe start` N건) 별도 절차가 필요 없다 — 실제 목표 좌표에 대한 `[Move] rejected: off-navmesh`가 없어야 하며, 프로브가 일부러 맵 밖 좌표도 하나 요청하므로 그 좌표를 지목한 거부 로그 한두 줄은 오히려 거부 경로가 살아있다는 정상 증거다(무발동으로 인한 침묵 통과와 혼동하지 말 것).
+**NavMesh 재검증(스폰 이격을 바꾼 뒤 필요)도 프로브 모드 그대로 쓰면 된다.** 헤드리스 이동 프로브(`RunHeadlessMoveProbe`)는 N인 각각에 대해 실행되므로(위 표의 `[Move] probe start` N건) 별도 절차가 필요 없다.
+
+**NavMesh는 스크립트가 양방향으로 판정한다 — 눈으로 볼 필요가 없다.** 프로브는 거부 경로가 살아있는지 확인하려고 맵 밖 좌표(100000, 100000)를 일부러 한 번 요청하는데, 스크립트는 그 좌표를 지목한 줄을 실목표 판정에서 제외하는 동시에 **그 좌표가 실제로 거부됐는지를 따로 확인한다**(`NavMesh 거부 없음(실목표)` / `NavMesh 거부 확인(맵밖 좌표)` 두 판정). 음성 판정만 있으면 `ProjectPointToNavigation` 이 항상 성공하도록 회귀했을 때 거부 로그가 아예 안 찍히는데도 통과한다 — 거부 경로가 죽었는데 초록불이 뜬다. 두 판정 중 어느 쪽이 실패했는지가 원인을 가른다.
 
 **#86에서 해소됨 — "전원 사망" 경로가 자연 전투로 재현된다.** 두 히트 프로세서(`Mass/REBulletHitProcessor.cpp`, `Mass/REArcHitProcessor.cpp`)는 과거 `UGameplayStatics::GetPlayerPawn(World, 0)`(플레이어 인덱스 0) 하나로 피격 대상을 하드코딩해, 2인 이상 접속 시 인덱스 0이 아닌 플레이어는 탄막 데미지를 원천적으로 받지 못했다. #86이 공용 헬퍼 `GatherHitTargets`로 두 프로세서를 전원 생존자 대상 순회로 바꿨다. 실측(2026-08-13, Task 4): 서버 로그에 `Player died 1/2`와 `Player died 2/2`가 모두 찍혔고 `All 2 players dead` → `EndGame: DEFEAT`로 이어졌다. 양 클라 로그 모두 임시 프로브 없이 `Client_ShowResult: DEFEAT`가 찍혔다. `-Outcome` 모드의 "전원 사망"·"결과 화면 도달" 판정은 이제 재시도 없이 실전투로 도달한다. (틱 간 시체 제외는 이번 실행에서 두 사망이 같은 틱에 겹쳐 로그로 직접 증명되지 않았다 — `GatherHitTargets`의 `IsAlive()` 필터가 사망자를 다음 틱부터 대상에서 뺀다는 코드 근거로 대신한다.)
 
