@@ -7,24 +7,29 @@
   이미 스테이징된 산출물을 전제한다 — 빌드/쿡은 하지 않는다.
   선행 절차는 docs/guides/dedicated-server.md "빌드" / "쿡 + 스테이징" 참조.
 
-  서버 프로브(REPlayerController::RunHeadlessDashProbe)가 마지막에 RequestExit 하므로
-  서버는 클라 접속 후 약 4.4초에 스스로 종료한다 — 이 스크립트는 고정 대기가 아니라
-  서버 프로세스 종료를 기다린다.
+  서버측 프로브가 전원 완주하면 GameMode가 종료한다(#87). 이 스크립트는 고정 대기가 아니라
+  모드에 따라 다르게 신호를 감지한다 — 프로브 모드는 서버 프로세스 종료를, 결과 모드는
+  로그의 EndGame 라인을 기다린다.
 
 .EXAMPLE
-  scripts/dedi-verify.ps1
-  scripts/dedi-verify.ps1 -Clients 2
+  scripts/dedi-verify.ps1 -Clients 2            # 프로브 모드 — 이동·발사·대쉬·NavMesh
+  scripts/dedi-verify.ps1 -Clients 2 -Outcome   # 결과 모드 — 게이트·스폰이격·전원사망·결과화면
   scripts/dedi-verify.ps1 -Victory      # BossMaxHealth 임시 하향 + 재쿡 후에만
   scripts/dedi-verify.ps1 -SelfTest     # 판정 로직만 검사(프로세스 미기동)
 #>
 param(
-    # 접속시킬 클라 개수 (M5 N인 협동 대비). 기본 1.
+    # 접속시킬 클라 개수. 기본 1.
     [int]$Clients = 1,
     [int]$Port = 7777,
     # 서버 리스닝 대기 상한(초). 첫 실행은 pak 마운트로 느리다.
     [int]$ListenTimeoutSec = 90,
     # 클라 접속 후 서버 자체 종료 대기 상한(초). 프로브 완주는 약 4.4초.
     [int]$ProbeTimeoutSec = 60,
+    # 결과 모드: -unattended 없이 순수 전투를 돌려 게이트·스폰이격·전원사망·결과화면을 판정한다.
+    # 프로브 모드(기본)와 타이밍이 양립하지 않아 분리했다 — 프로브 완주 ~4.1초, 전멸 ~5.3초 (#87).
+    [switch]$Outcome,
+    # 결과 모드에서 EndGame 대기 상한(초).
+    [int]$OutcomeTimeoutSec = 120,
     # 승리 경로(Client_ShowResult: VICTORY)까지 판정한다.
     # DefaultGame.ini 의 BossMaxHealth 를 프로브 1히트(10 데미지) 이하로 낮추고 재쿡한 상태에서만 성립.
     [switch]$Victory,
@@ -275,9 +280,12 @@ Write-Host "[dedi-verify] run dir: $RunDir"
 
 try {
     # -abslog 은 반드시 전개된 경로로 넘긴다. 리터럴이 들어가면 로그가 조용히 사라진다(가이드 함정).
-    $srv = Start-Process $Server -PassThru -WindowStyle Hidden -ArgumentList @(
-        '-log', "-port=$Port", '-unattended', "-abslog=`"$ServerLog`""
-    )
+    # 협동 인원은 CVar로 넘긴다 — ini면 pak 안이라 인원을 바꿀 때마다 재쿡해야 한다 (#85).
+    # -unattended 는 프로브 모드에서만: 결과 모드는 프로브가 플레이어를 +X로 대쉬시켜
+    # 보스 탄막 레인(X=600)으로 밀어넣어(#56) 측정 대상인 사망 타이밍을 교란한다.
+    $srvArgs = @('-log', "-port=$Port", "-ExecCmds=`"re.Coop.ExpectedPlayers $Clients`"", "-abslog=`"$ServerLog`"")
+    if (-not $Outcome) { $srvArgs += '-unattended' }
+    $srv = Start-Process $Server -PassThru -WindowStyle Hidden -ArgumentList $srvArgs
     $Procs += $srv
 
     # 고정 대기 대신 리스닝 로그를 폴링한다 — 첫 실행(pak 마운트)과 재실행의 편차를 흡수한다.
@@ -301,18 +309,43 @@ try {
             "`"$Uproject`"", "127.0.0.1:$Port", '-game', '-nullrhi', '-unattended', '-log', "-abslog=`"$log`""
         )
         Write-Host "[dedi-verify] client$i 접속 요청"
+
+        # 결과 모드는 "클라 N-1명만으로는 발사가 시작되지 않는다"를 판정한다 —
+        # 그 상태가 실제로 존재하려면 순차 투입이어야 한다. 고정 대기가 아니라 로그로 동기화한다:
+        # 느린 머신에서 Start-Sleep 은 조용히 어긋난다(#82가 리스닝 대기를 폴링으로 바꾼 것과 같은 이유).
+        if ($Outcome -and $i -lt $Clients) {
+            $readyDeadline = (Get-Date).AddSeconds(60)
+            while ((Get-Date) -lt $readyDeadline) {
+                if ((Select-String -Path $ServerLog -Pattern ("\[RE\] Player ready {0}/" -f $i) -Quiet)) { break }
+                Start-Sleep -Milliseconds 300
+            }
+            Write-Host "[dedi-verify] client$i ready 확인 — 다음 클라 투입"
+        }
     }
 
-    # 서버측 프로브가 완주하면 RequestExit 로 스스로 죽는다 — 그 종료가 곧 "프로브 완료" 신호다.
-    # ponytail: 첫 클라의 프로브 완주가 서버를 내리므로 -Clients 2 이상이면 뒤 클라의 서버측 프로브는
-    #           잘린다. 클라별 완주가 필요해지면 프로브에 클라 인덱스 게이트를 넣어야 한다 (M5 몫).
-    if (-not $srv.WaitForExit($ProbeTimeoutSec * 1000)) {
-        throw "프로브 타임아웃 ${ProbeTimeoutSec}s — 서버가 스스로 종료하지 않았다. 로그: $ServerLog"
+    if ($Outcome) {
+        # 결과 모드: 서버가 스스로 죽지 않는다(-unattended 없음). EndGame 을 보고 정리한다.
+        $endDeadline = (Get-Date).AddSeconds($OutcomeTimeoutSec)
+        $ended = $false
+        while ((Get-Date) -lt $endDeadline) {
+            if ($srv.HasExited) { break }
+            if (Select-String -Path $ServerLog -Pattern '\[RE\] EndGame:' -Quiet) { $ended = $true; break }
+            Start-Sleep -Milliseconds 500
+        }
+        if (-not $ended) {
+            throw "결과 타임아웃 ${OutcomeTimeoutSec}s — EndGame 미발생. 로그: $ServerLog"
+        }
+        Write-Host '[dedi-verify] EndGame 확인'
+        Start-Sleep -Seconds 3   # 결과 RPC가 클라 로그에 도달할 여유
     }
-    Write-Host '[dedi-verify] 서버 자체 종료 확인 (프로브 완주)'
-
-    # 클라는 서버 종료를 감지하고 폴백 월드를 띄우므로 스스로 안 죽는다. 로그 플러시만 주고 정리한다.
-    Start-Sleep -Seconds 3
+    else {
+        # 프로브 모드: 서버측 프로브가 전원 완주하면 GameMode가 RequestExit 한다 (#87).
+        if (-not $srv.WaitForExit($ProbeTimeoutSec * 1000)) {
+            throw "프로브 타임아웃 ${ProbeTimeoutSec}s — 서버가 스스로 종료하지 않았다. 로그: $ServerLog"
+        }
+        Write-Host '[dedi-verify] 서버 자체 종료 확인 (전원 프로브 완주)'
+        Start-Sleep -Seconds 3
+    }
 }
 finally {
     foreach ($p in $Procs) {
@@ -330,7 +363,9 @@ foreach ($name in $ClientLogs.Keys) {
     if ($clientLines[$name].Count -eq 0) { throw "클라 로그가 비었다: $($ClientLogs[$name])" }
 }
 
-Invoke-Verdict -ServerLines $serverLines -ClientLines $clientLines -CheckVictory $Victory.IsPresent -Mode Probe -ClientCount $Clients
+$mode = if ($Outcome) { 'Outcome' } else { 'Probe' }
+Invoke-Verdict -ServerLines $serverLines -ClientLines $clientLines -CheckVictory $Victory.IsPresent `
+               -Mode $mode -ClientCount $Clients
 
 Write-Host "`n[dedi-verify] 로그: $RunDir"
 if ($script:Failures.Count -gt 0) {
