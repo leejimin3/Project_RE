@@ -5,11 +5,9 @@
 #include "REBulletFragments.h"
 #include "MassExecutionContext.h"
 #include "Core/RECharacterBase.h"
-#include "Abilities/REGameplayTags.h"
-#include "AbilitySystemComponent.h"
 #include "Engine/DamageEvents.h"
 #include "Engine/World.h"
-#include "Kismet/GameplayStatics.h"
+#include "REHitTargets.h"
 
 UREArcHitProcessor::UREArcHitProcessor()
 	: EntityQuery(*this)
@@ -31,22 +29,13 @@ void UREArcHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExecuti
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(RE_ArcHit);
 
-	UWorld* World = EntityManager.GetWorld();
-	APawn* Pawn = World ? UGameplayStatics::GetPlayerPawn(World, 0) : nullptr;
-	ARECharacterBase* Player = Cast<ARECharacterBase>(Pawn);
-	if (!Player)
-	{
-		return;  // 플레이어 없으면 no-op
-	}
-
-	// 대쉬 무적 — State.Dashing이면 이번 프레임 착지 판정 전체 스킵.
-	const UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent();
-	if (ASC && ASC->HasMatchingGameplayTag(RETag_State_Dashing))
+	// 살아있고 대쉬 중이 아닌 플레이어 전원 (#86).
+	TArray<FREHitTarget> Targets;
+	GatherHitTargets(EntityManager.GetWorld(), Targets);
+	if (Targets.IsEmpty())
 	{
 		return;
 	}
-
-	const FVector PlayerLoc = Player->GetActorLocation();
 
 	EntityQuery.ForEachEntityChunk(Context, [&](FMassExecutionContext& Ctx)
 	{
@@ -60,11 +49,15 @@ void UREArcHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExecuti
 			{
 				continue;   // 아직 비행 중 — 착지 프레임만 판정
 			}
-			// 착지: 마커 반경 안 플레이어면 범위 데미지. XY 평면 거리(탑다운).
-			if (FVector::DistSquaredXY(A.Target, PlayerLoc) <= A.Radius * A.Radius)
+			// 착지: 마커 반경 안 플레이어 전원에게 범위 데미지. XY 평면 거리(탑다운).
+			// break 없음 — 범위 폭발이라 겹친 인원이 모두 맞는다. 소멸은 Sim이 착지 시 처리한다.
+			for (const FREHitTarget& T : Targets)
 			{
-				const float Applied = Player->TakeDamage(A.Damage, FDamageEvent(), nullptr, nullptr);
-				UE_LOG(LogTemp, Log, TEXT("[RE] ArcHit: Applied=%.0f R=%.0f"), Applied, A.Radius);
+				if (FVector::DistSquaredXY(A.Target, T.Location) <= A.Radius * A.Radius)
+				{
+					const float Applied = T.Player->TakeDamage(A.Damage, FDamageEvent(), nullptr, nullptr);
+					UE_LOG(LogTemp, Log, TEXT("[RE] ArcHit: Applied=%.0f R=%.0f"), Applied, A.Radius);
+				}
 			}
 		}
 	});
