@@ -524,8 +524,10 @@ scripts\dedi-verify.ps1 -Clients 2 -Outcome
 통과만 확인하면 항상-PASS 회귀를 못 잡는다. 실패가 실제로 종료 코드로 갈리는지 본다.
 
 ```powershell
-scripts\dedi-verify.ps1 -Clients 2 -OutcomeTimeoutSec 5
+scripts\dedi-verify.ps1 -Clients 2 -Outcome -OutcomeTimeoutSec 5
 ```
+
+`-Outcome`을 빼먹지 마라 — `$OutcomeTimeoutSec`는 결과 모드에서만 쓰이므로, 빠지면 프로브 모드로 돌아 이 판정 자체가 성립하지 않고 그냥 EXIT=0으로 끝난다.
 
 5초는 전투가 끝나기에 턱없이 짧다(#86 실측 TTK 5.3초 + 접속·기동 시간).
 
@@ -534,7 +536,7 @@ scripts\dedi-verify.ps1 -Clients 2 -OutcomeTimeoutSec 5
 `$LASTEXITCODE` 를 함께 출력해 확인하라:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\dedi-verify.ps1 -Clients 2 -OutcomeTimeoutSec 5; "EXIT=$LASTEXITCODE"
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\dedi-verify.ps1 -Clients 2 -Outcome -OutcomeTimeoutSec 5; "EXIT=$LASTEXITCODE"
 ```
 
 - [ ] **Step 6: 가이드 정리**
