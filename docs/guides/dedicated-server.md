@@ -170,48 +170,32 @@ Unable to build while Live Coding is active. Exit the editor and game, or press 
 PIE로는 데디 분기를 재현할 수 없으므로(`IsRunningDedicatedServer()`가 빌드 타깃 기준), 실제 검증은 프로세스 2개로 한다. 기동·대기·종료·판정은 `scripts/dedi-verify.ps1` 이 전부 수행한다 (#82).
 
 ```powershell
-scripts\dedi-verify.ps1              # 서버 + 클라 1개
-scripts\dedi-verify.ps1 -Clients 2   # 인자만 열려 있음 — 아래 천장 먼저 읽어라
-scripts\dedi-verify.ps1 -SelfTest    # 판정 로직만 검사(프로세스 미기동)
+scripts\dedi-verify.ps1                       # 서버 + 클라 1개, 프로브 모드
+scripts\dedi-verify.ps1 -Clients 2            # N인 프로브 모드 — 이동·발사·대쉬·NavMesh (#87)
+scripts\dedi-verify.ps1 -Clients 2 -Outcome   # N인 결과 모드 — 게이트·스폰이격·전원사망·결과화면 (#87)
+scripts\dedi-verify.ps1 -SelfTest             # 판정 로직만 검사(프로세스 미기동)
 ```
 
 전 항목 통과 시 종료 코드 `0`, 실패 시 `1` + 실패 항목·이유 출력.
 
 **이 스크립트는 이미 스테이징된 산출물을 전제한다.** 빌드/쿡은 하지 않는다 — 코드를 고쳤으면 위 "재검증 루프" 표대로 먼저 빌드+재쿡해라. 안 그러면 옛 산출물을 검증한다.
 
-판정 항목:
+두 모드는 타이밍이 양립하지 않아 분리되어 있다 — 프로브 완주는 접속 후 약 4.1초, 자연 전투의 전멸은 약 5.3초(#87). 판정 항목:
 
-| 대상 | 있어야 하는 것 | 없어야 하는 것 |
-|---|---|---|
-| 서버 | `IpNetDriver listening`, `Bringing World .../Main.Main`, `[Dash] dist=`(500~700), `[RE] Boss Fire(Direct\|Artillery):... role=ROLE_Authority`, `[Dash] probe done` | `[Attack] fire montage`, `[Dash] anim len=` (데디 코스메틱 생략 가드 #74/#75), `Assertion failed`/`Critical error` |
-| 클라 | `[Attack] fire montage len=`, `[Dash] anim len=... (role=ROLE_AutonomousProxy)`, `[RE] Boss Fire(Direct\|Artillery):... role=ROLE_SimulatedProxy` | `Assertion failed`/`Critical error` |
+| 모드 | 대상 | 있어야 하는 것 | 없어야 하는 것 |
+|---|---|---|---|
+| 프로브(기본) | 서버 | `IpNetDriver listening`, `Bringing World .../Main.Main`, `[RE] Boss Fire(Direct\|Artillery):... role=ROLE_Authority`, `[Dash] probe done`·`[Move] probe start`·`[Dash] dist=`(500~700) 각 N건 | `[Attack] fire montage`, `[Dash] anim len=` (데디 코스메틱 생략 가드 #74/#75), 실목표에 대한 `[Move] rejected: off-navmesh`, `Assertion failed`/`Critical error` |
+| 프로브(기본) | 클라 | `[Attack] fire montage len=`, `[Dash] anim len=... (role=ROLE_AutonomousProxy)`, `[RE] Boss Fire(Direct\|Artillery):... role=ROLE_SimulatedProxy` | `Assertion failed`/`Critical error` |
+| 결과(`-Outcome`) | 서버 | `[RE] Boss firing started (N/N ready)`, `[RE] Spawn player idx=` N건(오프셋 N종 상이), `[RE] All N players dead`, `[RE] EndGame: DEFEAT` | `Assertion failed`/`Critical error` |
+| 결과(`-Outcome`) | 클라 | `[RE] Boss Fire(Direct\|Artillery):... role=ROLE_SimulatedProxy`, `[RE] Client_ShowResult: DEFEAT` | `Assertion failed`/`Critical error` |
 
-종료 조건은 고정 대기가 아니다 — 서버측 프로브(`RunHeadlessDashProbe`)가 완주하며 `RequestExit` 하므로, 스크립트는 **서버 프로세스의 자체 종료**를 프로브 완료 신호로 쓴다. 클라 접속 후 약 4.4초.
+종료 조건은 두 모드 모두 고정 대기가 아니다. 프로브 모드는 **서버 프로세스의 자체 종료**를 신호로 쓴다 — N인 전원의 서버측 헤드리스 프로브가 완주하면 GameMode가 `RequestExit` 한다(#87). 결과 모드는 서버가 스스로 죽지 않으므로 로그의 `[RE] EndGame:` 라인을 폴링해 신호로 쓴다.
 
 **승리 경로(`-Victory`)는 기본 실행에서 통과하지 않는다.** 서버 프로브의 첫 명중은 10 데미지인데 쿡된 `BossMaxHealth` 는 1000이다. 아래 "무적 치트" 항목대로 값을 낮추고 재쿡한 상태에서만 `-Victory` 를 붙여라.
 
-**`-Clients 2` 이상은 아직 반쪽이다.** 첫 클라의 서버측 프로브가 완주하며 서버를 내리므로, 뒤 클라의 서버측 프로브는 시작도 못 하고 잘린다. 그런데 뒤 클라도 코스메틱 로그(발사/대쉬 몽타주)는 접속 직후 찍히므로 **판정은 전부 초록으로 뜬다** — 이걸 "2인 데디 검증 완료"로 읽으면 안 된다. 클라별 프로브 완주가 실제로 필요해지면 프로브에 클라 인덱스 게이트를 넣어야 한다(M5 몫).
+**NavMesh 재검증(스폰 이격을 바꾼 뒤 필요)도 프로브 모드 그대로 쓰면 된다.** 헤드리스 이동 프로브(`RunHeadlessMoveProbe`)는 N인 각각에 대해 실행되므로(위 표의 `[Move] probe start` N건) 별도 절차가 필요 없다 — 실제 목표 좌표에 대한 `[Move] rejected: off-navmesh`가 없어야 하며, 프로브가 일부러 맵 밖 좌표도 하나 요청하므로 그 좌표를 지목한 거부 로그 한두 줄은 오히려 거부 경로가 살아있다는 정상 증거다(무발동으로 인한 침묵 통과와 혼동하지 말 것).
 
-### 2인 수동 페어 검증 (#85, 자동화는 #87 몫)
-
-`dedi-verify.ps1 -Clients 2`가 반쪽인 동안은 서버·클라 2개를 손으로 붙여서 본다.
-
-1. **서버에 `-ExecCmds="re.Coop.ExpectedPlayers 2"` 를 준다.** 협동 인원은 ini가 아니라 CVar다 — 스테이징 `Config`는 pak 안에 들어가 인원을 바꿀 때마다 재쿡해야 하지만, CVar면 커맨드라인만 바꾸면 되므로 재쿡 없이 인원 수를 바꿔가며 검증할 수 있다.
-2. **서버에 `-unattended`를 주지 않는다.** 주면 첫 클라 접속 시 서버측 헤드리스 프로브(위 "서버 + 클라 2프로세스 검증" 절 참조)가 켜져 약 4.4초 뒤 `RequestExit`으로 서버가 죽는다 — 둘째 클라가 붙기 전에 서버가 내려간다.
-   ```powershell
-   $srv = Start-Process ...\Project_REServer.exe -ArgumentList "-log","-port=7777","-ExecCmds=`"re.Coop.ExpectedPlayers 2`"","-abslog=..."
-   # 서버 리스닝 확인 후 클라 1, 이어서 클라 2를 붙인다(각각 UnrealEditor-Cmd.exe ... 127.0.0.1:7777 -game -nullrhi)
-   ```
-3. **확인할 판정 4개**(서버·클라 로그를 `Select-String`으로 grep):
-   - 클라 1만 접속한 상태에서는 `[RE] Player ready 1/2`만 있고 **`Boss firing started`는 없다** — 게이트가 인원을 세고 있다는 증거.
-   - 클라 2 접속 직후 `[RE] Spawn player idx=0 offsetY=...`와 `idx=1 offsetY=...`의 **오프셋 값이 서로 다르다**(대칭, `SpawnSpacing` 기준).
-   - 두 클라 로그 모두에 `Boss Fire(Direct|Artillery):... role=ROLE_SimulatedProxy`가 찍힌다 — 양쪽 다 탄막을 수신한다.
-   - 전원 사망 시 두 클라 로그 모두에 `[RE] Client_ShowResult: DEFEAT`가 찍힌다 — 결과 화면이 전 클라에 간다.
-4. 프로세스는 반드시 직접 정리한다(`Stop-Process -Force`) — `dedi-verify.ps1`처럼 자동 종료를 기다려주는 로직이 없다.
-
-**주의 — NavMesh 재검증(스폰 이격을 바꾼 뒤 필요)은 위 2번과 정반대 설정이다.** 헤드리스 이동 프로브(`RunHeadlessMoveProbe`)는 `-unattended`가 있어야만 켜지므로, 이번엔 서버에 `-unattended`를 주고 대쉬 프로브가 `RequestExit`을 부르기 전 약 4.4초 창 안에 클라 둘을 모두 접속시켜야 한다 — 판정은 각 클라 로그에 `[Move] probe start`가 있는지(프로브가 실제로 돌았다는 증거)와 실제 목표 좌표에 대한 `[Move] rejected: off-navmesh`가 없는지이며, 프로브가 일부러 맵 밖 좌표도 하나 요청하므로 그 좌표를 지목한 거부 로그 한두 줄은 오히려 거부 경로가 살아있다는 정상 증거다(무발동으로 인한 침묵 통과와 혼동하지 말 것).
-
-**#86에서 해소됨 — "전원 사망" 경로가 자연 전투로 재현된다.** 두 히트 프로세서(`Mass/REBulletHitProcessor.cpp`, `Mass/REArcHitProcessor.cpp`)는 과거 `UGameplayStatics::GetPlayerPawn(World, 0)`(플레이어 인덱스 0) 하나로 피격 대상을 하드코딩해, 2인 이상 접속 시 인덱스 0이 아닌 플레이어는 탄막 데미지를 원천적으로 받지 못했다. #86이 공용 헬퍼 `GatherHitTargets`로 두 프로세서를 전원 생존자 대상 순회로 바꿨다. 실측(2026-08-13, Task 4): 서버 로그에 `Player died 1/2`와 `Player died 2/2`가 모두 찍혔고 `All 2 players dead` → `EndGame: DEFEAT`로 이어졌다. 양 클라 로그 모두 임시 프로브 없이 `Client_ShowResult: DEFEAT`가 찍혔다. 아래 판정 4번째 항목은 이제 재시도 없이 실전투로 도달한다. (틱 간 시체 제외는 이번 실행에서 두 사망이 같은 틱에 겹쳐 로그로 직접 증명되지 않았다 — `GatherHitTargets`의 `IsAlive()` 필터가 사망자를 다음 틱부터 대상에서 뺀다는 코드 근거로 대신한다.)
+**#86에서 해소됨 — "전원 사망" 경로가 자연 전투로 재현된다.** 두 히트 프로세서(`Mass/REBulletHitProcessor.cpp`, `Mass/REArcHitProcessor.cpp`)는 과거 `UGameplayStatics::GetPlayerPawn(World, 0)`(플레이어 인덱스 0) 하나로 피격 대상을 하드코딩해, 2인 이상 접속 시 인덱스 0이 아닌 플레이어는 탄막 데미지를 원천적으로 받지 못했다. #86이 공용 헬퍼 `GatherHitTargets`로 두 프로세서를 전원 생존자 대상 순회로 바꿨다. 실측(2026-08-13, Task 4): 서버 로그에 `Player died 1/2`와 `Player died 2/2`가 모두 찍혔고 `All 2 players dead` → `EndGame: DEFEAT`로 이어졌다. 양 클라 로그 모두 임시 프로브 없이 `Client_ShowResult: DEFEAT`가 찍혔다. `-Outcome` 모드의 "전원 사망"·"결과 화면 도달" 판정은 이제 재시도 없이 실전투로 도달한다. (틱 간 시체 제외는 이번 실행에서 두 사망이 같은 틱에 겹쳐 로그로 직접 증명되지 않았다 — `GatherHitTargets`의 `IsAlive()` 필터가 사망자를 다음 틱부터 대상에서 뺀다는 코드 근거로 대신한다.)
 
 **곱사탄(Artillery) 전원 피격은 자연 2인전에서 관측되지 않는다 — 우연이 아니라 구조적이다.** 실측(2026-08-13, Task 4): 보스가 `Boss Phase: Artillery 4.0s`(19:14:53.719)로 아틸러리 페이즈에 진입했지만 약 1.3초 뒤(19:14:55.05x)에 두 플레이어가 전멸해 착탄 자체가 발생하지 않았다. 발사 시작부터 전멸까지 총 5.3초라는 짧은 처치 시간을 감안하면 현재 밸런스에서는 아틸러리가 착탄하기 전에 전투가 끝나는 쪽이 거의 항상 벌어진다. 별개로 기하학적 이유도 있다 — 스폰 이격 `SpawnSpacing=250`이 아틸러리 반경 `ArtilleryRadius=120`의 지름(240)보다 커서, 설령 착탄해도 한 착지점이 둘 다 덮는 일은 드물다.
 
