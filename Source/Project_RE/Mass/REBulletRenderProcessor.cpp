@@ -3,6 +3,7 @@
 #include "REBulletRenderProcessor.h"
 #include "REBulletFragments.h"
 #include "REBulletRenderSubsystem.h"
+#include "REBulletPatternGenerator.h"   // BulletLifetimeSec() — 스폰 팝 나이 계산 (#97)
 #include "MassExecutionContext.h"
 #include "Mass/EntityFragments.h"  // FTransformFragment
 #include "Components/InstancedStaticMeshComponent.h"
@@ -31,6 +32,7 @@ UREBulletRenderProcessor::UREBulletRenderProcessor()
 void UREBulletRenderProcessor::ConfigureQueries(const TSharedRef<FMassEntityManager>& EntityManager)
 {
 	EntityQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadOnly);  // 위치 읽기
+	EntityQuery.AddRequirement<FBulletSimFragment>(EMassFragmentAccess::ReadOnly);  // Lifetime — 스폰 팝 나이 (#97)
 	EntityQuery.AddTagRequirement<FBulletTag>(EMassFragmentPresence::All);          // 탄환만 선별
 }
 
@@ -47,17 +49,29 @@ void UREBulletRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassE
 		return;  // 데디서버 등 ISM 없으면 no-op
 	}
 
-	// 1) live 탄환 트랜스폼 수집 (청크를 가로질러 누적 → 전역 인스턴스 인덱스 연속).
+	// 스폰 팝 지속시간(s). 태어난 직후만 밝기가 솟았다가 정상으로 붙는다.
+	// 수명 페이드는 넣지 않는다 — 죽기 직전 탄이 흐려지면 여전히 치명적인데 사라지는 중으로
+	// 오독되고, 탄막에서 히트박스 가독성은 공정성 문제다 (#97).
+	constexpr float PopDuration = 0.1f;
+	const float TotalLife = REBulletPattern::BulletLifetimeSec();
+
+	// 1) live 탄환 트랜스폼 + 스폰 팝 수집 (청크를 가로질러 누적 → 전역 인스턴스 인덱스 연속).
 	TArray<FTransform> Xf;
-	EntityQuery.ForEachEntityChunk(Context, [&Xf](FMassExecutionContext& Ctx)
+	TArray<float> Pop;
+	EntityQuery.ForEachEntityChunk(Context, [&Xf, &Pop, TotalLife](FMassExecutionContext& Ctx)
 	{
 		const int32 Num = Ctx.GetNumEntities();
 		const TConstArrayView<FTransformFragment> T = Ctx.GetFragmentView<FTransformFragment>();
+		const TConstArrayView<FBulletSimFragment> S = Ctx.GetFragmentView<FBulletSimFragment>();
 		for (int32 i = 0; i < Num; ++i)
 		{
 			FTransform B = T[i].GetTransform();
 			B.SetScale3D(FVector(BulletScale));  // 탄환 크기 통일
 			Xf.Add(B);
+
+			// Lifetime 은 잔여시간(REBulletSimProcessor 가 Dt 만큼 감소) → 나이 = 총수명 - 잔여
+			const float Age = TotalLife - S[i].Lifetime;
+			Pop.Add(FMath::Clamp(Age / PopDuration, 0.f, 1.f));
 		}
 	});
 
@@ -72,6 +86,9 @@ void UREBulletRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassE
 	// 실측(40,000발) BulletRender 7.22 ms 로 GT의 52%. Xf 는 이미 만들어져 있으므로 배치 API가 그대로 받는다 (#95).
 	if (M > 0)
 	{
+		// 커스텀데이터를 먼저 쓰고 트랜스폼을 나중에 쓴다 — dirty 마크는 트랜스폼 호출이 담당한다.
+		// 위 while 루프가 인스턴스 수를 이미 M 으로 맞췄으므로 인덱스 범위가 유효하다.
+		ISM->SetCustomData(0, M - 1, Pop, /*bMarkRenderStateDirty=*/false);
 		ISM->BatchUpdateInstancesTransforms(0, Xf, /*bWorldSpace=*/true,
 			/*bMarkRenderStateDirty=*/true, /*bTeleport=*/true);
 	}

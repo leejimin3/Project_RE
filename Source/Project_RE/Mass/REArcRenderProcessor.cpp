@@ -51,9 +51,15 @@ void UREArcRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 		return;  // 데디서버 등 ISM 없으면 no-op
 	}
 
-	// 1) live arc탄 → 탄 트랜스폼 + 마커 트랜스폼 수집.
+	// 스폰 팝 지속시간(s). 직선탄과 같은 값 — 수명 페이드는 넣지 않는다 (#97).
+	// 이름을 직선탄 쪽 PopDuration 과 다르게 둔다: 익명 네임스페이스 동명 상수가
+	// 유니티 빌드에서 충돌한 전례가 있다(같은 파일 ActorBulletScale 주석 참조).
+	constexpr float ArcPopDuration = 0.1f;
+
+	// 1) live arc탄 → 탄 트랜스폼 + 마커 트랜스폼 + 스폰 팝 수집.
 	TArray<FTransform> BulletXf;
 	TArray<FTransform> MarkerXf;
+	TArray<float>      BulletPop;
 	EntityQuery.ForEachEntityChunk(Context, [&](FMassExecutionContext& Ctx)
 	{
 		const int32 Num = Ctx.GetNumEntities();
@@ -64,6 +70,9 @@ void UREArcRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 			FTransform B = T[i].GetTransform();
 			B.SetScale3D(FVector(ArcBulletScale));
 			BulletXf.Add(B);
+
+			// 곡사탄은 Elapsed 가 곧 나이다(0 에서 시작해 FlightTime 까지 증가).
+			BulletPop.Add(FMath::Clamp(A[i].Elapsed / ArcPopDuration, 0.f, 1.f));
 
 			// 마커: Target 바닥, 반경=Radius(Cylinder 스케일), 낮은 원판.
 			const float RadScale = A[i].Radius / CylinderBaseRadius;
@@ -90,4 +99,12 @@ void UREArcRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 	};
 	SyncISM(ArcISM, BulletXf);
 	SyncISM(MarkerISM, MarkerXf);
+
+	// 팝은 곡사탄에만. 마커는 바닥 디스크라 커스텀데이터를 쓰지 않는다 (#97).
+	// SyncISM 이 인스턴스 수를 맞춘 뒤라야 SetCustomData 의 인덱스 범위가 유효하다.
+	// 트랜스폼 배치가 이미 끝나 뒤따르는 플러시가 없으므로 dirty 를 여기서 true 로 준다.
+	if (BulletXf.Num() > 0)
+	{
+		ArcISM->SetCustomData(0, BulletXf.Num() - 1, BulletPop, /*bMarkRenderStateDirty=*/true);
+	}
 }
