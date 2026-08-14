@@ -45,16 +45,13 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	// 퍼인스턴스 커스텀데이터 [0]=스폰 팝, [1]=색 선택. 머티리얼이 두 슬롯을 읽는다 (#97).
 	ISM->SetNumCustomDataFloats(2);
 
-	// 탄막 전용 머티리얼(#97) — 언릿 발광 + 프레넬 림. 겹친 탄 사이 경계가 보이게 한다.
+	// 탄막 전용 머티리얼(#97) — 언릿 발광 + 프레넬 림 + 인접 탄 색 교차.
+	// 직선탄은 파라미터를 덮어쓰지 않으므로 MID 가 필요 없다 — 머티리얼 기본값(Color/ColorB)이
+	// 정본이고, 에디터에서 색·림을 바꾸면 코드 수정 없이 반영된다. 어느 색을 쓸지는
+	// 퍼인스턴스 커스텀데이터 [1] 이 고른다.
 	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_REBullet.M_REBullet")))
 	{
-		if (UMaterialInstanceDynamic* Dyn = ISM->CreateDynamicMaterialInstance(0, Base))
-		{
-			// 직선탄 색은 덮어쓰지 않는다 — 머티리얼 기본값(Color/ColorB)이 정본이다.
-			// 에디터에서 색·림을 조정하면 코드 수정 없이 바로 반영된다. 인접 탄을 두 색으로
-			// 교차시켜 겹침을 읽히게 하며, 어느 색을 쓸지는 커스텀데이터 [1] 이 고른다 (#97).
-			(void)Dyn;
-		}
+		ISM->SetMaterial(0, Base);
 	}
 	else
 	{
