@@ -57,6 +57,11 @@ scripts/profile.ps1 -Bullets 1000 [-Frames 720]
 동작:
 
 1. `Saved/Profiling/RE_<Bullets>_<yyyyMMdd-HHmmss>/` 생성
+> **#88 이후 일부 무효.** 아래 커맨드라인의 `-csvCaptureFrames` 는 부팅 시점에 캡처를 시작해
+> 창의 대부분이 빈 씬이 되는 문제가 있어 `-csvStartOnEvent=REBulletsFilled` +
+> `-csvCaptureOnEventFrameCount` 으로 대체됐다. `-unattended` 도 이후 금지됐다(#46).
+> CSV 위치 역시 한 곳이 아니다. **현행 정본은 `docs/guides/profiling.md`.**
+
 2. 아래 커맨드라인으로 에디터를 `-PassThru` 로 띄운다:
 
 ```
