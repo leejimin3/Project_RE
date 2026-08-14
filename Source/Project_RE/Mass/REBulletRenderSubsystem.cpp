@@ -33,6 +33,9 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	// 간접광 기여 체감 0 — 레벨/캐릭터 GI는 유지된다. 실측: Lumen GI off 시 프레임 정상 복귀.
 	ISM->bAffectDynamicIndirectLighting = false;
 	ISM->bAffectDistanceFieldLighting = false;
+	// 그림자 제외 — 탄막에서 탄환 그림자는 시각 기여가 사실상 없는데 GPU 최대 소비처였다.
+	// 실측(40,000발): 그림자 켬 GPU 17.16 ms → 끔 6.13 ms. 병목이 GPU에서 게임 스레드로 넘어간다 (#95).
+	ISM->SetCastShadow(false);
 	ISM->RegisterComponent();
 
 	if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
@@ -53,6 +56,7 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	ArcISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	ArcISM->bAffectDynamicIndirectLighting = false;
 	ArcISM->bAffectDistanceFieldLighting = false;
+	ArcISM->SetCastShadow(false);   // 위와 같은 이유 (#95)
 	ArcISM->RegisterComponent();
 	if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
 	{
@@ -72,6 +76,8 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	MarkerISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	MarkerISM->bAffectDynamicIndirectLighting = false;
 	MarkerISM->bAffectDistanceFieldLighting = false;
+	// 마커는 바닥에 붙은 납작한 디스크라 그림자가 자기 자신에 가려 보이지도 않는다 (#95).
+	MarkerISM->SetCastShadow(false);
 	MarkerISM->RegisterComponent();
 	if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder")))
 	{

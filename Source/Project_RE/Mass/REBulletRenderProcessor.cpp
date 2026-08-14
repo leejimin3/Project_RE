@@ -67,11 +67,13 @@ void UREBulletRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassE
 	while (Count < M) { ISM->AddInstance(FTransform::Identity, /*bWorldSpace=*/true); ++Count; }
 	while (Count > M) { ISM->RemoveInstance(Count - 1);                               --Count; }
 
-	// 3) i번째 인스턴스 = i번째 live 탄환. dirty flush는 마지막 1회만.
-	for (int32 i = 0; i < M; ++i)
+	// 3) i번째 인스턴스 = i번째 live 탄환. 배열째 한 번에 넘긴다.
+	// 인스턴스당 개별 UpdateInstanceTransform 호출은 탄환 수에 비례해 게임 스레드를 먹었다 —
+	// 실측(40,000발) BulletRender 7.22 ms 로 GT의 52%. Xf 는 이미 만들어져 있으므로 배치 API가 그대로 받는다 (#95).
+	if (M > 0)
 	{
-		ISM->UpdateInstanceTransform(i, Xf[i], /*bWorldSpace=*/true,
-			/*bMarkRenderStateDirty=*/(i == M - 1), /*bTeleport=*/true);
+		ISM->BatchUpdateInstancesTransforms(0, Xf, /*bWorldSpace=*/true,
+			/*bMarkRenderStateDirty=*/true, /*bTeleport=*/true);
 	}
 
 	// 프로브: 인스턴스 수 == live 탄환 수 추종 확인 (매 30틱 1회, 로그 과다 방지).

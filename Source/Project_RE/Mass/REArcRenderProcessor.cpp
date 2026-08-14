@@ -81,10 +81,11 @@ void UREArcRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 		int32 Count = ISM->GetInstanceCount();
 		while (Count < M) { ISM->AddInstance(FTransform::Identity, /*bWorldSpace=*/true); ++Count; }
 		while (Count > M) { ISM->RemoveInstance(Count - 1);                               --Count; }
-		for (int32 i = 0; i < M; ++i)
+		// 배열째 한 번에 — 인스턴스당 개별 호출은 개수에 비례해 게임 스레드를 먹는다 (#95).
+		if (M > 0)
 		{
-			ISM->UpdateInstanceTransform(i, Xf[i], /*bWorldSpace=*/true,
-				/*bMarkRenderStateDirty=*/(i == M - 1), /*bTeleport=*/true);
+			ISM->BatchUpdateInstancesTransforms(0, Xf, /*bWorldSpace=*/true,
+				/*bMarkRenderStateDirty=*/true, /*bTeleport=*/true);
 		}
 	};
 	SyncISM(ArcISM, BulletXf);
