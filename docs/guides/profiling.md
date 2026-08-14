@@ -8,12 +8,47 @@
 scripts/profile.ps1 -Bullets 1000          # 기본 720프레임 캡처 (Mass 경로)
 scripts/profile.ps1 -Bullets 5000 -Frames 720
 scripts/profile.ps1 -Bullets 5000 -Actor   # Actor 베이스라인 (#45 비교군)
+
+# 엔진 CVar를 주입해 A/B 소거 측정 (#50). -Label 은 run 디렉터리 이름에 들어간다.
+scripts/profile.ps1 -Bullets 5000 -Label noshadow -ExtraExec "r.ShadowQuality 0"
 ```
 
-산출물: `Saved/Profiling/RE_<경로>_<탄환수>_<타임스탬프>/`
+산출물: `Saved/Profiling/RE_<경로>_<탄환수>[_<라벨>]_<타임스탬프>/`
 - `trace.utrace` — Unreal Insights 트레이스
 - `frames.csv` — 엔진 CSV 프로파일러의 프레임별 시간 (프로세서 3분해 컬럼 포함)
 - `run.log` — 실제 유지 탄환 수 대조용 (`RenderProbe` / `ActorBulletProbe`)
+
+## 통계 뽑기
+
+```powershell
+scripts/profile-stats.ps1 -RunDir (Get-ChildItem Saved\Profiling\RE_Mass_5000_* -Directory).FullName
+```
+
+run 디렉터리들을 받아 컬럼별 mean/p99 를 마크다운 표로 낸다. 총량 4개(Frame/GT/RT/GPU)에
+더해 패스별 렌더스레드 시간(`RenderBasePass` / `RenderShadows` / `RenderPostProcessing` /
+`RenderTranslucency` / `UpdateGPUScene` / `UpdatePrimitiveInstances`)과
+`GPUSceneInstanceCount` · `RHI/DrawCalls` 를 함께 뽑는다.
+
+**손으로 `frames.csv` 를 파싱한다면 두 가지를 알아야 한다** (스크립트는 둘 다 처리한다):
+
+- **말미 2행을 잘라라.** `[HasHeaderRowAtEnd]` 때문에 데이터 뒤에 헤더 1행 + 메타 1행이 더 붙는다. 안 자르면 숫자 컬럼에 문자열이 섞여 통계가 조용히 오염된다.
+- **컬럼명이 중복될 수 있다.** 실측으로 그림자를 끈 런의 `ShadowCacheUsageMB` 가 2회 나왔다. `ConvertFrom-Csv` 는 중복 헤더를 만나면 던진다.
+
+**패스별 컬럼은 렌더스레드 CPU 시간이지 GPU 시간이 아니다.** 두 축은 크게 어긋날 수 있다 —
+실측에서 `RenderShadows` 는 0.17 ms인데 그림자를 끄면 GPU가 2.04 ms 줄었다(#50 리포트 §4).
+
+## `-ExtraExec` 로 CVar를 주입했으면 적용됐는지 확인하라
+
+커맨드라인에 들어간 것과 런타임에 먹은 것은 다르다. 확인 없이 "껐는데 차이가 없다"를 얻으면
+**그 기능이 원인이 아닌 것인지 노브가 안 먹은 것인지 구분할 수 없다.** 결론을 통째로 뒤집는 모호함이다.
+
+```powershell
+Select-String -Path .\Saved\Profiling\<run>\run.log -Pattern 'r\.BloomQuality = '
+```
+
+부팅 시 `LogConfig: Set CVar [[r.BloomQuality:5]]` 로 설정 기본값이 잡히고, `-ExecCmds` 가 그 뒤에
+`r.BloomQuality = "0"` 으로 덮는 줄이 보여야 한다. 로그 줄에 타임스탬프 접두사가 붙으므로
+정규식에 `^` 앵커를 쓰면 안 걸린다.
 
 `-Actor`는 Mass boss(기본 480)를 죽이고 액터 스포너만 켠다. 두 경로 모두 `re.Profiling.KeepFiring 1`을 주입한다(아래).
 
@@ -22,6 +57,7 @@ scripts/profile.ps1 -Bullets 5000 -Actor   # Actor 베이스라인 (#45 비교�
 | 항목 | 값 | 이유 |
 |---|---|---|
 | 렌더 | **실 RHI**, `-windowed 1280x720` | `-nullrhi` 는 렌더 비용이 사라져 GT 병목을 못 본다. 과거 ISM Bounds=0 오진 전례 있음 |
+| 트레이스 채널 | `cpu,frame,counters,gpu` | `gpu` 는 Insights GPU 트랙용(#50). 트레이스는 어차피 뜨므로 추가 비용 사실상 0 |
 | 캡처 시작 | **탄환 채움 완료 시점** (`-csvStartOnEvent=REBulletsFilled`) | 부팅 시점에 시작하면 레벨 로드·셰이더 컴파일·보스 발사 전 구간이 창을 먹는다. 실측으로 17.9초 창 중 **13.3초가 빈 씬**이었다 (#88) |
 | 측정 구간 | **캡처 720프레임 전량** | 시작이 이미 정상상태라 버릴 구간이 없다 |
 | 바이너리 | `UnrealEditor.exe -game` | 패키징(cook)은 수십 분 + 코드 수정마다 재쿡. **절대치가 아니라 상대 비교용**이다 — 에디터 오버헤드가 섞여 있음을 알고 읽어라 |

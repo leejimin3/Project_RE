@@ -17,7 +17,11 @@ param(
     # Actor 베이스라인(#45) 경로 측정. Mass boss(기본 480발)를 0으로 죽이고 액터만 스폰.
     [switch]$Actor,
     # 스폰 적분 루프게인 오버라이드(튜닝용, 무차원 — #88 이후 설정 무관). 0 이하면 빌드 기본값 사용.
-    [double]$Ki = 0
+    [double]$Ki = 0,
+    # 스위프 구성별 CVar 주입. 기존 -ExecCmds 끝에 쉼표로 이어붙는다 (#50 진단).
+    [string]$ExtraExec = '',
+    # run 디렉터리 이름에 삽입할 구성 이름. 같은 탄환 수로 여러 번 돌 때 폴더를 구분한다.
+    [string]$Label = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -54,7 +58,9 @@ if ($Actor) {
     $ExecCmd = "re.Profiling.KeepFiring 1,re.Cheat.PlayerInvincible 1,re.Bullets.Count $Bullets"
 }
 if ($Ki -gt 0) { $ExecCmd += ",re.Bullets.SpawnKi $Ki" }
-$RunDir = Join-Path $Root "Saved\Profiling\RE_${Tag}_${Bullets}_${Stamp}"
+if ($ExtraExec) { $ExecCmd += ",$ExtraExec" }
+$Suffix = if ($Label) { "_$Label" } else { '' }
+$RunDir = Join-Path $Root "Saved\Profiling\RE_${Tag}_${Bullets}${Suffix}_${Stamp}"
 New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
 
 $TracePath = Join-Path $RunDir 'trace.utrace'
@@ -67,7 +73,8 @@ $ArgLine = @(
     '/Game/Level/Main',
     '-game',
     '-windowed', '-ResX=1280', '-ResY=720',
-    '-trace=cpu,frame,counters',
+    # gpu 채널: Insights GPU 트랙으로 패스별 GPU 시간을 본다 (#50 확인용). 트레이스는 이미 뜨므로 추가 비용 사실상 0.
+    '-trace=cpu,frame,counters,gpu',
     '-statnamedevents',
     "-tracefile=`"$TracePath`"",
     # 부팅 시점에 캡처를 시작하면(-csvCaptureFrames) 창의 대부분이 빈 씬이다 — 실측 17.9초 창 중
