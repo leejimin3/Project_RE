@@ -42,12 +42,21 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	{
 		ISM->SetStaticMesh(Mesh);
 	}
-	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
+	// 퍼인스턴스 커스텀데이터 0번 = 스폰 팝. 머티리얼이 이 슬롯을 읽는다 (#97).
+	ISM->SetNumCustomDataFloats(1);
+
+	// 탄막 전용 머티리얼(#97) — 언릿 발광 + 프레넬 림. 겹친 탄 사이 경계가 보이게 한다.
+	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_REBullet.M_REBullet")))
 	{
 		if (UMaterialInstanceDynamic* Dyn = ISM->CreateDynamicMaterialInstance(0, Base))
 		{
 			Dyn->SetVectorParameterValue(TEXT("Color"), FLinearColor::Red);  // 탄환 빨강
 		}
+	}
+	else
+	{
+		// 조용한 폴백 금지 — 머티리얼 없이 렌더되면 림이 사라진 것을 눈치채기 어렵다.
+		UE_LOG(LogTemp, Error, TEXT("[RE] M_REBullet 로드 실패 — 탄환 머티리얼 없이 렌더된다 (#97)"));
 	}
 
 	// 곡사탄 ISM — 주황 구체(직선탄 빨강과 구분). Z 살아있어 궤적 높이가 보인다.
@@ -62,12 +71,18 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	{
 		ArcISM->SetStaticMesh(Mesh);
 	}
-	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
+	ArcISM->SetNumCustomDataFloats(1);   // 스폰 팝 (#97)
+
+	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_REBullet.M_REBullet")))
 	{
 		if (UMaterialInstanceDynamic* Dyn = ArcISM->CreateDynamicMaterialInstance(0, Base))
 		{
 			Dyn->SetVectorParameterValue(TEXT("Color"), FLinearColor(1.f, 0.5f, 0.f));  // 주황
 		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("[RE] M_REBullet 로드 실패 — 곡사탄 머티리얼 없이 렌더된다 (#97)"));
 	}
 
 	// 착지 마커 ISM — 빨강 평면 원. Cylinder를 납작하게(Z scale 축소) 눌러 디스크로.
