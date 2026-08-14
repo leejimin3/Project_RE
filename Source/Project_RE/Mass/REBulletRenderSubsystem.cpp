@@ -113,5 +113,12 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[RE] RenderSubsystem: ISM ready (mesh=%d)"), ISM->GetStaticMesh() != nullptr);
+	// 실제 적용된 머티리얼 이름을 찍는다 — CreateDynamicMaterialInstance 가 실패하면
+	// 로드는 성공했는데도 조용히 기본 머티리얼로 렌더된다(라이팅 음영이 생겨 언릿 의도가 깨진다). (#97)
+	{
+		const UMaterialInterface* Applied = ISM->GetMaterial(0);
+		UE_LOG(LogTemp, Log, TEXT("[RE] RenderSubsystem: ISM ready (mesh=%d) material=%s"),
+			ISM->GetStaticMesh() != nullptr,
+			Applied ? *Applied->GetName() : TEXT("NULL"));
+	}
 }

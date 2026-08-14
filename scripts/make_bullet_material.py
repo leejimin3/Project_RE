@@ -33,7 +33,30 @@ if mat is None:
 # 겹친 탄의 오버드로우가 누적되지 않는다(50,000발 상한을 지탱하는 전제).
 mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
 
+# ISM 용도 플래그. 없으면 엔진이 조용히 기본 머티리얼로 대체한다 -
+#   LogMaterial: Warning: Material ... missing usage flag InstancedStaticMeshes!
+#                Default Material will be used in game.
+# 이때 ISM->GetMaterial(0) 은 여전히 MID 를 돌려주므로 코드상으로는 정상으로 보이고,
+# 화면만 라이팅된 회색 구체가 된다(언릿/색/프레넬이 전부 무시됨). 실제로 그렇게 한 번 속았다.
+mat.set_editor_property("used_with_instanced_static_meshes", True)
+if not mat.get_editor_property("used_with_instanced_static_meshes"):
+    unreal.log_error("RE_MAT: InstancedStaticMeshes 용도 플래그 설정 실패")
+    raise SystemExit(1)
+
 mel = unreal.MaterialEditingLibrary
+
+def _link(frm, frm_out, to, to_in):
+    """연결 실패는 조용하다 - 핀 이름이 틀리면 False 만 돌아오고 그래프는 반쯤 빈 채로 저장된다."""
+    if not mel.connect_material_expressions(frm, frm_out, to, to_in):
+        unreal.log_error("RE_MAT: 연결 실패 %s -> %s.%s" % (frm.get_class().get_name(), to.get_class().get_name(), to_in))
+        raise SystemExit(1)
+
+
+def _link_prop(frm, frm_out, prop):
+    if not mel.connect_material_property(frm, frm_out, prop):
+        unreal.log_error("RE_MAT: 머티리얼 속성 연결 실패 %s" % str(prop))
+        raise SystemExit(1)
+
 
 # 두 색을 커스텀데이터 [1] 로 고른다. 인접 탄이 다른 색이 되어야 겹쳐도 개별 오브젝트로
 # 읽힌다 - 탄 간격(30uu) < 지름(50uu) 이라 기하학적으로 겹치는 것을 색으로 가르는 것이다.
@@ -50,9 +73,9 @@ sel.set_editor_property("data_index", 1)
 sel.set_editor_property("const_default_value", 0.0)
 
 col = mel.create_material_expression(mat, unreal.MaterialExpressionLinearInterpolate, -800, 0)
-mel.connect_material_expressions(col_a, "", col, "A")
-mel.connect_material_expressions(col_b, "", col, "B")
-mel.connect_material_expressions(sel, "", col, "Alpha")
+_link(col_a, "", col, "A")
+_link(col_b, "", col, "B")
+_link(sel, "", col, "Alpha")
 
 # 프레넬 - 실루엣 가장자리를 밝힌다. 인접한 동일 색 구체 사이에 경계선이 생기는 원리.
 fr = mel.create_material_expression(mat, unreal.MaterialExpressionFresnel, -800, 220)
@@ -60,7 +83,7 @@ fr = mel.create_material_expression(mat, unreal.MaterialExpressionFresnel, -800,
 rim_pow = mel.create_material_expression(mat, unreal.MaterialExpressionScalarParameter, -1050, 220)
 rim_pow.set_editor_property("parameter_name", "RimPower")
 rim_pow.set_editor_property("default_value", 2.5)
-mel.connect_material_expressions(rim_pow, "", fr, "ExponentIn")
+_link(rim_pow, "", fr, "ExponentIn")
 
 rim_str = mel.create_material_expression(mat, unreal.MaterialExpressionScalarParameter, -800, 400)
 rim_str.set_editor_property("parameter_name", "RimStrength")
@@ -68,19 +91,19 @@ rim_str.set_editor_property("default_value", 3.0)
 
 # 림 기여: 1 + Fresnel * RimStrength -> 중심은 기본 밝기, 가장자리만 솟는다.
 rim_mul = mel.create_material_expression(mat, unreal.MaterialExpressionMultiply, -560, 300)
-mel.connect_material_expressions(fr, "", rim_mul, "A")
-mel.connect_material_expressions(rim_str, "", rim_mul, "B")
+_link(fr, "", rim_mul, "A")
+_link(rim_str, "", rim_mul, "B")
 
 one = mel.create_material_expression(mat, unreal.MaterialExpressionConstant, -560, 460)
 one.set_editor_property("r", 1.0)
 
 rim_add = mel.create_material_expression(mat, unreal.MaterialExpressionAdd, -380, 360)
-mel.connect_material_expressions(one, "", rim_add, "A")
-mel.connect_material_expressions(rim_mul, "", rim_add, "B")
+_link(one, "", rim_add, "A")
+_link(rim_mul, "", rim_add, "B")
 
 col_rim = mel.create_material_expression(mat, unreal.MaterialExpressionMultiply, -200, 120)
-mel.connect_material_expressions(col, "", col_rim, "A")
-mel.connect_material_expressions(rim_add, "", col_rim, "B")
+_link(col, "", col_rim, "A")
+_link(rim_add, "", col_rim, "B")
 
 # 스폰 팝 - 퍼인스턴스 커스텀데이터 0번. 렌더 프로세서가 0~1 을 채운다.
 # ConstDefaultValue 는 인스턴스 데이터가 없을 때의 대체값이다. 1.0 이라야 커스텀데이터가
@@ -90,10 +113,10 @@ pop.set_editor_property("data_index", 0)
 pop.set_editor_property("const_default_value", 1.0)
 
 final_mul = mel.create_material_expression(mat, unreal.MaterialExpressionMultiply, 0, 300)
-mel.connect_material_expressions(col_rim, "", final_mul, "A")
-mel.connect_material_expressions(pop, "", final_mul, "B")
+_link(col_rim, "", final_mul, "A")
+_link(pop, "", final_mul, "B")
 
-mel.connect_material_property(final_mul, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+_link_prop(final_mul, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
 
 mel.recompile_material(mat)
 unreal.EditorAssetLibrary.save_asset(FULL)
