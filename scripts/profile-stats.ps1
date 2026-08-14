@@ -61,7 +61,15 @@ foreach ($d in $RunDir) {
     # 그대로 ConvertFrom-Csv 하면 두 행이 데이터로 섞여 평균이 깨진다.
     $lines = Get-Content -LiteralPath $csv
     if ($lines.Count -lt 4) { Write-Warning "행이 너무 적음 - 건너뜀: $d"; continue }
-    $rows = $lines[0..($lines.Count - 3)] | ConvertFrom-Csv
+
+    # 일부 런의 csv 에는 중복 컬럼명이 있다(실측: noshadow 런의 ShadowCacheUsageMB 2회).
+    # ConvertFrom-Csv 는 중복을 거부하며 던지므로 헤더만 유일화한다. 값 파싱은 CSV 규칙
+    # 그대로 둔다 - EVENTS 컬럼에 쉼표가 들어갈 수 있어 수동 split 은 정렬이 어긋난다.
+    $seen = @{}
+    $hdr = foreach ($h in ($lines[0] -split ',')) {
+        if ($seen.ContainsKey($h)) { $seen[$h]++; "$h#$($seen[$h])" } else { $seen[$h] = 0; $h }
+    }
+    $rows = (@($hdr -join ',') + $lines[1..($lines.Count - 3)]) | ConvertFrom-Csv
 
     $cells = foreach ($k in $Cols.Keys) {
         $st = Get-Stats -Rows $rows -Name $Cols[$k]
