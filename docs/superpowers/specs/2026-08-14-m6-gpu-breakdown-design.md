@@ -78,19 +78,36 @@
 
 **소거법을 본선으로 두는 이유:** 완전 자동화되고, `frames.csv` 의 GPU 컬럼이 그대로 리포트 표가 되며, "무엇이 아닌지"를 확실히 배제한다. 이 프로젝트에는 단위 테스트 프레임워크가 없어 검증이 로그·산출물 기반인데, 소거법은 그 방식에 그대로 맞는다.
 
-### 5.2 Insights GPU 트랙 (확인용)
+### 5.2 `frames.csv` 의 패스별 렌더스레드 분해 (무료 보강)
+
+계획 수립 중 확인한 사실: `frames.csv` 는 이미 315개 컬럼을 담고 있고, 그중에 **패스별 렌더스레드 시간이 들어 있다.**
+
+| 컬럼 | 답하는 질문 |
+|---|---|
+| `Exclusive/RenderThread/RenderBasePass` | 불투명 지오메트리 |
+| `Exclusive/RenderThread/RenderShadows` | 그림자 |
+| `Exclusive/RenderThread/RenderPostProcessing` | post/bloom |
+| `Exclusive/RenderThread/RenderTranslucency` | 반투명 |
+| `Exclusive/RenderThread/UpdateGPUScene`, `.../UpdatePrimitiveInstances`, `.../ConsolidateInstanceDataAllocations` | **인스턴스 갱신 — §10의 "셋 다 아니면" 가설을 직접 잰다** |
+| `GPUSceneInstanceCount`, `RHI/DrawCalls`, `RHI/PrimitivesDrawn` | 인스턴스·드로우콜 실측 |
+
+이 컬럼들은 **렌더스레드 CPU 시간**이지 GPU 시간이 아니다. 따라서 GPU 귀속은 여전히 소거법(§5.1)이 낸다. 다만 이 컬럼들이 **어느 패스에 작업이 몰려 있는지**를 추가 도구 없이 보여주므로, 소거법 결론의 교차 검증으로 리포트에 함께 싣는다.
+
+**함정:** `frames.csv` 는 끝에 **헤더 1행 + 메타 1행이 더 붙는다**(`[HasHeaderRowAtEnd]`). 그대로 읽으면 두 행이 데이터로 섞여 통계가 깨진다.
+
+### 5.3 Insights GPU 트랙 (확인용)
 
 `profile.ps1` 의 트레이스 채널에 `gpu` 를 더한다 — `-trace=cpu,frame,counters,gpu`. **한 단어이고 트레이스는 이미 뜨고 있으므로 추가 비용이 사실상 0이다.**
 
 소거법이 "무엇이 아닌지"를 좁히면, GPU 트랙은 패스별 시간을 직접 보여줘 "무엇인지"를 확정한다. 읽기는 Insights GUI라 자동 검증이 안 되므로 **본선이 아니라 확인용**이다. 리포트에는 소거법 숫자를 싣고, GPU 트랙에서 확인한 패스 이름을 근거로 병기한다.
 
-### 5.3 채택하지 않은 것
+### 5.4 채택하지 않은 것
 
-**`ProfileGPU` 로그 덤프.** 단일 프레임 계층 분해라 정확하지만, 정상상태에서 쏘려면 C++ 훅이 필요하다(#88이 만든 채움 완료 지점 재사용). 5.1 + 5.2 가 답하면 불필요한 코드다. 소거법이 결론을 못 내면 그때 추가한다.
+**`ProfileGPU` 로그 덤프.** 단일 프레임 계층 분해라 정확하지만, 정상상태에서 쏘려면 C++ 훅이 필요하다(#88이 만든 채움 완료 지점 재사용). 5.1~5.3 이 답하면 불필요한 코드다. 소거법이 결론을 못 내면 그때 추가한다.
 
 ## 6. 하네스 변경
 
-측정만으로 두 가지가 부족하다. **둘 다 작고, 진단이 끝나도 남아서 쓸모 있다.**
+하네스에 네 가지가 부족하다. **전부 작고, 진단이 끝나도 남아서 쓸모 있다.**
 
 ### 6.1 `-ExtraExec` 파라미터
 
@@ -123,7 +140,15 @@ $RunDir = Join-Path $Root "Saved\Profiling\RE_${Tag}_${Bullets}${Suffix}_${Stamp
 
 ### 6.3 트레이스 채널
 
-`-trace=cpu,frame,counters` → `-trace=cpu,frame,counters,gpu` (5.2).
+`-trace=cpu,frame,counters` → `-trace=cpu,frame,counters,gpu` (§5.3).
+
+### 6.4 `scripts/profile-stats.ps1` (신규)
+
+`frames.csv` 에서 통계를 뽑는 수단이 **없다.** M3 는 즉석 계산이었고, 그 방식으로는 10회 × 12컬럼을 신뢰할 수 없다. 게다가 §5.2의 말미 2행 함정을 매번 손으로 피해야 한다.
+
+run 디렉터리들을 받아 컬럼별 mean/p99 를 마크다운 표 행으로 출력하는 작은 스크립트를 만든다. 리포트 표가 **손 계산이 아니라 재현 가능한 명령의 출력**이 된다.
+
+`-Label` 로 붙인 구성 이름이 run 디렉터리에 남으므로 표의 행 이름도 자동으로 맞는다.
 
 ## 7. 스위프 행렬
 
@@ -151,7 +176,7 @@ $RunDir = Join-Path $Root "Saved\Profiling\RE_${Tag}_${Bullets}${Suffix}_${Stamp
 1. **재측정 베이스라인** — 1600·5000, Mass·Actor, Frame/GT/RT/GPU. M3 표와의 차이와 그 사유(§2)
 2. **소거 표** — 구성별 GPU와 base 대비 감소분. 어느 기능이 몇 ms를 먹는지
 3. **귀속 결론** — 한 문장. "GPU N ms 중 M ms 는 X 다"
-4. **Insights GPU 트랙 확인** — 결론을 뒷받침하는 패스 이름
+4. **패스별 교차 검증** — `frames.csv` 의 렌더스레드 패스 컬럼(§5.2)과, 필요하면 Insights GPU 트랙(§5.3)에서 확인한 패스 이름
 5. **다음 단계 권고** — 소거 결과가 가리키는 수정과, Niagara 교체가 그 원인에 유효한지에 대한 판단
 
 ## 9. 성공 기준
@@ -164,7 +189,7 @@ $RunDir = Join-Path $Root "Saved\Profiling\RE_${Tag}_${Bullets}${Suffix}_${Stamp
 
 ## 10. 실패 시
 
-소거법 셋 다 GPU를 유의미하게 못 낮추면 — 즉 bloom·그림자·필레이트 어느 것도 아니면 — 원인은 인스턴스 처리(컬링/버퍼 갱신) 쪽이다. 그때 §5.3의 `ProfileGPU` 훅을 추가해 패스 계층을 직접 뜬다. 리포트에 그 사실과 근거를 적고 후속 이슈로 넘긴다.
+소거법 셋 다 GPU를 유의미하게 못 낮추면 — 즉 bloom·그림자·필레이트 어느 것도 아니면 — 원인은 인스턴스 처리(컬링/버퍼 갱신) 쪽이다. 그때 §5.4의 `ProfileGPU` 훅을 추가해 패스 계층을 직접 뜬다. 리포트에 그 사실과 근거를 적고 후속 이슈로 넘긴다.
 
 ## 참고
 
