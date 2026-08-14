@@ -42,12 +42,21 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	{
 		ISM->SetStaticMesh(Mesh);
 	}
-	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
+	// 퍼인스턴스 커스텀데이터 [0]=스폰 팝, [1]=색 선택. 머티리얼이 두 슬롯을 읽는다 (#97).
+	ISM->SetNumCustomDataFloats(2);
+
+	// 탄막 전용 머티리얼(#97) — 언릿 발광 + 프레넬 림 + 인접 탄 색 교차.
+	// 직선탄은 파라미터를 덮어쓰지 않으므로 MID 가 필요 없다 — 머티리얼 기본값(Color/ColorB)이
+	// 정본이고, 에디터에서 색·림을 바꾸면 코드 수정 없이 반영된다. 어느 색을 쓸지는
+	// 퍼인스턴스 커스텀데이터 [1] 이 고른다.
+	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_REBullet.M_REBullet")))
 	{
-		if (UMaterialInstanceDynamic* Dyn = ISM->CreateDynamicMaterialInstance(0, Base))
-		{
-			Dyn->SetVectorParameterValue(TEXT("Color"), FLinearColor::Red);  // 탄환 빨강
-		}
+		ISM->SetMaterial(0, Base);
+	}
+	else
+	{
+		// 조용한 폴백 금지 — 머티리얼 없이 렌더되면 림이 사라진 것을 눈치채기 어렵다.
+		UE_LOG(LogTemp, Error, TEXT("[RE] M_REBullet 로드 실패 — 탄환 머티리얼 없이 렌더된다 (#97)"));
 	}
 
 	// 곡사탄 ISM — 주황 구체(직선탄 빨강과 구분). Z 살아있어 궤적 높이가 보인다.
@@ -62,12 +71,20 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	{
 		ArcISM->SetStaticMesh(Mesh);
 	}
-	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
+	ArcISM->SetNumCustomDataFloats(2);   // [0]=스폰 팝, [1]=색 선택(곡사탄은 항상 0) (#97)
+
+	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_REBullet.M_REBullet")))
 	{
 		if (UMaterialInstanceDynamic* Dyn = ArcISM->CreateDynamicMaterialInstance(0, Base))
 		{
-			Dyn->SetVectorParameterValue(TEXT("Color"), FLinearColor(1.f, 0.5f, 0.f));  // 주황
+			// 곡사탄은 색 교차를 쓰지 않는다 — 두 색을 같게 둬서 커스텀데이터와 무관하게 단색.
+			Dyn->SetVectorParameterValue(TEXT("Color"),  FLinearColor(1.f, 0.5f, 0.f));  // 주황
+			Dyn->SetVectorParameterValue(TEXT("ColorB"), FLinearColor(1.f, 0.5f, 0.f));
 		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("[RE] M_REBullet 로드 실패 — 곡사탄 머티리얼 없이 렌더된다 (#97)"));
 	}
 
 	// 착지 마커 ISM — 빨강 평면 원. Cylinder를 납작하게(Z scale 축소) 눌러 디스크로.
@@ -94,5 +111,12 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[RE] RenderSubsystem: ISM ready (mesh=%d)"), ISM->GetStaticMesh() != nullptr);
+	// 실제 적용된 머티리얼 이름을 찍는다 — CreateDynamicMaterialInstance 가 실패하면
+	// 로드는 성공했는데도 조용히 기본 머티리얼로 렌더된다(라이팅 음영이 생겨 언릿 의도가 깨진다). (#97)
+	{
+		const UMaterialInterface* Applied = ISM->GetMaterial(0);
+		UE_LOG(LogTemp, Log, TEXT("[RE] RenderSubsystem: ISM ready (mesh=%d) material=%s"),
+			ISM->GetStaticMesh() != nullptr,
+			Applied ? *Applied->GetName() : TEXT("NULL"));
+	}
 }

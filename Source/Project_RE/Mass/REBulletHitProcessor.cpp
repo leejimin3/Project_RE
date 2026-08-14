@@ -15,7 +15,11 @@ CSV_DECLARE_CATEGORY_EXTERN(REBullet);  // 정의는 REBulletSimProcessor.cpp
 
 namespace
 {
-	/** 히트 반경(cm) — 탄환 시각 반경 25(BulletScale 0.5 × Sphere 50) + 플레이어 캡슐 반경 ~35. */
+	/**
+	 *  히트 반경(cm) — 탄환 시각 반경 25(BulletScale 0.5 × Sphere 반경 50) + 플레이어 캡슐 반경 ~35.
+	 *  BulletScale 을 바꾸면 여기도 같이 바꿔야 한다. 안 그러면 눈에 안 닿았는데 맞거나
+	 *  닿았는데 안 맞아 공정성이 깨진다 (#97).
+	 */
 	constexpr float HitRadius = 60.f;
 	/** 탄환 1발 데미지 — 100 HP 기준 10발 사망. */
 	constexpr float BulletDamage = 10.f;

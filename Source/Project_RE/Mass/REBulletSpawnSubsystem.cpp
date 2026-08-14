@@ -26,7 +26,7 @@ void UREBulletSpawnSubsystem::EnsureArchetype(FMassEntityManager& EntityManager)
 		FBulletTag::StaticStruct() });
 }
 
-FMassEntityHandle UREBulletSpawnSubsystem::SpawnBullet(FVector Location, FVector Velocity, float Lifetime)
+FMassEntityHandle UREBulletSpawnSubsystem::SpawnBullet(FVector Location, FVector Velocity, float Lifetime, float ColorSel)
 {
 	FMassEntityManager* EM = GetEntityManager();
 	if (!EM)
@@ -42,6 +42,7 @@ FMassEntityHandle UREBulletSpawnSubsystem::SpawnBullet(FVector Location, FVector
 	FBulletSimFragment& Sim = EM->GetFragmentDataChecked<FBulletSimFragment>(Entity);
 	Sim.Velocity = Velocity;
 	Sim.Lifetime = Lifetime;
+	Sim.ColorSel = ColorSel;
 	// FBulletRenderFragment.InstanceIndex는 기본값 INDEX_NONE 유지 (#17에서 할당).
 
 	return Entity;
@@ -51,7 +52,7 @@ void UREBulletSpawnSubsystem::SpawnBulletBatch(TConstArrayView<FBulletSpawnParam
 {
 	for (const FBulletSpawnParams& P : Params)
 	{
-		SpawnBullet(P.Location, P.Velocity, P.Lifetime);
+		SpawnBullet(P.Location, P.Velocity, P.Lifetime, P.ColorSel);
 	}
 }
 

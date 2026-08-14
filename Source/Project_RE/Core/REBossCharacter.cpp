@@ -420,7 +420,12 @@ void AREBossCharacter::Multicast_FireDirect_Implementation(EBulletPattern Patter
 	TArray<FBulletSpawnParams> Params;
 	if (Pattern == EBulletPattern::Spiral)
 	{
-		const REBulletPattern::FSpiralParams SP = REBulletPattern::MakeSpiralRing(Count, AngleDeg);
+		REBulletPattern::FSpiralParams SP = REBulletPattern::MakeSpiralRing(Count, AngleDeg);
+		// 발사 회차 패리티를 ServerTime 에서 뽑는다 — 이 함수는 서버와 클라 양쪽에서
+		// 같은 ServerTime 으로 실행되므로 별도 복제 없이 색이 일치한다 (#97).
+		// 카운터를 따로 두면 멀티캐스트 유실 시 클라마다 색이 어긋난다.
+		const float Interval = REBulletPattern::FireIntervalSec();
+		SP.ShotParity = (Interval > 0.f) ? (FMath::FloorToInt(ServerTime / Interval) & 1) : 0;
 		Params = REBulletPattern::GenerateSpiral(Origin, SP);
 	}
 	else if (Pattern == EBulletPattern::Fan)

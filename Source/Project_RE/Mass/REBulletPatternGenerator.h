@@ -27,6 +27,13 @@ namespace REBulletPattern
 		float AngleStepDeg = 22.5f;  // 탄 간 각 간격 (기본 360/16 = 균등 링)
 		float Speed        = 300.f;  // uu/s — 생성자가 Settings로 덮어씀
 		float Lifetime     = 3.f;    // s — 생성자가 Settings로 덮어씀
+		/**
+		 *  발사 회차 패리티(0/1). 색 체커보드의 한 축이다 (#97).
+		 *  탄은 두 방향으로 겹친다 — 방사(연속 발사)와 원주(링 내부). 회차 패리티와
+		 *  링 인덱스를 더해 홀짝을 내면 두 축 모두에서 인접 탄이 다른 색이 된다.
+		 *  호출자(Boss)가 ServerTime 으로 산출해 넣는다 — 서버·클라가 같은 값을 얻는다.
+		 */
+		int32 ShotParity   = 0;
 	};
 
 	struct FFanParams

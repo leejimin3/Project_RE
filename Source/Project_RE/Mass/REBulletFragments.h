@@ -13,6 +13,8 @@ struct FBulletSimFragment : public FMassFragment
 
 	FVector Velocity = FVector::ZeroVector;
 	float   Lifetime = 0.f;
+	/** 색 선택 0/1 — 스폰 시 고정. 매 프레임 파생하면 탄이 깜빡인다(나이 기반은 주기적으로 뒤집힌다) (#97). */
+	float   ColorSel = 0.f;
 };
 
 /** 탄막 렌더 상태. M1에서 ISM 인스턴스 인덱스로 사용한다. */
