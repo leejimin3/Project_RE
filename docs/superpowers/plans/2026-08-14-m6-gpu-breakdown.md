@@ -339,6 +339,24 @@ Expected: 각 줄의 live 값이 목표(1600 또는 5000)의 ±5% 안. 벗어난
 
 **"프로브 로그 없음"을 그냥 넘기지 마라.** 탄환이 안 채워진 채 잰 런은 빈 씬을 잰 것이고, #88이 고친 바로 그 실패 양식이다.
 
+- [ ] **Step 4b: 주입한 CVar가 실제로 적용됐는지 확인**
+
+커맨드라인에 들어간 것과 런타임에 먹은 것은 다르다. 이 확인이 없으면 **소거 런의 GPU가 base와 같을 때 "이 기능이 원인이 아니다"인지 "노브가 안 먹었다"인지 구분할 수 없다.** 결론을 통째로 뒤집는 모호함이다.
+
+```
+foreach ($cfg in @(@('nobloom','r.BloomQuality'), @('noshadow','r.ShadowQuality'), @('halfres','r.ScreenPercentage'))) {
+    Get-ChildItem ".\Saved\Profiling\RE_*_$($cfg[0])_*" -Directory | ForEach-Object {
+        $hit = @(Select-String -LiteralPath (Join-Path $_.FullName 'run.log') -Pattern ('^' + [regex]::Escape($cfg[1]) + ' = '))
+        if ($hit.Count -eq 0) { Write-Host ($_.Name + '  FAIL  ' + $cfg[1] + ' 적용 로그 없음') }
+        else { Write-Host ($_.Name + '  OK  ' + $hit[-1].Line.Trim()) }
+    }
+}
+```
+
+Expected: 6개 소거 런(부하 2 × 구성 3) 전부 `OK` 와 함께 `<cvar> = "<값>"` 줄이 보인다. Task 1 Step 6에서 확인한 형식이다 — 부팅 시 `LogConfig: Set CVar [[r.BloomQuality:5]]` 로 기본값이 잡히고, `-ExecCmds` 가 그 뒤에 `r.BloomQuality = "0"` 으로 덮는다.
+
+`FAIL` 이 하나라도 있으면 그 런의 숫자는 쓰지 말고 다시 돌려라.
+
 - [ ] **Step 5: 통계 표 2개 생성**
 
 ```
