@@ -32,8 +32,16 @@ scripts/profile.ps1 -Bullets 5000 -Actor   # Actor 베이스라인 (#45 비교�
 **워밍업 컷은 이제 필요 없다** (#88 이전에는 앞 120행을 버리라고 했다). 캡처가 보스의 라이브 탄환이 목표치에 도달한
 뒤에 시작하므로 첫 행부터 정상상태다. `frames.csv` 원본을 그대로 읽어라. (하네스는 여전히 수집만 하고 해석하지 않는다 — 해석은 #46.)
 
-캡처 시작 신호는 `AREBossCharacter::ResolveSpiralCount()` 가 채움 구간을 벗어나는 순간 한 번 쏘는 `CSV_EVENT_GLOBAL(TEXT("REBulletsFilled"))` 다.
-이벤트 이름을 바꾸면 `profile.ps1` 의 `-csvStartOnEvent` 도 같이 바꿔야 한다 — 엔진은 **대소문자 무시 완전일치**로만 건다.
+캡처 시작 신호는 `CSV_EVENT_GLOBAL(TEXT("REBulletsFilled"))` 이고, **두 경로가 각각 쏜다**:
+
+| 경로 | 발화 지점 | 채움 완료 조건 |
+|---|---|---|
+| Mass | `AREBossCharacter::ResolveSpiralCount()` | 피드포워드 채움 구간을 벗어나는 샷 |
+| Actor (`-Actor`) | `UREActorBulletSpawner::Fire()` | `Lifetime / 0.1s` 번째 샷 |
+
+한 실행에서 한 경로만 돈다 — `profile.ps1` 이 반대쪽 CVar를 0으로 죽이고, 죽은 쪽은 발사 함수가 즉시 return 한다.
+**한쪽에만 신호를 넣으면 다른 경로의 캡처는 영원히 시작되지 않는다** (`-Actor` 가 그렇게 한 번 죽었다).
+이벤트 이름을 바꾸면 `profile.ps1` 의 `-csvStartOnEvent` 와 두 발화 지점을 **전부** 같이 바꿔야 한다 — 엔진은 **대소문자 무시 완전일치**로만 건다.
 
 ## Insights 로 읽는 법
 

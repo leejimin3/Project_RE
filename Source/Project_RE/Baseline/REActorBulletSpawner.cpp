@@ -7,6 +7,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"                // TActorIterator
 #include "TimerManager.h"
+#include "ProfilingDebugging/CsvProfiler.h"   // 채움 완료 시점에 캡처 시작 신호 (#88)
 
 namespace
 {
@@ -71,7 +72,7 @@ void UREActorBulletSpawner::Fire()
 		return;
 	}
 
-	REBulletPattern::FSpiralParams SP;  // Speed 300 / Lifetime 3 = 기본값 = Mass와 동일
+	REBulletPattern::FSpiralParams SP;  // Speed/Lifetime을 Settings에서 읽는다 = Mass와 동일 출처
 
 	// 정상상태 탄 수 = PerShot * (Lifetime / Interval). 목표 Target을 만족하는 PerShot 역산.
 	// 소수부는 누산해 다음 발사로 넘긴다 (매번 올림하면 목표를 최대 +30% 초과한다).
@@ -110,5 +111,14 @@ void UREActorBulletSpawner::Fire()
 			++Live;
 		}
 		UE_LOG(LogTemp, Log, TEXT("[RE] ActorBulletProbe: live=%d target=%d perShot=%d"), Live, Target, N);
+	}
+
+	// 채움 완료 = 정상상태 진입. 프로파일 캡처가 이 이벤트에서 시작한다 (-csvStartOnEvent, #88).
+	// Mass 경로(REBossCharacter::ResolveSpiralCount)와 같은 이름을 쏜다 — 한 실행에서 두 경로 중
+	// 하나만 도므로(profile.ps1 이 반대쪽 CVar를 0으로 죽인다) 이름이 겹쳐도 두 번 걸리지 않는다.
+	// 이 경로에도 신호가 없으면 -Actor 캡처는 영원히 시작되지 않는다.
+	if (FireCount == FMath::CeilToInt(SP.Lifetime / ActorFireIntervalSec))
+	{
+		CSV_EVENT_GLOBAL(TEXT("REBulletsFilled"));
 	}
 }
