@@ -73,15 +73,30 @@ col_a.set_editor_property("parameter_name", "Color")
 # 발광 세기. 스윕 실측(스크린샷 6종)으로 정한 값이다:
 #   1.00 - 블룸이 코어를 하얗게 씻어 색 구분이 안 된다
 #   0.50 - 파스텔로 뜬다. 구분은 되지만 채도가 약하다
-#   0.15 - 선명한 빨강/파랑. 탄 하나하나가 완전히 분리된다  <- 채택
+#   0.15 - 선명한 빨강/파랑. 분리는 완벽하나 원색이라 톤이 강하다
+#   0.18 + desat 0.40 - 부드러운 분홍/하늘. 분리 유지          <- 채택
 #   0.08 - 선명하지만 약간 어둡다
+# 주의: 밝기와 파스텔화는 곱해진다. sat 0.35 + desat 0.35 는 다시 흰색으로 씻긴다
+# (실측). 파스텔은 밝기가 아니라 색 자체로 만들어야 한다.
 # 씬 바닥이 검어서 낮은 값도 충분히 보인다. 올리면 블룸이 채도를 먹는다.
-SAT = _arg("sat", 0.15)
-col_a.set_editor_property("default_value", unreal.LinearColor(1.0 * SAT, 0.06 * SAT, 0.06 * SAT, 1.0))
+SAT = _arg("sat", 0.18)
+# 파스텔 정도. 0 = 순색, 1 = 흰색. 색을 흰쪽으로 당겨 톤을 부드럽게 한다.
+# 발광을 올려 흰색을 섞으면 블룸이 코어를 씻어 색 구분이 죽으므로, 밝기가 아니라
+# 색 자체로 파스텔을 만든다.
+DESAT = _arg("desat", 0.40)
+
+
+def _pastel(r, g, b):
+    return unreal.LinearColor((r + (1.0 - r) * DESAT) * SAT,
+                              (g + (1.0 - g) * DESAT) * SAT,
+                              (b + (1.0 - b) * DESAT) * SAT, 1.0)
+
+
+col_a.set_editor_property("default_value", _pastel(1.0, 0.06, 0.06))
 
 col_b = mel.create_material_expression(mat, unreal.MaterialExpressionVectorParameter, -1050, 60)
 col_b.set_editor_property("parameter_name", "ColorB")
-col_b.set_editor_property("default_value", unreal.LinearColor(0.06 * SAT, 0.25 * SAT, 1.0 * SAT, 1.0))
+col_b.set_editor_property("default_value", _pastel(0.06, 0.25, 1.0))
 
 sel = mel.create_material_expression(mat, unreal.MaterialExpressionPerInstanceCustomData, -1050, 200)
 sel.set_editor_property("data_index", 1)
