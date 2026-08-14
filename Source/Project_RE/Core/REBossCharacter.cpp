@@ -9,6 +9,7 @@
 #include "RECharacterBase.h"
 #include "HAL/IConsoleManager.h"
 #include "REBulletRenderSubsystem.h"                        // 라이브 카운트(ISM) 조회 (#51)
+#include "ProfilingDebugging/CsvProfiler.h"                 // 채움 완료 시점에 캡처 시작 신호 (#88)
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
@@ -35,8 +36,10 @@ static TAutoConsoleVariable<int32> CVarBulletCount(
 // 튜닝 노브(리빌드 없이 -ExecCmds로 스윕). 기본값은 실측으로 확정.
 static TAutoConsoleVariable<float> CVarSpawnKi(
 	TEXT("re.Bullets.SpawnKi"),
-	0.004f,   // 실측 확정: fill-phase 안티와인드업과 함께 1000/5000 모두 ±0.5%, 100 -6%(짧은 창). 0.008은 진동.
-	TEXT("스폰 적분 게인 Ki. 라이브 카운트 목표 수렴 속도/안정성."),
+	3.6f,     // 무차원 루프게인(코드에서 N^2 으로 나눈다, N=수명/발사간격). 설정을 바꿔도 안정성 불변.
+	          // 3.6 = 07-16 실측 확정값 0.004 를 당시 설정(3.0/0.1, N=30)에서 환산한 것: 30^2*0.004.
+	          // 당시 측정: 1000/5000 모두 ±0.5%, 100 -6%(짧은 창). 배증(7.2)은 진동.
+	TEXT("스폰 적분 루프게인(무차원). 라이브 카운트 목표 수렴 속도/안정성."),
 	ECVF_Cheat);
 
 AREBossCharacter::AREBossCharacter()
@@ -362,14 +365,28 @@ int32 AREBossCharacter::ResolveSpiralCount()
 			// 클로즈드루프(적분 제어): 스폰율을 오차만큼 램프. 소멸률이 얼마든 라이브=목표에서 램프가 멎어 정상상태 오차 0.
 			// 단, 첫 1수명 동안은 아직 탄환이 채워지는 중이라 오차가 크게 양수 → 적분하면 와인드업으로 대폭 오버슈트한다.
 			// 그 구간은 피드포워드로 채우기만 하고, 채워진 뒤(정상상태 근처)부터 적분으로 소멸분을 보정한다.
-			const int32 FillShots = FMath::CeilToInt(REBulletPattern::BulletLifetimeSec() / REBulletPattern::FireIntervalSec());
+			//
+			// 1수명당 발사 수 N = 이 루프의 데드타임(발사한 탄이 소멸로 되돌아오기까지 걸리는 샷 수)이자
+			// 스폰율→라이브 카운트의 정상상태 이득(live = rate * N)이다. 그래서 원시 게인의 루프게인은
+			// N^2 에 비례해 커진다 — Ki 를 N^2 으로 나눠 무차원화해야 설정과 무관하게 안정성이 고정된다.
+			// 안 하면 Lifetime/Interval 을 바꾸는 순간 조용히 진동한다: 실제로 3.0/0.1(N=30, 루프게인 3.6)
+			// 에서 튜닝한 값이 15.0/0.15(N=100) 로 바뀌며 루프게인 40 이 되어 388~1802 리밋사이클에 빠졌고,
+			// 프로파일 측정이 통째로 무의미해졌다 (#88).
+			const float ShotsPerLife = REBulletPattern::BulletLifetimeSec() / REBulletPattern::FireIntervalSec();
+			const int32 FillShots = FMath::CeilToInt(ShotsPerLife);
 			if (SpiralShotCount < FillShots)
 			{
 				SpiralSpawnRate = FeedFwd;
 			}
 			else
 			{
-				SpiralSpawnRate += CVarSpawnKi.GetValueOnGameThread() * (TargetLive - CurrentLive);
+				// 채움 완료 = 정상상태 진입. 프로파일 캡처는 이 이벤트에서 시작한다(-csvStartOnEvent, #88).
+				// SpiralShotCount 는 매 호출 증가하므로 정확히 한 번만 발화한다.
+				if (SpiralShotCount == FillShots)
+				{
+					CSV_EVENT_GLOBAL(TEXT("REBulletsFilled"));
+				}
+				SpiralSpawnRate += CVarSpawnKi.GetValueOnGameThread() / (ShotsPerLife * ShotsPerLife) * (TargetLive - CurrentLive);
 				SpiralSpawnRate = FMath::Clamp(SpiralSpawnRate, 0.f, (float)TargetLive);  // anti-windup 상한
 			}
 			// 소수부 이월 내림 — 소형 타깃(rate~3.3)에서 round()가 매 발사 4로 올려 +20% 오버슛하는 것 방지.

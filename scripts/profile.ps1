@@ -9,13 +9,14 @@
 #>
 param(
     [int]$Bullets = 1000,
-    # 캡처 총 프레임 = 워밍업 120 + 측정 600. docs/guides/profiling.md 참조.
+    # 캡처 프레임 수. 캡처가 탄환 채움 완료 시점에 시작하므로(#88) 전량이 정상상태 측정분이다.
+    # docs/guides/profiling.md 참조.
     [int]$Frames  = 720,
     # 하드 타임아웃(초). 5000발 저FPS 여유 포함.
     [int]$TimeoutSec = 300,
     # Actor 베이스라인(#45) 경로 측정. Mass boss(기본 480발)를 0으로 죽이고 액터만 스폰.
     [switch]$Actor,
-    # 스폰 적분 게인 Ki 오버라이드(튜닝용). 0 이하면 빌드 기본값 사용.
+    # 스폰 적분 루프게인 오버라이드(튜닝용, 무차원 — #88 이후 설정 무관). 0 이하면 빌드 기본값 사용.
     [double]$Ki = 0
 )
 
@@ -24,11 +25,15 @@ $ErrorActionPreference = 'Stop'
 $Root     = Split-Path $PSScriptRoot -Parent
 $Editor   = 'E:\UnrealEngine-5.8\UnrealEngine-5.8\Engine\Binaries\Win64\UnrealEditor.exe'
 $Uproject = Join-Path $Root 'Project_RE.uproject'
-# 엔진 CSV 프로파일러는 프로젝트 Saved 가 아니라 엔진 유저 디렉터리에 쓴다 (로그로 관측).
-# 프로젝트 쪽도 같이 훑는다 — 엔진 설정이 바뀌면 그쪽으로 떨어질 수 있다.
+# 엔진 CSV 프로파일러가 어디에 쓰는지는 엔진 빌드 종류에 달렸다 (#88).
+#   런처 바이너리 빌드 → 엔진 "유저" 디렉터리(%LOCALAPPDATA%)
+#   소스 빌드         → 엔진 트리 자신의 Engine\Saved (M4에서 Server 타깃 때문에 소스 빌드로 갈아탔다)
+# 셋 다 훑는다. 하나만 보면 CSV 가 정상 기록됐는데도 "안 나옴" 으로 오진한다.
+$EngineDir = Split-Path (Split-Path (Split-Path $Editor -Parent) -Parent) -Parent
 $CsvDirs  = @(
     (Join-Path $env:LOCALAPPDATA 'UnrealEngine\5.8\Saved\Profiling\CSV'),
-    (Join-Path $Root 'Saved\Profiling\CSV')
+    (Join-Path $Root 'Saved\Profiling\CSV'),
+    (Join-Path $EngineDir 'Saved\Profiling\CSV')
 )
 
 if (-not (Test-Path $Editor))   { throw "에디터 없음: $Editor" }
@@ -65,7 +70,11 @@ $ArgLine = @(
     '-trace=cpu,frame,counters',
     '-statnamedevents',
     "-tracefile=`"$TracePath`"",
-    "-csvCaptureFrames=$Frames",
+    # 부팅 시점에 캡처를 시작하면(-csvCaptureFrames) 창의 대부분이 빈 씬이다 — 실측 17.9초 창 중
+    # 13.3초가 보스 발사 전이었다 (#88). 보스가 목표 탄수를 다 채운 순간 CSV_EVENT 를 쏘고
+    # 거기서부터 캡처한다. -csvCaptureFrames 와 병용 불가(이미 녹화 중이면 이벤트가 안 걸린다).
+    "-csvStartOnEvent=REBulletsFilled",
+    "-csvCaptureOnEventFrameCount=$Frames",
     "-ExecCmds=`"$ExecCmd`"",
     "-abslog=`"$LogPath`"",
     # -unattended 는 절대 넣지 마라: REPlayerController 의 headless 프로브가 켜지고
