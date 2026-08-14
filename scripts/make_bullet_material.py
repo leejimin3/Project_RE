@@ -10,6 +10,14 @@ M_REBullet 부트스트랩 생성 (#97).
 """
 import unreal
 
+def _arg(name, default):
+    """커맨드라인에서 --name=값 을 읽는다. 튜닝 스윕을 리빌드 없이 돌리기 위한 것이다."""
+    for tok in unreal.SystemLibrary.get_command_line().split():
+        if tok.startswith("--%s=" % name):
+            return float(tok.split("=", 1)[1])
+    return default
+
+
 PKG = "/Game/Materials"
 NAME = "M_REBullet"
 FULL = PKG + "/" + NAME
@@ -62,11 +70,18 @@ def _link_prop(frm, frm_out, prop):
 # 읽힌다 - 탄 간격(30uu) < 지름(50uu) 이라 기하학적으로 겹치는 것을 색으로 가르는 것이다.
 col_a = mel.create_material_expression(mat, unreal.MaterialExpressionVectorParameter, -1050, -80)
 col_a.set_editor_property("parameter_name", "Color")
-col_a.set_editor_property("default_value", unreal.LinearColor(1.0, 0.12, 0.12, 1.0))
+# 발광 세기. 스윕 실측(스크린샷 6종)으로 정한 값이다:
+#   1.00 - 블룸이 코어를 하얗게 씻어 색 구분이 안 된다
+#   0.50 - 파스텔로 뜬다. 구분은 되지만 채도가 약하다
+#   0.15 - 선명한 빨강/파랑. 탄 하나하나가 완전히 분리된다  <- 채택
+#   0.08 - 선명하지만 약간 어둡다
+# 씬 바닥이 검어서 낮은 값도 충분히 보인다. 올리면 블룸이 채도를 먹는다.
+SAT = _arg("sat", 0.15)
+col_a.set_editor_property("default_value", unreal.LinearColor(1.0 * SAT, 0.06 * SAT, 0.06 * SAT, 1.0))
 
 col_b = mel.create_material_expression(mat, unreal.MaterialExpressionVectorParameter, -1050, 60)
 col_b.set_editor_property("parameter_name", "ColorB")
-col_b.set_editor_property("default_value", unreal.LinearColor(0.12, 0.4, 1.0, 1.0))
+col_b.set_editor_property("default_value", unreal.LinearColor(0.06 * SAT, 0.25 * SAT, 1.0 * SAT, 1.0))
 
 sel = mel.create_material_expression(mat, unreal.MaterialExpressionPerInstanceCustomData, -1050, 200)
 sel.set_editor_property("data_index", 1)
@@ -87,7 +102,7 @@ _link(rim_pow, "", fr, "ExponentIn")
 
 rim_str = mel.create_material_expression(mat, unreal.MaterialExpressionScalarParameter, -800, 400)
 rim_str.set_editor_property("parameter_name", "RimStrength")
-rim_str.set_editor_property("default_value", 3.0)
+rim_str.set_editor_property("default_value", _arg("rim", 1.0))   # 스윕 실측: 3.0 은 가장자리가 과하게 튄다
 
 # 림 기여: 1 + Fresnel * RimStrength -> 중심은 기본 밝기, 가장자리만 솟는다.
 rim_mul = mel.create_material_expression(mat, unreal.MaterialExpressionMultiply, -560, 300)

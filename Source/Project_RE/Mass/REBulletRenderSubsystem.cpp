@@ -50,9 +50,10 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	{
 		if (UMaterialInstanceDynamic* Dyn = ISM->CreateDynamicMaterialInstance(0, Base))
 		{
-			// 인접 탄을 두 색으로 교차시켜 겹침을 읽히게 한다 — 커스텀데이터 [1] 이 고른다 (#97).
-			Dyn->SetVectorParameterValue(TEXT("Color"),  FLinearColor(1.f, 0.12f, 0.12f));  // 빨강
-			Dyn->SetVectorParameterValue(TEXT("ColorB"), FLinearColor(0.12f, 0.4f, 1.f));   // 파랑
+			// 직선탄 색은 덮어쓰지 않는다 — 머티리얼 기본값(Color/ColorB)이 정본이다.
+			// 에디터에서 색·림을 조정하면 코드 수정 없이 바로 반영된다. 인접 탄을 두 색으로
+			// 교차시켜 겹침을 읽히게 하며, 어느 색을 쓸지는 커스텀데이터 [1] 이 고른다 (#97).
+			(void)Dyn;
 		}
 	}
 	else
