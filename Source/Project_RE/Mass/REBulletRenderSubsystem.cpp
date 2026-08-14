@@ -42,15 +42,17 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	{
 		ISM->SetStaticMesh(Mesh);
 	}
-	// 퍼인스턴스 커스텀데이터 0번 = 스폰 팝. 머티리얼이 이 슬롯을 읽는다 (#97).
-	ISM->SetNumCustomDataFloats(1);
+	// 퍼인스턴스 커스텀데이터 [0]=스폰 팝, [1]=색 선택. 머티리얼이 두 슬롯을 읽는다 (#97).
+	ISM->SetNumCustomDataFloats(2);
 
 	// 탄막 전용 머티리얼(#97) — 언릿 발광 + 프레넬 림. 겹친 탄 사이 경계가 보이게 한다.
 	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_REBullet.M_REBullet")))
 	{
 		if (UMaterialInstanceDynamic* Dyn = ISM->CreateDynamicMaterialInstance(0, Base))
 		{
-			Dyn->SetVectorParameterValue(TEXT("Color"), FLinearColor::Red);  // 탄환 빨강
+			// 인접 탄을 두 색으로 교차시켜 겹침을 읽히게 한다 — 커스텀데이터 [1] 이 고른다 (#97).
+			Dyn->SetVectorParameterValue(TEXT("Color"),  FLinearColor(1.f, 0.12f, 0.12f));  // 빨강
+			Dyn->SetVectorParameterValue(TEXT("ColorB"), FLinearColor(0.12f, 0.4f, 1.f));   // 파랑
 		}
 	}
 	else
@@ -71,13 +73,15 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	{
 		ArcISM->SetStaticMesh(Mesh);
 	}
-	ArcISM->SetNumCustomDataFloats(1);   // 스폰 팝 (#97)
+	ArcISM->SetNumCustomDataFloats(2);   // [0]=스폰 팝, [1]=색 선택(곡사탄은 항상 0) (#97)
 
 	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_REBullet.M_REBullet")))
 	{
 		if (UMaterialInstanceDynamic* Dyn = ArcISM->CreateDynamicMaterialInstance(0, Base))
 		{
-			Dyn->SetVectorParameterValue(TEXT("Color"), FLinearColor(1.f, 0.5f, 0.f));  // 주황
+			// 곡사탄은 색 교차를 쓰지 않는다 — 두 색을 같게 둬서 커스텀데이터와 무관하게 단색.
+			Dyn->SetVectorParameterValue(TEXT("Color"),  FLinearColor(1.f, 0.5f, 0.f));  // 주황
+			Dyn->SetVectorParameterValue(TEXT("ColorB"), FLinearColor(1.f, 0.5f, 0.f));
 		}
 	}
 	else

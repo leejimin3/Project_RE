@@ -72,7 +72,10 @@ void UREArcRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 			BulletXf.Add(B);
 
 			// 곡사탄은 Elapsed 가 곧 나이다(0 에서 시작해 FlightTime 까지 증가).
+			// 커스텀데이터는 인스턴스당 [0]=스폰팝, [1]=색선택 으로 인터리브된다.
+			// 곡사탄은 색 교차를 쓰지 않으므로 항상 0 — 두 색을 같게 둬서 단색으로 보인다 (#97).
 			BulletPop.Add(FMath::Clamp(A[i].Elapsed / ArcPopDuration, 0.f, 1.f));
+			BulletPop.Add(0.f);
 
 			// 마커: Target 바닥, 반경=Radius(Cylinder 스케일), 낮은 원판.
 			const float RadScale = A[i].Radius / CylinderBaseRadius;

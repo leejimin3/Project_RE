@@ -14,14 +14,16 @@ CSV_DECLARE_CATEGORY_EXTERN(REBullet);  // 정의는 REBulletSimProcessor.cpp
 
 namespace
 {
-	/** 탄환 인스턴스 스케일 — 엔진 Sphere(반경 50cm)를 반경 ~25cm로 축소. #17: 0.2는 카메라 거리서 sub-pixel이라 0.5로 상향. */
-	// 탄 간격 = BulletSpeed(200) x BossFireInterval(0.15) = 30uu.
-	// 구체 기본 지름 100uu 이므로 스케일이 0.3 을 넘으면 연속된 탄이 물리적으로 겹쳐
-	// 진행 방향으로 하나의 튜브가 된다 — 어떤 셰이딩으로도 못 가른다(0.5 일 때 실제로 그랬다).
-	// 0.2 = 지름 20uu → 틈 10uu(간격의 33%)로 개별 오브젝트로 읽힌다 (#97).
-	// 바꾸면 REBulletHitProcessor 의 HitRadius 와 Baseline/REBulletActor 의
-	// ActorBulletScale 도 같이 맞춰야 한다.
-	constexpr float BulletScale = 0.2f;
+	/**
+	 *  탄환 인스턴스 스케일 — 엔진 Sphere(지름 100cm)를 지름 50cm로. #17: 0.2는 카메라 거리서 sub-pixel이라 0.5로 상향.
+	 *
+	 *  탄이 서로 겹친다: 간격 = BulletSpeed(200) × BossFireInterval(0.15) = 30uu < 지름 50uu.
+	 *  겹침 자체는 의도적으로 허용한다 — 축소해서 틈을 만들면(0.2 시도) 탄이 너무 작아
+	 *  탄막의 압도적인 인상이 사라진다. 대신 인접 탄을 **다른 색으로 교차**시켜 가른다(#97).
+	 *  바꾸면 REBulletHitProcessor 의 HitRadius 와 Baseline/REBulletActor 의
+	 *  ActorBulletScale 도 같이 맞춰야 한다.
+	 */
+	constexpr float BulletScale = 0.5f;
 }
 
 UREBulletRenderProcessor::UREBulletRenderProcessor()
@@ -61,10 +63,11 @@ void UREBulletRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassE
 	constexpr float PopDuration = 0.1f;
 	const float TotalLife = REBulletPattern::BulletLifetimeSec();
 
-	// 1) live 탄환 트랜스폼 + 스폰 팝 수집 (청크를 가로질러 누적 → 전역 인스턴스 인덱스 연속).
+	// 1) live 탄환 트랜스폼 + 커스텀데이터 수집 (청크를 가로질러 누적 → 전역 인스턴스 인덱스 연속).
+	// 커스텀데이터는 인스턴스당 연속으로 인터리브된다: [0]=스폰팝, [1]=색선택.
 	TArray<FTransform> Xf;
-	TArray<float> Pop;
-	EntityQuery.ForEachEntityChunk(Context, [&Xf, &Pop, TotalLife](FMassExecutionContext& Ctx)
+	TArray<float> Cd;
+	EntityQuery.ForEachEntityChunk(Context, [&Xf, &Cd, TotalLife](FMassExecutionContext& Ctx)
 	{
 		const int32 Num = Ctx.GetNumEntities();
 		const TConstArrayView<FTransformFragment> T = Ctx.GetFragmentView<FTransformFragment>();
@@ -77,7 +80,8 @@ void UREBulletRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassE
 
 			// Lifetime 은 잔여시간(REBulletSimProcessor 가 Dt 만큼 감소) → 나이 = 총수명 - 잔여
 			const float Age = TotalLife - S[i].Lifetime;
-			Pop.Add(FMath::Clamp(Age / PopDuration, 0.f, 1.f));
+			Cd.Add(FMath::Clamp(Age / PopDuration, 0.f, 1.f));   // [0] 스폰 팝
+			Cd.Add(S[i].ColorSel);                                // [1] 색 선택(스폰 시 고정)
 		}
 	});
 
@@ -94,7 +98,7 @@ void UREBulletRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassE
 	{
 		// 커스텀데이터를 먼저 쓰고 트랜스폼을 나중에 쓴다 — dirty 마크는 트랜스폼 호출이 담당한다.
 		// 위 while 루프가 인스턴스 수를 이미 M 으로 맞췄으므로 인덱스 범위가 유효하다.
-		ISM->SetCustomData(0, M - 1, Pop, /*bMarkRenderStateDirty=*/false);
+		ISM->SetCustomData(0, M - 1, Cd, /*bMarkRenderStateDirty=*/false);
 		ISM->BatchUpdateInstancesTransforms(0, Xf, /*bWorldSpace=*/true,
 			/*bMarkRenderStateDirty=*/true, /*bTeleport=*/true);
 	}

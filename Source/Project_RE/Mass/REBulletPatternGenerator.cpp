@@ -46,7 +46,9 @@ namespace REBulletPattern
 		for (int32 i = 0; i < P.Count; ++i)
 		{
 			const float Angle = P.BaseAngleDeg + i * P.AngleStepDeg;
-			Out.Add({ Origin, DirFromDeg(Angle) * P.Speed, P.Lifetime });
+			// 체커보드 — 방사(회차)와 원주(링 인덱스) 두 축 모두에서 인접 탄이 다른 색이 된다 (#97).
+			const float ColorSel = float((P.ShotParity + i) & 1);
+			Out.Add({ Origin, DirFromDeg(Angle) * P.Speed, P.Lifetime, ColorSel });
 		}
 		return Out;
 	}

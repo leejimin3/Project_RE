@@ -15,8 +15,12 @@ NAME = "M_REBullet"
 FULL = PKG + "/" + NAME
 
 if unreal.EditorAssetLibrary.does_asset_exist(FULL):
-    unreal.log_error("RE_MAT: 이미 존재한다 - 수동 튜닝을 덮어쓰지 않으려고 중단한다: %s" % FULL)
-    raise SystemExit(1)
+    if "--force" not in unreal.SystemLibrary.get_command_line().split():
+        unreal.log_error("RE_MAT: 이미 존재한다 - 수동 튜닝을 덮어쓰지 않으려고 중단한다: %s" % FULL)
+        unreal.log_error("RE_MAT: 재생성이 정말 필요하면 커맨드라인에 --force 를 넣어라.")
+        raise SystemExit(1)
+    unreal.log_warning("RE_MAT: --force - 기존 에셋을 지우고 재생성한다: %s" % FULL)
+    unreal.EditorAssetLibrary.delete_asset(FULL)
 
 tools = unreal.AssetToolsHelpers.get_asset_tools()
 mat = tools.create_asset(NAME, PKG, unreal.Material, unreal.MaterialFactoryNew())
@@ -31,9 +35,24 @@ mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
 
 mel = unreal.MaterialEditingLibrary
 
-col = mel.create_material_expression(mat, unreal.MaterialExpressionVectorParameter, -800, 0)
-col.set_editor_property("parameter_name", "Color")
-col.set_editor_property("default_value", unreal.LinearColor(1.0, 0.15, 0.15, 1.0))
+# 두 색을 커스텀데이터 [1] 로 고른다. 인접 탄이 다른 색이 되어야 겹쳐도 개별 오브젝트로
+# 읽힌다 - 탄 간격(30uu) < 지름(50uu) 이라 기하학적으로 겹치는 것을 색으로 가르는 것이다.
+col_a = mel.create_material_expression(mat, unreal.MaterialExpressionVectorParameter, -1050, -80)
+col_a.set_editor_property("parameter_name", "Color")
+col_a.set_editor_property("default_value", unreal.LinearColor(1.0, 0.12, 0.12, 1.0))
+
+col_b = mel.create_material_expression(mat, unreal.MaterialExpressionVectorParameter, -1050, 60)
+col_b.set_editor_property("parameter_name", "ColorB")
+col_b.set_editor_property("default_value", unreal.LinearColor(0.12, 0.4, 1.0, 1.0))
+
+sel = mel.create_material_expression(mat, unreal.MaterialExpressionPerInstanceCustomData, -1050, 200)
+sel.set_editor_property("data_index", 1)
+sel.set_editor_property("const_default_value", 0.0)
+
+col = mel.create_material_expression(mat, unreal.MaterialExpressionLinearInterpolate, -800, 0)
+mel.connect_material_expressions(col_a, "", col, "A")
+mel.connect_material_expressions(col_b, "", col, "B")
+mel.connect_material_expressions(sel, "", col, "Alpha")
 
 # 프레넬 - 실루엣 가장자리를 밝힌다. 인접한 동일 색 구체 사이에 경계선이 생기는 원리.
 fr = mel.create_material_expression(mat, unreal.MaterialExpressionFresnel, -800, 220)

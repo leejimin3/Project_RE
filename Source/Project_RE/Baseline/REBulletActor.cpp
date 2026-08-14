@@ -8,7 +8,7 @@
 namespace
 {
 	/** Mass와 동일 — REBulletRenderProcessor.cpp:14 BulletScale. */
-	constexpr float ActorBulletScale = 0.2f;  // 이름은 Mass 쪽 익명 네임스페이스 BulletScale과 유니티 빌드에서 충돌해 구분
+	constexpr float ActorBulletScale = 0.5f;  // 이름은 Mass 쪽 익명 네임스페이스 BulletScale과 유니티 빌드에서 충돌해 구분
 }
 
 AREBulletActor::AREBulletActor()

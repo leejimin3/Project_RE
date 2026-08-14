@@ -15,6 +15,8 @@ struct FBulletSpawnParams
 	FVector Location = FVector::ZeroVector;
 	FVector Velocity = FVector::ZeroVector;
 	float   Lifetime = 0.f;
+	/** 색 선택 0/1 — 머티리얼이 두 색을 Lerp 한다. 인접 탄을 다른 색으로 갈라 겹침을 읽히게 한다 (#97). */
+	float   ColorSel = 0.f;
 };
 
 /**
@@ -28,7 +30,7 @@ class UREBulletSpawnSubsystem : public UWorldSubsystem
 
 public:
 	/** 탄환 1발 스폰 + Fragment 초기값 주입. EntityManager 없으면 무효 핸들 반환. */
-	FMassEntityHandle SpawnBullet(FVector Location, FVector Velocity, float Lifetime);
+	FMassEntityHandle SpawnBullet(FVector Location, FVector Velocity, float Lifetime, float ColorSel = 0.f);
 
 	/** N발 배치 스폰. 내부는 SpawnBullet 루프(배치 최적화는 YAGNI). */
 	void SpawnBulletBatch(TConstArrayView<FBulletSpawnParams> Params);
