@@ -15,7 +15,13 @@ CSV_DECLARE_CATEGORY_EXTERN(REBullet);  // 정의는 REBulletSimProcessor.cpp
 namespace
 {
 	/** 탄환 인스턴스 스케일 — 엔진 Sphere(반경 50cm)를 반경 ~25cm로 축소. #17: 0.2는 카메라 거리서 sub-pixel이라 0.5로 상향. */
-	constexpr float BulletScale = 0.5f;
+	// 탄 간격 = BulletSpeed(200) x BossFireInterval(0.15) = 30uu.
+	// 구체 기본 지름 100uu 이므로 스케일이 0.3 을 넘으면 연속된 탄이 물리적으로 겹쳐
+	// 진행 방향으로 하나의 튜브가 된다 — 어떤 셰이딩으로도 못 가른다(0.5 일 때 실제로 그랬다).
+	// 0.2 = 지름 20uu → 틈 10uu(간격의 33%)로 개별 오브젝트로 읽힌다 (#97).
+	// 바꾸면 REBulletHitProcessor 의 HitRadius 와 Baseline/REBulletActor 의
+	// ActorBulletScale 도 같이 맞춰야 한다.
+	constexpr float BulletScale = 0.2f;
 }
 
 UREBulletRenderProcessor::UREBulletRenderProcessor()
