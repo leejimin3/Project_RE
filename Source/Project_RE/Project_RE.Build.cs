@@ -23,6 +23,7 @@ public class Project_RE : ModuleRules
 			"MassEntity",
 			"MassCore",
 			"GameplayAbilities",
+			"Niagara",
 			"GameplayTags",
 			"GameplayTasks",
 			"NavigationSystem",
