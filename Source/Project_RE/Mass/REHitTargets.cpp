@@ -6,6 +6,7 @@
 #include "AbilitySystemComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "EngineUtils.h"   // TActorIterator — 클라에서도 전원 탐지 (#98)
 
 void GatherHitTargets(const UWorld* World, TArray<FREHitTarget>& Out)
 {
@@ -15,13 +16,12 @@ void GatherHitTargets(const UWorld* World, TArray<FREHitTarget>& Out)
 		return;
 	}
 
-	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+	// 컨트롤러가 아니라 캐릭터를 순회한다 — 클라에서 GetPlayerControllerIterator 는
+	// 로컬 컨트롤러 하나만 돌려주므로, 그대로 두면 클라 판정(#98)이 동료 피격을 놓친다.
+	// 서버에서는 결과가 같다(플레이어 폰은 전부 ARECharacterBase).
+	for (TActorIterator<ARECharacterBase> It(World); It; ++It)
 	{
-		if (!It->IsValid())
-		{
-			continue;   // 접속 종료 중인 PC가 섞일 수 있다
-		}
-		ARECharacterBase* Player = Cast<ARECharacterBase>(It->Get()->GetPawn());
+		ARECharacterBase* Player = *It;
 		if (!Player || !Player->IsAlive())
 		{
 			// 사망자 제외 — 시체가 탄을 흡수해 뒤에 선 생존자를 가리지 않게 한다.
