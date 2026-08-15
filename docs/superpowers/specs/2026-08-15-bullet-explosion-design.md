@@ -97,7 +97,9 @@ FX 프로세서가 `Standalone | Client` 라 데디서버에서 아예 실행되
 
 ## 7. 규모 한계와 상향 경로
 
-**개별 스폰(`SpawnSystemAtLocation`)은 호출마다 컴포넌트를 만든다.** 스레드를 어디에 두든 수천 개는 무너진다.
+**개별 스폰은 호출마다 컴포넌트를 만든다** — 스레드를 어디에 두든 수천 개는 무너진다. 다만 엔진에 **컴포넌트 풀링이 내장돼 있다**: `SpawnSystemAtLocation(..., ENCPoolMethod PoolingMethod)` 에 `AutoRelease` 를 주면 풀에서 꺼내 쓰고 자동 반납한다(엔진 주석: *one-shot fx that you don't need to keep a reference to and can fire and forget*).
+
+**처음부터 `AutoRelease` 를 쓴다.** 인자 하나이고, 안 쓸 이유가 없다. 이것만으로 개별 스폰의 실용 상한이 크게 올라간다.
 
 현재 규모는 작다:
 
@@ -112,8 +114,11 @@ FX 프로세서가 `Standalone | Client` 라 데디서버에서 아예 실행되
 
 | 규모 | 방식 |
 |---|---|
-| 수십 (현재) | `SpawnSystemAtLocation` 개별 |
-| 수백~수천 | 영속 시스템 1개 + NDC 로 위치 배열 주입 (#50 에서 검토한 기술) |
+| 수십 (현재) | `SpawnSystemAtLocation` + `ENCPoolMethod::AutoRelease` |
+| 수백~ (측정으로 확인) | 위와 동일. 풀링이 어디까지 버티는지가 §9 측정 항목이다 |
+| 그 위 | 영속 시스템 1개 + NDC 로 위치 배열 주입 (#50 에서 검토한 기술) |
+
+**중간 단계가 공짜로 존재하므로 NDC 는 더 멀어졌다.** 측정 없이 미리 지을 이유가 없다.
 
 ## 8. 선행 조건 — 플러그인
 
