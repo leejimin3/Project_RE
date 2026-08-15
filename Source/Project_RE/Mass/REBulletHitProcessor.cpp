@@ -10,6 +10,7 @@
 #include "Engine/World.h"
 #include "ProfilingDebugging/CsvProfiler.h"
 #include "REHitTargets.h"
+#include "REExplosionFx.h"   // 피격 폭발 (#98)
 
 CSV_DECLARE_CATEGORY_EXTERN(REBullet);  // 정의는 REBulletSimProcessor.cpp
 
@@ -28,8 +29,10 @@ namespace
 UREBulletHitProcessor::UREBulletHitProcessor()
 	: EntityQuery(*this)
 {
-	// 서버 권위 판정만 — 싱글(Standalone) + 데디서버(Server). 클라 실행 없음.
-	ExecutionFlags = (int32)(EProcessorExecutionFlags::Standalone | EProcessorExecutionFlags::Server);
+	// 판정을 클라에도 연다 — 클라가 자기 시뮬로 탄을 지우고 폭발을 띄운다 (#98).
+	// 데미지는 아래 HasAuthority 가드로 서버에만 남는다. 복제 RPC 는 쓰지 않는다:
+	// 클라는 이미 ServerTime 으로 탄 위치를 자체 계산하므로(#84) 판정 근거가 있다.
+	ExecutionFlags = (int32)EProcessorExecutionFlags::AllNetModes;
 
 	// TakeDamage는 액터 호출 — 게임 스레드 전용.
 	bRequiresGameThreadExecution = true;
@@ -50,8 +53,9 @@ void UREBulletHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 	CSV_SCOPED_TIMING_STAT(REBullet, BulletHit);
 
 	// 살아있고 대쉬 중이 아닌 플레이어 전원 (#86). 대상이 없으면 탄을 순회할 이유가 없다.
+	UWorld* World = EntityManager.GetWorld();
 	TArray<FREHitTarget> Targets;
-	GatherHitTargets(EntityManager.GetWorld(), Targets);
+	GatherHitTargets(World, Targets);
 	if (Targets.IsEmpty())
 	{
 		return;
@@ -70,9 +74,17 @@ void UREBulletHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 			{
 				if (FVector::DistSquaredXY(BulletLoc, T.Location) <= HitRadius * HitRadius)
 				{
-					const float Applied = T.Player->TakeDamage(BulletDamage, FDamageEvent(), nullptr, nullptr);
+					// 데미지는 서버 권위. 클라는 파괴와 폭발만 한다 (#98).
+					if (T.Player->HasAuthority())
+					{
+						const float Applied = T.Player->TakeDamage(BulletDamage, FDamageEvent(), nullptr, nullptr);
+						// netmode 를 함께 찍는다 — 클라 프로세스는 접속 전 로컬 월드를 잠깐 돌리므로
+						// 로그에 데미지가 보인다고 곧 "클라가 데미지를 줬다"가 아니다. 판정에 필요하다 (#98).
+						UE_LOG(LogTemp, Log, TEXT("[RE] BulletHit: Applied=%.0f netmode=%d"),
+							Applied, (int32)World->GetNetMode());
+					}
+					REExplosionFx::SpawnBulletExplosion(World, BulletLoc);
 					Ctx.Defer().DestroyEntity(Ctx.GetEntity(i));
-					UE_LOG(LogTemp, Log, TEXT("[RE] BulletHit: Applied=%.0f"), Applied);
 					break;   // 투사체 하나는 한 명만 — 몸으로 막는 탱 플레이가 성립한다
 				}
 			}
