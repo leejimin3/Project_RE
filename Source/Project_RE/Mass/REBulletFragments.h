@@ -46,6 +46,13 @@ struct FArcBulletFragment : public FMassFragment
 	float   MaxHeight  = 400.f;
 	float   Damage     = 15.f;
 	float   Radius     = 120.f;
+	/**
+	 *  착지 폭발을 이미 띄웠는가 (#98).
+	 *  시뮬의 Defer().DestroyEntity() 는 지연 실행이라, 엔티티가 실제로 사라지기 전
+	 *  프레임에 FX 프로세서가 같은 탄을 다시 본다. 프로세서 실행 순서만으로는
+	 *  1회 스폰을 보장할 수 없다 — 실측으로 기대치의 16배(초당 110회)가 나왔다.
+	 */
+	bool    bFxSpawned = false;
 };
 
 /** 곡사탄 식별 태그. 기존 FBulletTag(직선탄)와 분리 — arc 프로세서만 선별. */
