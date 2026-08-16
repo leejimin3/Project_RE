@@ -104,9 +104,14 @@ public:
 	 *  대쉬 모션을 모든 인스턴스(서버 자신 + 전 클라)에 재생. 코스메틱 전용.
 	 *  Unreliable — 드랍돼도 이동/판정(서버 RootMotion)과 무관하다.
 	 *  서버 권위 코드(UREGA_Dash::ActivateAbility)에서만 호출한다.
+	 *
+	 *  DashDir 를 인자로 받는 이유(#116): 잔상 VFX 를 월드 스페이스에 대쉬 방향으로 스폰해야
+	 *  하는데, PendingDashDir 는 서버 전용 비복제 멤버라 클라가 방향을 모른다. 복제 변수로
+	 *  올리면 OnRep 타이밍이 이 RPC 와 어긋날 수 있어 인자로 함께 보낸다. 쿨다운 2초라
+	 *  대역폭은 무시 가능 — 양자화하지 않는다.
 	 */
 	UFUNCTION(NetMulticast, Unreliable)
-	void Multicast_PlayDashMontage();
+	void Multicast_PlayDashMontage(FVector DashDir);
 
 protected:
 	/** 게임플레이 어빌리티 시스템 컴포넌트. Pawn 소유, Mixed 복제. */

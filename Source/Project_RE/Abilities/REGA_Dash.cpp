@@ -79,7 +79,9 @@ void UREGA_Dash::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	// (RPC 배치는 발사 몽타주 #74와 동일하게 ARECharacterBase.)
 	// 이 어빌리티는 ServerOnly라 여기는 항상 권위 경로 — 리슨서버/싱글에서도 멀티캐스트 본체가 1회만 돈다.
 	// PR #59의 IgnoreRootMotion 가드는 RPC 본체로 함께 옮겨져 서버·클라 양쪽에 걸린다.
-	Char->Multicast_PlayDashMontage();
+	// 방향을 함께 보낸다 — 잔상 VFX를 월드 스페이스에 대쉬 방향으로 스폰해야 하는데
+	// PendingDashDir는 서버 전용 비복제 멤버라 클라가 읽을 수 없다 (#116).
+	Char->Multicast_PlayDashMontage(Dir);
 }
 
 void UREGA_Dash::OnDashFinished()

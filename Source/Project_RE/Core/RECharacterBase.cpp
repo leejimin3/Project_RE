@@ -124,7 +124,7 @@ ARECharacterBase::ARECharacterBase()
 	}
 }
 
-void ARECharacterBase::Multicast_PlayDashMontage_Implementation()
+void ARECharacterBase::Multicast_PlayDashMontage_Implementation(FVector DashDir)
 {
 	// 데디 서버는 화면이 없으므로 코스메틱 재생을 생략한다 (#74 Multicast_PlayFireMontage와 동일 패턴).
 	// "데디는 AnimInstance가 null이라 자연 no-op"으로 봤던 초안 가정은 실측으로 반증됐다 —
@@ -140,16 +140,21 @@ void ARECharacterBase::Multicast_PlayDashMontage_Implementation()
 	// DashVfx는 유료 Fab 애셋(.gitignore 대상)이라, 한쪽만 없는 환경이 실제로 존재한다.
 	// 하나로 묶어 return하면 애님이 없다는 이유로 VFX까지 사라진다.
 	// 대쉬 이동은 UREGA_Dash의 RootMotion이 담당하므로 여기서 무엇을 스폰하든 이동에 영향 없다.
+	//
+	// 월드 스페이스 스폰이다 — 메시에 부착하면 안 된다. 부착했을 때 두 가지가 깨졌다:
+	// (1) 잔상이 플레이어를 따라다녀 "지나간 자리에 남는다"는 표현 자체가 성립하지 않고,
+	// (2) 캐릭터 메시의 회전(Yaw 오프셋 포함)을 물려받아 대쉬 방향과 어긋난다.
+	// 위치는 메시 컴포넌트 원점(발밑)을 쓴다 — 캡슐 중심(GetActorLocation)은 90uu 떠 있다.
+	// 회전은 대쉬 방향의 역방향이다. 애셋(NS_Dash_Ghost)이 자기 +X 로 뻗도록 만들어져 있어
+	// DashDir 을 그대로 주면 이펙트가 진행 방향으로 앞서 나간다 — 잔상은 지나온 쪽으로
+	// 흘러야 하므로 뒤집는다. 실측으로 확인한 값이다(육안).
 	if (DashVfx && GetMesh())
 	{
-		UNiagaraFunctionLibrary::SpawnSystemAttached(
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			GetWorld(),
 			DashVfx,
-			GetMesh(),
-			NAME_None,
-			FVector::ZeroVector,
-			FRotator::ZeroRotator,
-			EAttachLocation::SnapToTarget,
-			/*bAutoDestroy=*/true);
+			GetMesh()->GetComponentLocation(),
+			(-DashDir).Rotation());
 	}
 
 	if (!DashAnim)
