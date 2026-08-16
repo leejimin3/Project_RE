@@ -128,6 +128,39 @@ function Assert-Log {
     }
 }
 
+function Assert-Progress {
+    <# 이동 프로브가 실제로 전진했는가 (#112).
+
+       "로그가 있는가"(Assert-Count)만으로는 못 잡는다 — 데디에서 서버가 폰을 거의 못 움직여
+       0.5초에 14uu 만 가던 회귀가 전 항목 PASS 로 통과했다. 남은거리의 **최솟값**을 본다:
+       가장 많이 접근한 시점이 기준선 안이면 전진한 것이다.
+
+       마지막 값이 아니라 최솟값을 쓰는 이유는 발사 프로브가 이동을 끊기 때문이다
+       (REPlayerController: 발사 성공 시 StopMovement — 의도된 동작). 끊긴 뒤 로그는 계속
+       같은 값으로 나오므로 마지막 값을 보면 무엇을 재는지 흐려진다. #>
+    param(
+        [string]$Scope,
+        [string]$Desc,
+        [string[]]$Lines,
+        [string]$Pattern,
+        [double]$MaxRemaining
+    )
+    $m = @($Lines | Select-String -Pattern $Pattern)
+    if ($m.Count -eq 0) {
+        Write-Host ("  [FAIL] {0}: {1} — 패턴 없음 /{2}/" -f $Scope, $Desc, $Pattern) -ForegroundColor Red
+        $script:Failures += ("{0}: {1} — 패턴 없음" -f $Scope, $Desc)
+        return
+    }
+    $vals = @($m | ForEach-Object { [double]$_.Matches[0].Groups[1].Value })
+    $best = ($vals | Measure-Object -Minimum).Minimum
+    if ($best -gt $MaxRemaining) {
+        Write-Host ("  [FAIL] {0}: {1} — 최소 잔여거리 {2:N1} > 기준 {3:N1} (거의 전진 못함)" -f $Scope, $Desc, $best, $MaxRemaining) -ForegroundColor Red
+        $script:Failures += ("{0}: {1} — 최소 잔여거리 {2:N1}" -f $Scope, $Desc, $best)
+        return
+    }
+    Write-Host ("  [PASS] {0}: {1} (최소 잔여거리 {2:N1})" -f $Scope, $Desc, $best) -ForegroundColor Green
+}
+
 function Assert-Range {
     <# 캡처그룹 1의 수치가 범위 안인지. 대쉬 거리처럼 "있기만" 하면 안 되는 항목용.
        매치가 N건이면(N인) 전부 검사한다 — 마지막 것만 보면 앞쪽 클라의 이상값을 놓친다. #>
@@ -205,6 +238,11 @@ function Invoke-Verdict {
         # 프로브가 클라 수만큼 완주했는가 — 이 이슈의 핵심 판정 (#87).
         Assert-Count 'server' '프로브 완주'      $ServerLines '\[Dash\] probe done'   $ClientCount
         Assert-Count 'server' '이동 프로브 기동'  $ServerLines '\[Move\] probe start'  $ClientCount
+        # 이동이 실제로 일어났는가 (#112). 목표는 500uu, 발사 프로브가 ~0.5초에 끊으므로
+        # 그때까지 200uu 안팎 전진한다. 기준 350 = 최소 150uu 전진.
+        #   정상   : 최소 잔여 265 (데디) / 288 (스탠드얼론)
+        #   회귀   : 최소 잔여 485 (서버가 폰을 못 움직임)
+        Assert-Progress 'server' '이동 전진' $ServerLines '\[Move\] probe dist=([0-9.]+)' 350
         Assert-Count 'server' '대쉬 거리 측정'    $ServerLines '\[Dash\] dist='        $ClientCount
         Assert-Range 'server' '대쉬 이동거리'     $ServerLines '\[Dash\] dist=([0-9.]+)' 500 700
 
@@ -277,6 +315,8 @@ if ($SelfTest) {
         'LogNet: IpNetDriver listening on port 7777',
         'LogWorld: Bringing World /Game/Level/Main.Main up for play',
         'LogTemp: [Move] probe start: pawn=X=0 target=X=0',
+        'LogTemp: [Move] probe dist=485.1 loc=X=0.000 Y=14.873 Z=130.150',
+        'LogTemp: [Move] probe dist=265.7 loc=X=0.000 Y=234.256 Z=130.150',
         'LogTemp: [Move] rejected: off-navmesh X=100000.000 Y=100000.000 Z=0.000',
         'LogTemp: [Dash] dist=602.4 (기대 ~600)',
         'LogTemp: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.000 role=ROLE_Authority',
@@ -331,6 +371,20 @@ if ($SelfTest) {
     Invoke-Verdict -ServerLines $twoDashServer -ClientLines @{ 'client1' = $goodClient; 'client2' = $goodClient } `
                    -CheckVictory $false -Mode Probe -ClientCount 2
     if (-not ($script:Failures -match '대쉬 이동거리.*#1')) { throw 'SelfTest: 대쉬 거리 범위 검사가 1번 클라(앞쪽 occurrence)의 이상값을 놓쳤다' }
+
+    # 데디에서 서버가 폰을 거의 못 움직이던 회귀 (#112) — 전진 없이 잔여거리가 계속 큰 상황.
+    # Assert-Count('이동 프로브 기동')는 로그 존재만 보므로 이걸 못 잡는다. 실제로 못 잡아서
+    # 16항목 전부 PASS 를 내주고 있었다.
+    $script:Failures = @()
+    $noProgressServer = @($goodServer | ForEach-Object { $_ -replace 'probe dist=265', 'probe dist=487' })
+    Invoke-Verdict -ServerLines $noProgressServer -ClientLines @{ 'client1' = $goodClient } -CheckVictory $false -Mode Probe -ClientCount 1
+    if (-not ($script:Failures -match '이동 전진')) { throw 'SelfTest: 데디 이동 정체(#112 회귀)를 잡아내지 못했다' }
+
+    # 이동 프로브 거리 로그가 통째로 사라진 경우도 실패해야 한다 — 침묵 통과 방지.
+    $script:Failures = @()
+    $noMoveServer = @($goodServer | Where-Object { $_ -notmatch 'probe dist=' })
+    Invoke-Verdict -ServerLines $noMoveServer -ClientLines @{ 'client1' = $goodClient } -CheckVictory $false -Mode Probe -ClientCount 1
+    if (-not ($script:Failures -match '이동 전진')) { throw 'SelfTest: 이동 프로브 로그 부재를 잡아내지 못했다' }
 
     # NavMesh 거부 경로 자체가 죽은 회귀(=투사가 항상 성공) — 맵 밖 좌표 거부 로그가 아예 없는 상황을 합성한다.
     # 기존 "실목표 거부 없음" 판정은 거부 로그가 0건이어도 통과해버려 이 회귀를 못 잡는다.

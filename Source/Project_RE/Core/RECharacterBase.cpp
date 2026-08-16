@@ -204,6 +204,29 @@ void ARECharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ARECharacterBase, Health);
+
+	// 이동 목표는 본인만 필요하다 (#112) — 남의 폰 예측에는 쓰지 않는다.
+	DOREPLIFETIME_CONDITION(ARECharacterBase, MoveTarget, COND_AutonomousOnly);
+	DOREPLIFETIME_CONDITION(ARECharacterBase, bHasMoveTarget, COND_AutonomousOnly);
+}
+
+void ARECharacterBase::SetMoveTarget(const FVector& InTarget)
+{
+	if (!HasAuthority())
+	{
+		return;   // 서버 권위 — 클라가 스스로 목표를 세우지 못한다
+	}
+	MoveTarget = InTarget;
+	bHasMoveTarget = true;
+}
+
+void ARECharacterBase::ClearMoveTarget()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	bHasMoveTarget = false;
 }
 
 UAbilitySystemComponent* ARECharacterBase::GetAbilitySystemComponent() const
