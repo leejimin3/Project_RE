@@ -33,7 +33,11 @@ namespace
 	/** 폭발 에셋. scripts/make_explosion_fx.py 가 엔진 템플릿을 복제해 만든다. */
 	const TCHAR* ExplosionAssetPath = TEXT("/Game/FX/NS_REBulletExplosion.NS_REBulletExplosion");
 
-	/** 로드 캐시 — 매 폭발마다 LoadObject 하지 않는다. */
+	/**
+	 *  로드 캐시 — 매 폭발마다 LoadObject 하지 않는다.
+	 *  raw 정적 포인터라 GC 가 추적하지 않는다. AddToRoot 로 하드 참조를 잡아두지 않으면
+	 *  에셋이 수집된 뒤 댕글링 포인터로 크래시한다.
+	 */
 	UNiagaraSystem* GCachedSystem = nullptr;
 	bool GLoadAttempted = false;
 }
@@ -53,7 +57,11 @@ void REExplosionFx::SpawnBulletExplosion(const UWorld* World, const FVector& Loc
 	{
 		GLoadAttempted = true;
 		GCachedSystem = LoadObject<UNiagaraSystem>(nullptr, ExplosionAssetPath);
-		if (!GCachedSystem)
+		if (GCachedSystem)
+		{
+			GCachedSystem->AddToRoot();   // GC 가 추적하지 않는 정적 포인터 — 하드 참조 필수
+		}
+		else
 		{
 			// 조용한 무동작 금지 — 폭발이 안 나오는 것을 눈치채기 어렵다.
 			UE_LOG(LogTemp, Error, TEXT("[RE] NS_REBulletExplosion 로드 실패 — 폭발이 표시되지 않는다 (#98)"));
@@ -73,15 +81,21 @@ void REExplosionFx::SpawnBulletExplosion(const UWorld* World, const FVector& Loc
 		ENCPoolMethod::AutoRelease);
 
 	// 스폰 수 계측 — 폭발 비용이 "템플릿이 무거운가"인지 "스폰이 폭주하는가"인지 가른다.
-	// 초당 1줄만 찍는다(로그가 측정을 오염시키지 않게).
+	// 로그가 측정을 오염시키지 않게 1초에 1줄로 억제한다.
+	// 창 길이(Window)를 같이 찍는다: 이 블록은 스폰이 일어난 순간에만 실행되므로 스폰이
+	// 드문드문하면 실제 창이 1초보다 길다. 창을 안 찍으면 서로 다른 비율이 모두 같은 수로
+	// 보여 오독한다 — 실제로 그렇게 오독했다.
 	{
 		static int32 Count = 0;
 		static double LastLog = 0.0;
 		++Count;
 		const double Now = FPlatformTime::Seconds();
-		if (Now - LastLog >= 1.0)
+		if (LastLog == 0.0) { LastLog = Now; }
+		const double Window = Now - LastLog;
+		if (Window >= 1.0)
 		{
-			UE_LOG(LogTemp, Log, TEXT("[RE] ExplosionProbe: 최근 1초 스폰=%d"), Count);
+			UE_LOG(LogTemp, Log, TEXT("[RE] ExplosionProbe: 스폰=%d / %.2fs (%.1f/s)"),
+				Count, Window, Count / Window);
 			Count = 0;
 			LastLog = Now;
 		}

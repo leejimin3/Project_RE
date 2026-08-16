@@ -120,6 +120,35 @@ FX 프로세서가 `Standalone | Client` 라 데디서버에서 아예 실행되
 
 **중간 단계가 공짜로 존재하므로 NDC 는 더 멀어졌다.** 측정 없이 미리 지을 이유가 없다.
 
+### 7.1 측정 결과 (2026-08-16, 검증 중 실측)
+
+`ArtilleryCount` 를 올려 동시 스폰 규모를 재봤다. 로테이션을 정상 동작시켜야 한다 —
+`re.Profiling.KeepFiring 1` 은 로테이션을 우회하고 Spiral 만 쏘므로 곡사탄이 0발이 된다
+(`REBossCharacter.cpp:92`). 이걸 모르고 재면 `ArtilleryCount` 가 무관해 보인다.
+
+| ArtilleryCount | 한 일제사당 폭발 | 관측 최고 비율 | 결과 |
+|---|---|---|---|
+| 12 (출하값) | 12 | 약 4/s | 정상 |
+| 200 | 200 | **110.8/s** (1.81s 창에 200) | 크래시·정지 없음 |
+
+**`AutoRelease` 풀링은 200 동시 스폰에서 안 무너진다.** 곡사탄을 열 배 이상 늘려도
+개별 스폰으로 간다. NDC 는 여전히 필요 없다.
+
+프레임 원가 자체는 아직 수치화 못 했다 — `scripts/profile.ps1` 이 측정 오염을 막으려
+`re.Fx.Explosions 0` 으로 폭발을 꺼두기 때문이다. 폭발 원가를 CSV 로 재려면 별도 하네스
+구성이 필요하다.
+
+### 7.2 실행 순서 함정 (검증에서 발견)
+
+`REArcFxProcessor` 를 `ExecuteBefore` 시뮬로 두면 **폭발이 한 번도 안 뜬다.**
+`Elapsed` 를 증가시키는 것이 시뮬이라, 착지 프레임에 먼저 돌면 아직 갱신 전 값
+(`Elapsed < FlightTime`)을 보고, 다음 프레임에는 엔티티가 이미 파괴돼 있다.
+`ExecuteAfter` 가 맞다 — 시뮬의 파괴는 `Defer()` 라 페이즈 끝에야 반영되므로
+뒤에 돌아도 트랜스폼을 읽을 수 있다(`REArcHitProcessor` 가 같은 방식).
+
+조용히 실패하므로 눈으로는 안 잡힌다. 폭발 총합이 `BulletHit` 건수와 **정확히 일치**하면
+(곡사탄 초과분 0) 곡사탄 경로가 죽어 있다는 신호다.
+
 ## 8. 선행 조건 — 플러그인
 
 `Project_RE.uproject` 의 활성 플러그인에 **Niagara 가 없다**(`ModelingToolsEditorMode` / `StateTree` / `GameplayStateTree` / `MassGameplay` / `GameplayAbilities` / `ModelContextProtocol`). `Build.cs` 에도 `Niagara` 모듈이 없다.
