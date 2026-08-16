@@ -21,6 +21,9 @@ Content/Characters/Mannequins/
 Content/Developers/
 Content/Collections/
 
+# 유료 마켓플레이스 에셋 (Fab, 재배포 불가)
+Content/BlinkDash/
+
 # Claude Code local data
 .claude/
 

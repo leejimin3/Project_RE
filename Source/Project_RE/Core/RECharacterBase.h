@@ -16,6 +16,7 @@ class UREGA_Dash;
 class UREHealthBarComponent;
 class UAnimMontage;
 class UAnimSequence;
+class UNiagaraSystem;
 
 /**
  *  탑뷰 쿼터뷰 플레이어 폰 베이스.
@@ -133,6 +134,13 @@ protected:
 	/** 대쉬 모션(AnimSequence — ABP DefaultSlot에 다이나믹 몽타주로 재생). 코스메틱. */
 	UPROPERTY()
 	TObjectPtr<UAnimSequence> DashAnim;
+
+	/**
+	 *  대쉬 잔상 VFX(NS_Dash_Ghost). 코스메틱 — DashAnim과 같은 자리에서 같은 이유로 산다(#116).
+	 *  유료 애셋이라 .gitignore 대상이다. 없는 환경에서는 null로 남고 VFX만 생략된다.
+	 */
+	UPROPERTY()
+	TObjectPtr<UNiagaraSystem> DashVfx;
 
 	/** ASC ActorInfo 초기화 공용 헬퍼 (서버/클라 양쪽에서 호출). */
 	void InitASCActorInfo();
