@@ -20,12 +20,46 @@
 #include "REGameMode.h"
 #include "REStatsSettings.h"
 #include "HAL/IConsoleManager.h"
+#include "NiagaraSystem.h"
+#include "NiagaraFunctionLibrary.h"
 
 // 치트: 1이면 플레이어 무적(TakeDamage 무피해). 데브 전용, 클라 로컬(ECVF_Cheat).
 static TAutoConsoleVariable<int32> CVarPlayerInvincible(
 	TEXT("re.Cheat.PlayerInvincible"),
 	0,
 	TEXT("1 = player takes no damage (dev cheat, client-local)"),
+	ECVF_Cheat);
+
+// 대쉬 잔상 VFX 스폰 보정 (#116). 기본값은 육안으로 맞춘 실측값이다.
+//
+// 콘솔에 남겨두는 이유: 이 셋은 "메시 원점이 어디냐"와 "애셋이 자기 원점 기준 어디로
+// 뻗느냐"에 종속된 값이다. M7 에서 캐릭터 모델(#117)과 대쉬 애셋이 바뀌면 전부 다시
+// 맞춰야 한다. 그때 리빌드 없이 PIE 에서 조절하기 위한 노브다.
+// 코스메틱 전용이라 클라 로컬(ECVF_Cheat)로 충분하다.
+
+// 500 = 대쉬 거리(678uu)의 대부분. 잔상이 도착 지점 쪽에서 지나온 길로 흐르게 된다.
+static TAutoConsoleVariable<float> CVarDashVfxOffsetFwd(
+	TEXT("re.Debug.DashVfxOffsetFwd"),
+	500.f,
+	TEXT("대쉬 잔상 VFX 스폰 오프셋 — 대쉬 진행방향(uu). 음수=뒤."),
+	ECVF_Cheat);
+
+// 100 = 발밑 기준으로 캐릭터 몸통 높이까지 올림.
+static TAutoConsoleVariable<float> CVarDashVfxOffsetUp(
+	TEXT("re.Debug.DashVfxOffsetUp"),
+	100.f,
+	TEXT("대쉬 잔상 VFX 스폰 오프셋 — 월드 상하(uu). 음수=아래."),
+	ECVF_Cheat);
+
+// 1 로 두는 이유: 이 애셋에서는 스케일이 균등하게 먹지 않는다. 값을 줄이면 파티클이
+// 작아지는 게 아니라 잔상 사이 간격만 좁아진다(실측). 이미터가 파티클 크기를 월드
+// 단위로 들고 있어 컴포넌트 스케일이 위치 오프셋에만 적용되는 것으로 보인다.
+// 크기를 정말 줄이려면 애셋(NS_Dash_Ghost) 쪽을 손대야 한다.
+// 노브는 남긴다 — 애셋을 갈면 다시 시도해볼 값이다.
+static TAutoConsoleVariable<float> CVarDashVfxScale(
+	TEXT("re.Debug.DashVfxScale"),
+	1.f,
+	TEXT("대쉬 잔상 VFX 균등 스케일. 1=원본. 이 애셋에선 간격만 변한다 — 주석 참조."),
 	ECVF_Cheat);
 
 ARECharacterBase::ARECharacterBase()
@@ -111,15 +145,60 @@ ARECharacterBase::ARECharacterBase()
 	{
 		DashAnim = DashAnimAsset.Object;
 	}
+
+	// 대쉬 잔상 VFX — DashAnim과 같은 이유로 여기서 로드한다(모든 프로세스가 CDO에서 동일 애셋 확보).
+	// 유료 애셋(Fab, .gitignore 대상)이라 없는 환경이 정상 경로다 — 실패하면 VFX만 생략된다.
+	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> DashVfxAsset(
+		TEXT("/Game/BlinkDash/VFX_Niagara/NS_Dash_Ghost.NS_Dash_Ghost"));
+	if (DashVfxAsset.Succeeded())
+	{
+		DashVfx = DashVfxAsset.Object;
+	}
 }
 
-void ARECharacterBase::Multicast_PlayDashMontage_Implementation()
+void ARECharacterBase::Multicast_PlayDashMontage_Implementation(FVector DashDir)
 {
 	// 데디 서버는 화면이 없으므로 코스메틱 재생을 생략한다 (#74 Multicast_PlayFireMontage와 동일 패턴).
 	// "데디는 AnimInstance가 null이라 자연 no-op"으로 봤던 초안 가정은 실측으로 반증됐다 —
 	// 데디 서버 로그에 `[Dash] anim len=0.97 (role=ROLE_Authority)`가 찍혔다. 가드가 없으면
 	// 서버가 IgnoreRootMotion으로 전환한 채 몽타주를 돌려 서버 권위 이동 경로에 개입한다.
-	if (!DashAnim || IsNetMode(NM_DedicatedServer))
+	if (IsNetMode(NM_DedicatedServer))
+	{
+		return;
+	}
+
+	// 잔상 VFX(#116) — 애님과 독립적으로 스폰한다.
+	// 애셋 유무를 각자 판단하는 이유: DashAnim은 UE5 템플릿 마네킹 경로(.gitignore 대상)이고
+	// DashVfx는 유료 Fab 애셋(.gitignore 대상)이라, 한쪽만 없는 환경이 실제로 존재한다.
+	// 하나로 묶어 return하면 애님이 없다는 이유로 VFX까지 사라진다.
+	// 대쉬 이동은 UREGA_Dash의 RootMotion이 담당하므로 여기서 무엇을 스폰하든 이동에 영향 없다.
+	//
+	// 월드 스페이스 스폰이다 — 메시에 부착하면 안 된다. 부착했을 때 두 가지가 깨졌다:
+	// (1) 잔상이 플레이어를 따라다녀 "지나간 자리에 남는다"는 표현 자체가 성립하지 않고,
+	// (2) 캐릭터 메시의 회전(Yaw 오프셋 포함)을 물려받아 대쉬 방향과 어긋난다.
+	// 위치는 메시 컴포넌트 원점(발밑)을 쓴다 — 캡슐 중심(GetActorLocation)은 90uu 떠 있다.
+	// 회전은 대쉬 방향의 역방향이다. 애셋(NS_Dash_Ghost)이 자기 +X 로 뻗도록 만들어져 있어
+	// DashDir 을 그대로 주면 이펙트가 진행 방향으로 앞서 나간다 — 잔상은 지나온 쪽으로
+	// 흘러야 하므로 뒤집는다. 실측으로 확인한 값이다(육안).
+	if (DashVfx && GetMesh())
+	{
+		// 기준점은 메시 컴포넌트 원점(발밑). 캡슐 중심(GetActorLocation)은 90uu 떠 있다.
+		// 거기서 전후(대쉬 방향) · 상하(월드 Z) 로 보정한다 — 둘 다 콘솔로 조절한다.
+		const FVector SpawnLoc = GetMesh()->GetComponentLocation()
+			+ DashDir * CVarDashVfxOffsetFwd.GetValueOnGameThread()
+			+ FVector::UpVector * CVarDashVfxOffsetUp.GetValueOnGameThread();
+
+		const float Scale = CVarDashVfxScale.GetValueOnGameThread();
+
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			GetWorld(),
+			DashVfx,
+			SpawnLoc,
+			(-DashDir).Rotation(),
+			FVector(Scale));
+	}
+
+	if (!DashAnim)
 	{
 		return;
 	}
