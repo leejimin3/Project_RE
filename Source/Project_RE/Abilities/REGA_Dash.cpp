@@ -4,7 +4,7 @@
 #include "REGE_DashCooldown.h"
 #include "REGameplayTags.h"
 #include "Core/RECharacterBase.h"
-#include "Abilities/Tasks/AbilityTask_ApplyRootMotionConstantForce.h"
+#include "Abilities/Tasks/AbilityTask_ApplyRootMotionMoveToForce.h"
 #include "GameFramework/RootMotionSource.h"
 
 UREGA_Dash::UREGA_Dash()
@@ -44,22 +44,34 @@ void UREGA_Dash::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 
 	UE_LOG(LogTemp, Log, TEXT("[Dash] activate ok dir=%s"), *Dir.ToString());
 
-	// 시간형 RootMotion — 고정속도×고정시간 → 마찰 무관 고정거리. 종료 시 속도 클리어.
-	UAbilityTask_ApplyRootMotionConstantForce* Task =
-		UAbilityTask_ApplyRootMotionConstantForce::ApplyRootMotionConstantForce(
+	// 목표지점형 RootMotion — 프레임 길이와 무관하게 고정거리를 보장한다.
+	//
+	// 이전에는 ConstantForce(고정속도 x 고정시간)였다. 그 방식은 "고정거리"가 아니다:
+	// CMC 는 긴 프레임 하나에 대해 힘을 그 프레임 전체에 적용하므로, 소스의 남은
+	// 지속시간을 넘겨 밀어버린다. 실측으로 290ms 블로킹 로드(FlushAsyncLoading)가
+	// 대쉬 구간에 겹치면 지속시간이 0.200s -> 0.38s, 거리가 678 -> 1274 로 2배가 됐다.
+	// 히치는 게임 어디서든 날 수 있으므로(로드/GC/셰이더) 대쉬가 그때마다 2배 나가면 안 된다.
+	//
+	// MoveTo 는 목표 위치로 수렴시키므로 프레임이 아무리 길어도 목표를 넘지 않는다.
+	const FVector Target = Char->GetActorLocation() + Dir * DashDistance;
+
+	UAbilityTask_ApplyRootMotionMoveToForce* Task =
+		UAbilityTask_ApplyRootMotionMoveToForce::ApplyRootMotionMoveToForce(
 			this,
 			FName("Dash"),
-			Dir,
-			DashStrength,
+			Target,
 			DashDuration,
-			/*bIsAdditive=*/false,
-			/*StrengthOverTime=*/nullptr,
+			/*bSetNewMovementMode=*/false,
+			MOVE_None,
+			/*bRestrictSpeedToExpected=*/false,
+			/*PathOffsetCurve=*/nullptr,
 			ERootMotionFinishVelocityMode::SetVelocity,
 			/*SetVelocityOnFinish=*/FVector::ZeroVector,
-			/*ClampVelocityOnFinish=*/0.f,
-			/*bEnableGravity=*/false);
+			/*ClampVelocityOnFinish=*/0.f);
 
-	Task->OnFinish.AddDynamic(this, &UREGA_Dash::OnDashFinished);
+	// 목표 도달 여부와 무관하게 시간이 다 되면 끝낸다 — 벽에 막혀 못 갔을 때도 대쉬는 종료돼야 한다.
+	Task->OnTimedOut.AddDynamic(this, &UREGA_Dash::OnDashFinished);
+	Task->OnTimedOutAndDestinationReached.AddDynamic(this, &UREGA_Dash::OnDashFinished);
 	Task->ReadyForActivation();
 
 	// 대쉬 모션 — 코스메틱, RootMotion 이동(위 태스크)과 독립.
