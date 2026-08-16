@@ -54,6 +54,10 @@ public:
 	/** 생존 여부 (#85 보스 타깃 선택). bIsDead는 서버 전용이라 서버에서만 의미 있다. */
 	bool IsAlive() const { return !bIsDead; }
 
+	/** 현재/최대 체력 (#100 HUD). Health 는 복제되므로 클라에서도 읽을 수 있다. */
+	float GetHealth() const { return Health; }
+	float GetMaxHealth() const { return MaxHealth; }
+
 	/**
 	 *  전 클라 발사 모션 재생 (M4 #74). 코스메틱 전용 — 판정·데미지·rate limit과 무관.
 	 *

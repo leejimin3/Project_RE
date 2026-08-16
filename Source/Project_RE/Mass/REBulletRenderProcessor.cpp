@@ -40,6 +40,19 @@ namespace
 		0,
 		TEXT("N번째 렌더 프로세서 실행에서 스크린샷 저장 (0=끔). 시각 검증용."),
 		ECVF_Cheat);
+
+	/**
+	 *  스크린샷에 화면공간 UI 를 포함할지 (#100).
+	 *
+	 *  기본 0 은 탄막 렌더 검증(#97)용이다 — HUD 가 화면을 가리면 탄 색·밝기 판정을 방해한다.
+	 *  1 로 켜면 HUD 를 포함해 찍는다. 화면공간 위젯은 이걸 안 켜면 PNG 에 아예 안 나온다
+	 *  (월드스페이스 위젯인 보스 체력바는 0 에서도 찍히므로, 안 나오는 이유를 오해하기 쉽다).
+	 */
+	static TAutoConsoleVariable<int32> CVarDebugShotUI(
+		TEXT("re.Debug.ScreenshotUI"),
+		0,
+		TEXT("스크린샷에 화면공간 UI 포함 (0=제외). UI 검증용."),
+		ECVF_Cheat);
 }
 
 UREBulletRenderProcessor::UREBulletRenderProcessor()
@@ -128,8 +141,10 @@ void UREBulletRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassE
 		{
 			// 콘솔 HighResShot 은 -game 뷰포트에서 조용히 무시됐다(로그도 PNG도 안 남음).
 			// 직접 요청이 확실하다 — 산출물은 Saved/Screenshots/ 아래.
-			FScreenshotRequest::RequestScreenshot(/*bInShowUI=*/false);
-			UE_LOG(LogTemp, Log, TEXT("[RE] DebugScreenshot: 요청 (tick=%d live=%d)"), ShotTick, M);
+			const bool bShowUI = CVarDebugShotUI.GetValueOnGameThread() != 0;
+			FScreenshotRequest::RequestScreenshot(bShowUI);
+			UE_LOG(LogTemp, Log, TEXT("[RE] DebugScreenshot: 요청 (tick=%d live=%d ui=%d)"),
+				ShotTick, M, bShowUI ? 1 : 0);
 		}
 	}
 

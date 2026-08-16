@@ -20,8 +20,11 @@ bool UREResultWidget::Initialize()
 		UOverlay* Root = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("Root"));
 
 		ResultText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ResultText"));
-		ResultText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 72));
+		ResultText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 96));
 		ResultText->SetJustification(ETextJustify::Center);
+		// 스타일 (#100). 탄막이 화면을 덮은 상태에서 글자만으로는 안 읽힌다 — 그림자로 분리한다.
+		ResultText->SetShadowOffset(FVector2D(4.f, 4.f));
+		ResultText->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.9f));
 
 		// 화면 정중앙 고정 — 뷰포트 슬롯이 Overlay를 채우고, Overlay 슬롯이 텍스트를 가운데로.
 		if (UOverlaySlot* TextSlot = Cast<UOverlaySlot>(Root->AddChild(ResultText)))
@@ -40,6 +43,9 @@ void UREResultWidget::SetResult(bool bVictory)
 	if (ResultText)
 	{
 		ResultText->SetText(FText::FromString(bVictory ? TEXT("VICTORY") : TEXT("DEFEAT")));
-		ResultText->SetColorAndOpacity(FSlateColor(bVictory ? FLinearColor::Green : FLinearColor::Red));
+		// 원색보다 살짝 밝고 덜 쨍한 톤 — 원색 초록/빨강은 화면에서 뭉개진다 (#100).
+		ResultText->SetColorAndOpacity(FSlateColor(bVictory
+			? FLinearColor(0.35f, 0.95f, 0.45f, 1.f)
+			: FLinearColor(0.95f, 0.30f, 0.30f, 1.f)));
 	}
 }

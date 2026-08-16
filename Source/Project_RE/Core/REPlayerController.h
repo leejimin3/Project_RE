@@ -129,4 +129,8 @@ private:
 
 	UPROPERTY()
 	URECheatPanelWidget* CheatPanel = nullptr;
+
+	/** 플레이어 상태 HUD (#100). 로컬 컨트롤러에서만 만든다 — 데디서버엔 화면이 없다. */
+	UPROPERTY()
+	TObjectPtr<class UREPlayerHudWidget> PlayerHud = nullptr;
 };
