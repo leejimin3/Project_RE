@@ -20,6 +20,8 @@
 #include "Abilities/REGameplayTags.h"
 #include "HAL/PlatformMisc.h"
 #include "REResultWidget.h"
+#include "UI/REPlayerHudWidget.h"
+#include "HAL/IConsoleManager.h"
 #include "RECheatPanelWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "Core/REAttackComponent.h"
@@ -27,6 +29,36 @@
 #include "Core/REGameMode.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "EngineUtils.h"
+
+namespace
+{
+	/**
+	 *  치트 패널 표시 허용 (#100). 0 이면 토글 키를 눌러도 뜨지 않는다.
+	 *  패널은 원래도 키를 눌러야 뜨지만, 촬영 중 실수로 한 번 누르면 그대로 찍힌다.
+	 */
+	static TAutoConsoleVariable<int32> CVarCheatPanel(
+		TEXT("re.Debug.CheatPanel"),
+		1,
+		TEXT("치트 패널 토글 허용 (0=끔, 영상 촬영용)."),
+		ECVF_Cheat);
+
+	/**
+	 *  엔진 온스크린 메시지 표시 (#100). 0 이면 끈다.
+	 *
+	 *  실측 스크린샷에 "Multiple directional lights are competing..." 경고가 화면 좌상단에
+	 *  그대로 찍혔다. 영상(#99)에 들어가면 안 된다. 경고의 원인(레벨 조명 설정)은 별건이고,
+	 *  여기서는 표시만 끈다.
+	 */
+	static TAutoConsoleVariable<int32> CVarScreenMessages(
+		TEXT("re.Debug.ScreenMessages"),
+		1,
+		TEXT("엔진 온스크린 디버그 메시지 표시 (0=끔, 영상 촬영용)."),
+		FConsoleVariableDelegate::CreateStatic([](IConsoleVariable* Var)
+		{
+			GAreScreenMessagesEnabled = Var->GetInt() != 0;
+		}),
+		ECVF_Cheat);
+}
 
 void AREPlayerController::SetupInputComponent()
 {
@@ -85,6 +117,17 @@ void AREPlayerController::BeginPlay()
 			if (TopDownMappingContext)
 			{
 				Subsystem->AddMappingContext(TopDownMappingContext, 0);
+			}
+		}
+
+		// 플레이어 상태 HUD (#100). HP·대쉬 쿨다운·투사체 수.
+		// 로컬 컨트롤러 안이라 데디서버에서는 만들어지지 않는다.
+		if (!PlayerHud)
+		{
+			PlayerHud = CreateWidget<UREPlayerHudWidget>(this, UREPlayerHudWidget::StaticClass());
+			if (PlayerHud)
+			{
+				PlayerHud->AddToViewport();
 			}
 		}
 
@@ -294,6 +337,16 @@ void AREPlayerController::OnToggleCheatPanel()
 {
 	if (!IsLocalPlayerController())
 	{
+		return;
+	}
+	// 촬영 중 오조작 차단 (#100). 패널은 기본적으로 키를 눌러야 뜨지만, 영상 녹화 중
+	// 실수로 한 번 누르면 그대로 찍힌다. 0 이면 아예 뜨지 않게 한다.
+	if (CVarCheatPanel.GetValueOnGameThread() == 0)
+	{
+		if (CheatPanel)
+		{
+			CheatPanel->SetVisibility(ESlateVisibility::Collapsed);
+		}
 		return;
 	}
 	if (!CheatPanel)
