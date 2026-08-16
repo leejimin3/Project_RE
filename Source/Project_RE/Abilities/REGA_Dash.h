@@ -7,8 +7,9 @@
 #include "REGA_Dash.generated.h"
 
 /**
- *  스페이스 대쉬 어빌리티 (GAS, 시간형 RootMotion, 서버권위).
- *  아바타(ARECharacterBase)의 PendingDashDir 방향으로 고정거리(600uu / 0.2s) 이동.
+ *  스페이스 대쉬 어빌리티 (GAS, 목표지점형 RootMotion, 서버권위).
+ *  아바타(ARECharacterBase)의 PendingDashDir 방향으로 고정거리(678uu / 0.2s) 이동.
+ *  MoveTo 를 쓰는 이유는 긴 프레임에서의 오버슈트 방지다 — REGA_Dash.cpp 참조.
  *  쿨다운은 UREGE_DashCooldown(2.0s) 커밋. 활성 동안 State.Dashing 태그(#27이 읽음).
  *
  *  NetExecutionPolicy = ServerOnly (클라 예측 미사용).
@@ -33,7 +34,8 @@ private:
 	void OnDashFinished();
 
 	/** 대쉬 속도(uu/s). 거리≈Strength*Duration. 프로브 실측으로 600uu에 맞춰 조정. */
-	float DashStrength = 3390.f;
+	// 대쉬 이동거리(uu). 기존 ConstantForce 의 3390uu/s x 0.2s = 678uu 를 그대로 유지한다.
+	float DashDistance = 678.f;
 
 	/** 대쉬 지속(s). */
 	float DashDuration = 0.2f;
