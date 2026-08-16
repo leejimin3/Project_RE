@@ -52,7 +52,8 @@ void UREBulletHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 	TRACE_CPUPROFILER_EVENT_SCOPE(RE_BulletHit);
 	CSV_SCOPED_TIMING_STAT(REBullet, BulletHit);
 
-	// 살아있고 대쉬 중이 아닌 플레이어 전원 (#86). 대상이 없으면 탄을 순회할 이유가 없다.
+	// 살아있는 플레이어 전원 (#86). 대쉬 중이면 bInvulnerable 로 들어온다 (#102).
+	// 대상이 없으면 탄을 순회할 이유가 없다.
 	UWorld* World = EntityManager.GetWorld();
 	TArray<FREHitTarget> Targets;
 	GatherHitTargets(World, Targets);
@@ -75,7 +76,15 @@ void UREBulletHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 				if (FVector::DistSquaredXY(BulletLoc, T.Location) <= HitRadius * HitRadius)
 				{
 					// 데미지는 서버 권위. 클라는 파괴와 폭발만 한다 (#98).
-					if (T.Player->HasAuthority())
+					// 대쉬 무적이면 데미지만 건너뛴다 — 소멸과 폭발은 그대로 (#102).
+					if (T.bInvulnerable)
+					{
+						// 이 경로는 로그가 없으면 관측 불가다 — 데미지를 안 주므로 아래 Applied 로그가
+						// 안 찍히고, "탄이 그냥 사라진 것"과 구별되지 않는다. 대쉬 한 번에 다수라 Verbose
+						// (검증 시 -LogCmds="LogTemp Verbose").
+						UE_LOG(LogTemp, Verbose, TEXT("[RE] BulletHit: dash-destroy (무적, 데미지 없음)"));
+					}
+					else if (T.Player->HasAuthority())
 					{
 						const float Applied = T.Player->TakeDamage(BulletDamage, FDamageEvent(), nullptr, nullptr);
 						// netmode 를 함께 찍는다 — 클라 프로세스는 접속 전 로컬 월드를 잠깐 돌리므로
