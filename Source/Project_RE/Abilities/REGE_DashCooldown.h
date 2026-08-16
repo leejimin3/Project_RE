@@ -17,5 +17,11 @@ class UREGE_DashCooldown : public UGameplayEffect
 	GENERATED_BODY()
 
 public:
-	UREGE_DashCooldown();
+	/**
+	 *  ObjectInitializer 를 받는다 — 태그 부여를 UTargetTagsGameplayEffectComponent 로 하는데,
+	 *  GE 컴포넌트는 CDO 생성자에서 CreateDefaultSubobject 로 만들어야 한다.
+	 *  FindOrAddComponent 는 내부에서 NewObject 를 불러 생성자에서 쓰면 죽는다
+	 *  ("NewObject with empty name can't be used to create default subobjects" — 실측 크래시).
+	 */
+	UREGE_DashCooldown(const FObjectInitializer& ObjectInitializer);
 };
