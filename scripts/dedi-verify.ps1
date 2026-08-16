@@ -82,7 +82,7 @@ function Assert-StagedServerFresh {
 
   재스테이징:
     & "E:\UnrealEngine-5.8\UnrealEngine-5.8\Engine\Build\BatchFiles\RunUAT.bat" BuildCookRun ``
-      -project="$SourceRoot\..\Project_RE.uproject" ``
+      -project="$(Split-Path $SourceRoot -Parent)\Project_RE.uproject" ``
       -noP4 -platform=Win64 -server -noclient -serverconfig=Development ``
       -cook -stage -pak -build -utf8output
 
@@ -371,6 +371,42 @@ if ($SelfTest) {
                    -ClientLines @{ 'client1' = $goodClientOutcome; 'client2' = $goodClientOutcome } `
                    -CheckVictory $false -Mode Outcome -ClientCount 2
     if (-not ($script:Failures -match '스폰 이격 상이')) { throw 'SelfTest: 결과 모드 스폰 이격 중복(#54 겹침 회귀)을 잡아내지 못했다' }
+
+    # --- 신선도 판정 자기검사 (#103) ---
+    # 이 판정 자체가 고장나면 다시 조용한 거짓 통과로 돌아간다. 양·음성 둘 다 본다.
+    $fresh = Join-Path ([IO.Path]::GetTempPath()) ("dedi-fresh-" + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path (Join-Path $fresh 'Source') -Force | Out-Null
+    $fakeSrc = Join-Path $fresh 'Source\Fake.cpp'
+    $fakeExe = Join-Path $fresh 'Project_REServer.exe'
+    Set-Content -LiteralPath $fakeSrc -Value '// test' -Encoding utf8
+    Set-Content -LiteralPath $fakeExe -Value 'MZ' -Encoding utf8
+    try {
+        # 1) 양성 — exe 가 소스보다 새로우면 통과해야 한다
+        (Get-Item $fakeSrc).LastWriteTime = (Get-Date).AddHours(-2)
+        (Get-Item $fakeExe).LastWriteTime = (Get-Date).AddHours(-1)
+        Assert-StagedServerFresh -ServerExe $fakeExe -SourceRoot (Join-Path $fresh 'Source')
+
+        # 2) 음성 — exe 가 낡으면 실패하고 재스테이징 명령을 알려야 한다 (#98 에서 실제로 겪은 상황)
+        (Get-Item $fakeExe).LastWriteTime = (Get-Date).AddHours(-3)
+        $caught = $null
+        try { Assert-StagedServerFresh -ServerExe $fakeExe -SourceRoot (Join-Path $fresh 'Source') }
+        catch { $caught = $_.Exception.Message }
+        if (-not $caught) { throw 'SelfTest: 낡은 스테이징 서버를 통과시켰다 (#103 회귀)' }
+        if ($caught -notmatch 'BuildCookRun') { throw 'SelfTest: 낡음 메시지에 재스테이징 명령이 없다' }
+        if ($caught -notmatch 'SkipStaleCheck') { throw 'SelfTest: 낡음 메시지에 탈출구 안내가 없다' }
+
+        # 3) exe 자체가 없으면 실패해야 한다 — 조용히 넘어가면 다음 단계가 엉뚱한 데서 죽는다
+        $caught = $null
+        try { Assert-StagedServerFresh -ServerExe (Join-Path $fresh 'nope.exe') -SourceRoot (Join-Path $fresh 'Source') }
+        catch { $caught = $_.Exception.Message }
+        if (-not $caught) { throw 'SelfTest: 스테이징 서버 부재를 잡아내지 못했다' }
+
+        # 4) 소스를 못 찾으면 판단 근거가 없다 — 통과시킨다(오탐으로 검증을 막지 않는다)
+        New-Item -ItemType Directory -Path (Join-Path $fresh 'Empty') -Force | Out-Null
+        Assert-StagedServerFresh -ServerExe $fakeExe -SourceRoot (Join-Path $fresh 'Empty')
+    }
+    finally { Remove-Item -LiteralPath $fresh -Recurse -Force -ErrorAction SilentlyContinue }
+    Write-Host '[dedi-verify] 신선도 판정 자기검사 4/4 통과 (#103)' -ForegroundColor DarkGray
 
     Write-Host "`n[dedi-verify] SelfTest OK" -ForegroundColor Green
     exit 0
