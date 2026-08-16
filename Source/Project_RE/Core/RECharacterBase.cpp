@@ -118,9 +118,11 @@ ARECharacterBase::ARECharacterBase()
 	TopDownCamera->bUsePawnControlRotation = false;
 	TopDownCamera->SetFieldOfView(90.f);
 
-	// 마네킹 메시 로드 (ConstructorHelpers, 실패해도 크래시 없이 진행)
+	// 플레이어 메시 로드 (#117) — 유료 애셋(Fab, .gitignore 대상)이라 없는 환경이 정상 경로다.
+	// SKEL_Sarah 는 UE5 Manny 와 본 이름·계층이 동일하고, 스켈레톤 에셋에 Manny 가
+	// Compatible Skeleton 으로 등록돼 있어야 아래 ABP_Unarmed/MM_Dash 가 그대로 재생된다.
 	static ConstructorHelpers::FObjectFinder<USkeletalMesh> MeshAsset(
-		TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"));
+		TEXT("/Game/Adventure_Pack/Characters/Sarah/Mesh/SK_Sarah.SK_Sarah"));
 	if (MeshAsset.Succeeded())
 	{
 		GetMesh()->SetSkeletalMesh(MeshAsset.Object);
