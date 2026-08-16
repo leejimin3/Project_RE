@@ -43,6 +43,14 @@ namespace
 	 */
 	constexpr float MoveInputStopRadius = 60.f;
 
+	/**
+	 *  이동 재요청을 허용하는 최소 목표 변화량 (#126). 홀드 중 커서가 이만큼 움직여야 다시 보낸다.
+	 *  ponytail: 드래그가 빠르면 이 값을 넘겨 재요청이 나가고 그 순간 속도가 한 번 리셋된다.
+	 *  완전히 없애려면 SimpleMoveToLocation 대신 PathFollowingComponent::RequestMove 를
+	 *  EPathFollowingVelocityMode::Keep 으로 직접 호출해야 한다 — 필요해지면 그때 가라.
+	 */
+	constexpr float MoveRequestMinDelta = 100.f;
+
 	static TAutoConsoleVariable<int32> CVarCheatPanel(
 		TEXT("re.Debug.CheatPanel"),
 		1,
@@ -163,6 +171,26 @@ void AREPlayerController::PlayerTick(float DeltaTime)
 		// 상태로 판정하므로 도달·발사정지·사망·경로실패를 한 곳에서 덮는다.
 		if (ARECharacterBase* RC = Cast<ARECharacterBase>(GetPawn()))
 		{
+			// 서버에도 목표 방향 입력을 넣는다 (#126).
+			//
+			// 이동 자체는 패스팔로잉이 이미 처리하므로 이 입력은 이동을 만들기 위한 것이 아니다.
+			// CMC 의 Acceleration 멤버는 오직 입력 벡터에서만 채워지고(CharacterMovementComponent.cpp:6451
+			// Acceleration = ScaleInputAcceleration(ConstrainInputAcceleration(InputVector))),
+			// 패스팔로잉은 RequestedAcceleration 이라는 별도 변수를 쓰며 멤버 Acceleration 은 0으로 남긴다.
+			// ABP_Unarmed 의 ShouldMove 는 GroundSpeed 와 함께 GetCurrentAcceleration() != 0 을 보므로,
+			// 입력이 없으면 속도가 600 이어도 Idle 상태에 머물러 캐릭터가 포즈 고정인 채 미끄러진다.
+			//
+			// 클라(아래 :215)가 이미 같은 입력을 넣고 있었다 — 서버만 빠져 있었다.
+			if (RC->HasMoveTarget())
+			{
+				const FVector To = RC->GetMoveTarget() - RC->GetActorLocation();
+				const FVector Dir = FVector(To.X, To.Y, 0.f);
+				if (Dir.SizeSquared() > FMath::Square(MoveInputStopRadius))
+				{
+					RC->AddMovementInput(Dir.GetSafeNormal());
+				}
+			}
+
 			if (RC->HasMoveTarget())
 			{
 				const UPathFollowingComponent* PFC = FindComponentByClass<UPathFollowingComponent>();
@@ -252,10 +280,24 @@ void AREPlayerController::OnClickMove(const FInputActionValue& Value)
 {
 	// 클릭 검출은 로컬(커서/카메라는 로컬 전용). 해석된 월드 좌표만 서버로.
 	FHitResult Hit;
-	if (GetHitResultUnderCursor(ECC_Visibility, false, Hit) && Hit.bBlockingHit)
+	if (!GetHitResultUnderCursor(ECC_Visibility, false, Hit) || !Hit.bBlockingHit)
 	{
-		Server_RequestMove(Hit.ImpactPoint);
+		return;
 	}
+
+	// 홀드 시 Triggered가 매 프레임 오므로 목표 변화량으로 페이싱한다 (OnFire의 시간 페이싱과 같은 취지).
+	// 매 프레임 재요청하면 SimpleMoveToLocation이 진행 중인 패스팔로잉을 Abort하고 새로 시작하는데,
+	// 그때마다 Velocity가 0으로 리셋돼 ABP가 Idle을 출력한다 — 애니메이션 없이 미끄러진다 (#126).
+	// 이동 중일 때만 억제한다. 도착한 뒤 같은 지점을 다시 클릭하는 경로까지 막으면 안 된다.
+	const ARECharacterBase* RC = Cast<ARECharacterBase>(GetPawn());
+	if (RC && RC->HasMoveTarget()
+		&& FVector::DistSquared2D(Hit.ImpactPoint, LastMoveRequest) < FMath::Square(MoveRequestMinDelta))
+	{
+		return;
+	}
+
+	LastMoveRequest = Hit.ImpactPoint;
+	Server_RequestMove(Hit.ImpactPoint);
 }
 
 void AREPlayerController::OnDash(const FInputActionValue& Value)
