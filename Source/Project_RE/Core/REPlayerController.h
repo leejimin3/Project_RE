@@ -100,6 +100,9 @@ private:
 	/** 클라 발사 페이싱 — 마지막 발사 요청 시각(월드초). 홀드 시 Triggered가 매 프레임 오는 것 억제. */
 	double LastFireRequestTime = -1.0;
 
+	/** 클라 이동 페이싱 — 마지막으로 서버에 보낸 이동 목표 (#126). 발사의 시간 페이싱에 대응하는 거리 페이싱. */
+	FVector LastMoveRequest = FVector::ZeroVector;
+
 	/**
 	 *  발사 직후 커서 회전을 유지하는 구간의 종료 시각(월드초). -1 = 락 없음.
 	 *  서버 StopMovement가 도달하기 전 남은 속도가 커서 회전을 이동 방향으로 덮는 것을 막는다 (#79).
