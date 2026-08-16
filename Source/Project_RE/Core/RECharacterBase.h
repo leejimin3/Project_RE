@@ -59,6 +59,33 @@ public:
 	float GetMaxHealth() const { return MaxHealth; }
 
 	/**
+	 *  서버 패스팔로잉의 현재 목표 (#112). 오너 클라만 받는다.
+	 *
+	 *  데디에서 원격 클라의 폰은 RemoteRole == ROLE_AutonomousProxy 라, 서버는 틱에서
+	 *  PerformMovement 를 부르지 않는다. 패스팔로잉이 거기 얹혀 있어 서버가 스스로 전진하지
+	 *  못하고, 클라 ServerMove 가 올 때만 찔끔 움직인다(실측 62uu/s, 설계 600uu/s 의 1/10).
+	 *
+	 *  목표를 오너 클라에 알려주면 클라가 그 방향으로 AddMovementInput 을 넣는다. 그러면
+	 *  클라 CMC 에 실제 입력이 생겨 ServerMove 가 가속을 싣고 오고, 서버는 정상 속도로 전진한다.
+	 *  덤으로 클라 예측이 "브레이크"에서 "전진"으로 바뀌어 보정도 줄어든다.
+	 *
+	 *  bHasMoveTarget 이 false 면 목표 없음(도달·중단). 서버 권위는 그대로다 — 클라 예측은
+	 *  직선이고 최종 위치는 서버가 정한다.
+	 */
+	UPROPERTY(Replicated)
+	FVector_NetQuantize MoveTarget = FVector::ZeroVector;
+
+	UPROPERTY(Replicated)
+	bool bHasMoveTarget = false;
+
+	/** 서버에서 목표 설정/해제. 패스팔로잉 시작·중단 지점에서 부른다. */
+	void SetMoveTarget(const FVector& InTarget);
+	void ClearMoveTarget();
+
+	bool HasMoveTarget() const { return bHasMoveTarget; }
+	FVector GetMoveTarget() const { return MoveTarget; }
+
+	/**
 	 *  전 클라 발사 모션 재생 (M4 #74). 코스메틱 전용 — 판정·데미지·rate limit과 무관.
 	 *
 	 *  RPC 배치 근거(이슈 #74 b안): UREAttackComponent는 복제 설정이 없다(SetIsReplicatedByDefault 미호출).

@@ -13,6 +13,7 @@
 #include "Core/RECharacterBase.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "NavigationSystem.h"
+#include "Navigation/PathFollowingComponent.h"
 #include "Misc/App.h"
 #include "TimerManager.h"
 #include "AbilitySystemComponent.h"
@@ -36,6 +37,12 @@ namespace
 	 *  치트 패널 표시 허용 (#100). 0 이면 토글 키를 눌러도 뜨지 않는다.
 	 *  패널은 원래도 키를 눌러야 뜨지만, 촬영 중 실수로 한 번 누르면 그대로 찍힌다.
 	 */
+	/**
+	 *  클라 이동 입력을 끊는 목표 근접 반경 (#112). 서버가 bHasMoveTarget 을 내리기까지의
+	 *  공백에 도착 지점에서 좌우로 떠는 것을 막는다.
+	 */
+	constexpr float MoveInputStopRadius = 60.f;
+
 	static TAutoConsoleVariable<int32> CVarCheatPanel(
 		TEXT("re.Debug.CheatPanel"),
 		1,
@@ -151,6 +158,20 @@ void AREPlayerController::PlayerTick(float DeltaTime)
 	// 오너 클라 전용 회전 구동 (#79). 서버는 CMC의 bOrientRotationToMovement가 그대로 담당한다.
 	if (HasAuthority())
 	{
+		// 서버: 패스팔로잉이 끝나거나 끊기면 목표를 내린다 (#112).
+		// 안 내리면 오너 클라가 목표를 향해 계속 입력을 넣어 서버 보정과 싸운다.
+		// 상태로 판정하므로 도달·발사정지·사망·경로실패를 한 곳에서 덮는다.
+		if (ARECharacterBase* RC = Cast<ARECharacterBase>(GetPawn()))
+		{
+			if (RC->HasMoveTarget())
+			{
+				const UPathFollowingComponent* PFC = FindComponentByClass<UPathFollowingComponent>();
+				if (!PFC || PFC->GetStatus() != EPathFollowingStatus::Moving)
+				{
+					RC->ClearMoveTarget();
+				}
+			}
+		}
 		return;
 	}
 
@@ -174,6 +195,26 @@ void AREPlayerController::PlayerTick(float DeltaTime)
 	{
 		FacingPawn = Char;
 		Move->bOrientRotationToMovement = false;
+	}
+
+	// 서버가 준 이동 목표로 클라도 입력을 넣는다 (#112).
+	//
+	// 클라 예측은 직선이고 서버 패스팔로잉은 곡선 nav 경로를 탈 수 있다 — 둘이 어긋나면
+	// 서버 보정이 정정한다. 최종 위치는 서버가 정하므로 권위는 그대로다. 이 아레나는 장애물이
+	// 없어 실질적으로 항상 직선이다.
+	if (ARECharacterBase* RC = Cast<ARECharacterBase>(Char))
+	{
+		if (RC->HasMoveTarget())
+		{
+			const FVector To = RC->GetMoveTarget() - Char->GetActorLocation();
+			const FVector Dir = FVector(To.X, To.Y, 0.f);
+			// 목표 근처에서는 입력을 끊는다. 안 그러면 도착 지점에서 좌우로 떤다.
+			// 서버가 bHasMoveTarget 을 내릴 때까지의 공백을 여기서 메운다.
+			if (Dir.SizeSquared() > FMath::Square(MoveInputStopRadius))
+			{
+				Char->AddMovementInput(Dir.GetSafeNormal());
+			}
+		}
 	}
 
 	// 발사 직후 락 구간에는 커서 회전을 매 틱 다시 세운다.
@@ -382,6 +423,13 @@ void AREPlayerController::Server_RequestMove_Implementation(FVector Target)
 
 	UE_LOG(LogTemp, Log, TEXT("[Move] Server_RequestMove recv target=%s"), *NavLoc.Location.ToString());
 	UAIBlueprintHelperLibrary::SimpleMoveToLocation(this, NavLoc.Location);
+
+	// 오너 클라에 목표를 알려 클라도 같은 방향으로 입력을 넣게 한다 (#112).
+	// 이게 없으면 데디에서 서버가 폰을 거의 못 움직인다 — RECharacterBase::MoveTarget 주석 참조.
+	if (ARECharacterBase* Char = Cast<ARECharacterBase>(GetPawn()))
+	{
+		Char->SetMoveTarget(NavLoc.Location);
+	}
 }
 
 void AREPlayerController::Server_RequestFire_Implementation(FVector Dir)
@@ -438,6 +486,12 @@ void AREPlayerController::Server_RequestFire_Implementation(FVector Dir)
 		if (UPawnMovementComponent* Move = P->GetMovementComponent())
 		{
 			Move->StopMovementImmediately();                   // 잔여 속도 제거 (로아 평타 정지)
+		}
+		// 클라 예측도 같이 끊는다 (#112). 안 끊으면 서버는 섰는데 클라만 계속 밀고 가서
+		// 매 프레임 보정으로 되돌려지는 최악의 조합이 된다.
+		if (ARECharacterBase* RC = Cast<ARECharacterBase>(P))
+		{
+			RC->ClearMoveTarget();
 		}
 		P->SetActorRotation(FRotator(0.f, Dir2D.Rotation().Yaw, 0.f));  // 커서 방향 회전
 	}
