@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Mass 탄환 프로세서 프로파일 캡처. 에디터를 실 RHI -game 으로 띄우고
   Insights 트레이스 + CSV 프레임 타임을 수집한 뒤 종료한다.
@@ -52,10 +52,10 @@ $Stamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
 # Mass 경로: re.Bullets.Count N (Actor는 기본 0). Actor 경로: Mass boss(기본 480)를 0으로 죽이고 액터만.
 if ($Actor) {
     $Tag     = 'Actor'
-    $ExecCmd = "re.Profiling.KeepFiring 1,re.Cheat.PlayerInvincible 1,re.Bullets.Count 0,re.ActorBullets.Count $Bullets"
+    $ExecCmd = "re.Profiling.KeepFiring 1,re.Fx.Explosions 0,re.Cheat.PlayerInvincible 1,re.Bullets.Count 0,re.ActorBullets.Count $Bullets"
 } else {
     $Tag     = 'Mass'
-    $ExecCmd = "re.Profiling.KeepFiring 1,re.Cheat.PlayerInvincible 1,re.Bullets.Count $Bullets"
+    $ExecCmd = "re.Profiling.KeepFiring 1,re.Fx.Explosions 0,re.Cheat.PlayerInvincible 1,re.Bullets.Count $Bullets"
 }
 if ($Ki -gt 0) { $ExecCmd += ",re.Bullets.SpawnKi $Ki" }
 if ($ExtraExec) { $ExecCmd += ",$ExtraExec" }

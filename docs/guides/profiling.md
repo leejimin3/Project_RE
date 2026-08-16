@@ -64,6 +64,7 @@ Select-String -Path .\Saved\Profiling\<run>\run.log -Pattern 'r\.BloomQuality = 
 | `-unattended` | **금지** | `FApp::IsUnattended()` 가 켜지면 `REPlayerController` 의 headless 프로브가 발동해 약 4초 뒤 `RequestExit` 로 게임을 스스로 끈다 → 캡처 프레임을 못 채운다 |
 | `re.Profiling.KeepFiring` | **1 (필수)** | 자동사격이 보스를 ~2.5s에 죽이거나(VICTORY) 정지 플레이어가 탄막에 죽으면(DEFEAT) `EndGame`이 보스 `DemoFireTimer`를 꺼 **Mass 탄환이 0발**로 측정이 무효화된다. 이 CVar가 게임오버를 무력화 + 보스를 무적으로 해 탄막을 계속 유지시킨다. 스크립트가 자동 주입 |
 | `re.Cheat.PlayerInvincible` | **1 (필수)** | #86부터 사망한 플레이어는 `GatherHitTargets`의 판정 대상에서 빠지고, 대상이 비면 두 히트 프로세서가 청크 순회 전에 조기 반환한다 — 즉 DEFEAT 이후로는 탄이 플레이어 근처에서 소멸하는 일 자체가 없어져 캡처 후반부가 "타겟 없음" 원가만 재게 된다. `profile.ps1`이 이 CVar를 같이 주입해 플레이어가 죽지 않게 고정한다 |
+| `re.Fx.Explosions` | **0 (필수)** | 폭발(#98)이 켜져 있으면 무적 플레이어가 탄막 한가운데서 **초당 109회** 맞아(실측 `BulletHit` 3,163회/29초) 폭발이 쏟아진다. 실제 게임플레이는 10발이면 사망하므로 결코 나오지 않는 비율이고, 그 상태로 재면 탄환 상한이 폭발 비용에 오염된다(50,000발 p99 15.18 → 21.56). 하네스가 자동 주입해 **상한 측정과 폭발 비용을 분리**한다 |
 
 **워밍업 컷은 이제 필요 없다** (#88 이전에는 앞 120행을 버리라고 했다). 캡처가 보스의 라이브 탄환이 목표치에 도달한
 뒤에 시작하므로 첫 행부터 정상상태다. `frames.csv` 원본을 그대로 읽어라. (하네스는 여전히 수집만 하고 해석하지 않는다 — 해석은 #46.)

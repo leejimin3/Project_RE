@@ -34,7 +34,9 @@ param(
     # DefaultGame.ini 의 BossMaxHealth 를 프로브 1히트(10 데미지) 이하로 낮추고 재쿡한 상태에서만 성립.
     [switch]$Victory,
     # 프로세스를 띄우지 않고 판정 로직만 합성 로그로 검사한다.
-    [switch]$SelfTest
+    [switch]$SelfTest,
+    # 스테이징 서버가 소스보다 낡아도 진행한다. 렌더/클라 전용 변경처럼 서버가 무관할 때만 써라 (#103).
+    [switch]$SkipStaleCheck
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,6 +48,48 @@ $Uproject = Join-Path $Root 'Project_RE.uproject'
 
 # 접속 종료 후 클라는 자기 스탠드얼론 월드로 폴백한다 — 그 뒤 로그는 별개 게임이므로 판정에서 잘라낸다.
 $DisconnectMarker = 'Host closed the connection'
+
+<#
+  스테이징 신선도 검사 (#103).
+
+  서버는 쿡·스테이징 산출물에서 뜬다. 이 스크립트에 재스테이징 단계가 없으므로,
+  소스를 고치고 Build.bat 으로 컴파일해도 그 코드는 서버 exe 에 반영되지 않는다.
+  클라는 방금 빌드한 에디터 바이너리로 뜨기 때문에 **서버 쪽만 조용히 낡는다.**
+
+  실제로 #98 에서 서버 판정 로직을 바꾸고 전 항목 PASS 를 받았는데, 서버 exe 가
+  하루 반 낡아 그 변경이 한 번도 실행되지 않았다. 거짓 통과를 여기서 막는다.
+
+  매번 재쿡하지는 않는다 — 쿡은 수 분~수십 분이라 검증 리듬이 깨진다
+  (docs/guides/dedicated-server.md: "코드 고칠 때마다 재쿡하지 마라").
+#>
+function Assert-StagedServerFresh {
+    param([string]$ServerExe, [string]$SourceRoot)
+
+    if (-not (Test-Path $ServerExe)) {
+        throw "스테이징 서버가 없다: $ServerExe`n  재스테이징이 필요하다 — docs/guides/dedicated-server.md '쿡 + 스테이징' 참조."
+    }
+
+    $exeTime = (Get-Item $ServerExe).LastWriteTime
+    $newest  = Get-ChildItem $SourceRoot -Recurse -Include *.cpp,*.h,*.cs -File -ErrorAction SilentlyContinue |
+               Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $newest) { return }   # 소스를 못 찾으면 판단 근거가 없다 — 조용히 통과시킨다
+
+    if ($exeTime -lt $newest.LastWriteTime) {
+        throw @"
+스테이징 서버가 소스보다 낡았다 — 서버 코드 변경이 검증되지 않는다 (#103).
+  staged: $($exeTime.ToString('yyyy-MM-dd HH:mm'))   ($ServerExe)
+  source: $($newest.LastWriteTime.ToString('yyyy-MM-dd HH:mm'))   ($($newest.Name))
+
+  재스테이징:
+    & "E:\UnrealEngine-5.8\UnrealEngine-5.8\Engine\Build\BatchFiles\RunUAT.bat" BuildCookRun ``
+      -project="$SourceRoot\..\Project_RE.uproject" ``
+      -noP4 -platform=Win64 -server -noclient -serverconfig=Development ``
+      -cook -stage -pak -build -utf8output
+
+  렌더/클라 전용 변경이라 서버가 무관하면: -SkipStaleCheck
+"@
+    }
+}
 
 # ---------------------------------------------------------------- 판정 엔진
 
@@ -347,6 +391,12 @@ $Procs = @()
 
 Write-Host "[dedi-verify] clients=$Clients port=$Port"
 Write-Host "[dedi-verify] run dir: $RunDir"
+
+# 서버를 띄우기 전에 스테이징 신선도부터 본다 — 낡은 exe 로 초록불이 나오면
+# 그 검증은 아무것도 보증하지 않는다 (#103).
+if (-not $SkipStaleCheck) {
+    Assert-StagedServerFresh -ServerExe $Server -SourceRoot (Join-Path $Root 'Source')
+}
 
 try {
     # -abslog 은 반드시 전개된 경로로 넘긴다. 리터럴이 들어가면 로그가 조용히 사라진다(가이드 함정).
