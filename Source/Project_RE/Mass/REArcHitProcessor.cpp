@@ -29,7 +29,7 @@ void UREArcHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExecuti
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(RE_ArcHit);
 
-	// 살아있고 대쉬 중이 아닌 플레이어 전원 (#86).
+	// 살아있는 플레이어 전원 (#86). 대쉬 중이면 bInvulnerable 로 들어온다 (#102).
 	TArray<FREHitTarget> Targets;
 	GatherHitTargets(EntityManager.GetWorld(), Targets);
 	if (Targets.IsEmpty())
@@ -53,6 +53,10 @@ void UREArcHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExecuti
 			// break 없음 — 범위 폭발이라 겹친 인원이 모두 맞는다. 소멸은 Sim이 착지 시 처리한다.
 			for (const FREHitTarget& T : Targets)
 			{
+				if (T.bInvulnerable)
+				{
+					continue;   // 대쉬 무적 (#102). 곡사탄 소멸은 착지 시 Sim 이 하므로 여기선 건너뛰기만 하면 된다.
+				}
 				if (FVector::DistSquaredXY(A.Target, T.Location) <= A.Radius * A.Radius)
 				{
 					const float Applied = T.Player->TakeDamage(A.Damage, FDamageEvent(), nullptr, nullptr);
