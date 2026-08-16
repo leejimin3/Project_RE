@@ -15,5 +15,14 @@
  */
 namespace REExplosionFx
 {
+	/**
+	 *  폭발 에셋을 미리 로드한다 (#107). 월드 시작 시 1회 호출할 것.
+	 *
+	 *  안 부르면 첫 폭발에서 동기 로드가 걸린다 — 실측 ~290ms 블로킹(FlushAsyncLoading).
+	 *  Niagara 시스템 하나가 의존 패키지 수십 개를 끌어온다.
+	 *  데디서버에서는 아무것도 하지 않는다.
+	 */
+	void Preload(const UWorld* World);
+
 	void SpawnBulletExplosion(const UWorld* World, const FVector& Location);
 }

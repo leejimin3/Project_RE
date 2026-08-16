@@ -40,6 +40,37 @@ namespace
 	 */
 	UNiagaraSystem* GCachedSystem = nullptr;
 	bool GLoadAttempted = false;
+
+	/** 1회만 로드. 실패해도 재시도하지 않는다 — 매 폭발마다 실패 로드를 반복하지 않게. */
+	void EnsureLoaded()
+	{
+		if (GLoadAttempted)
+		{
+			return;
+		}
+		GLoadAttempted = true;
+		GCachedSystem = LoadObject<UNiagaraSystem>(nullptr, ExplosionAssetPath);
+		if (GCachedSystem)
+		{
+			GCachedSystem->AddToRoot();   // GC 가 추적하지 않는 정적 포인터 — 하드 참조 필수
+		}
+		else
+		{
+			// 조용한 무동작 금지 — 폭발이 안 나오는 것을 눈치채기 어렵다.
+			UE_LOG(LogTemp, Error, TEXT("[RE] NS_REBulletExplosion 로드 실패 — 폭발이 표시되지 않는다 (#98)"));
+		}
+	}
+}
+
+void REExplosionFx::Preload(const UWorld* World)
+{
+	if (!World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	EnsureLoaded();
+	UE_LOG(LogTemp, Log, TEXT("[RE] ExplosionFx: 선로드 %s (#107)"),
+		GCachedSystem ? TEXT("완료") : TEXT("실패"));
 }
 
 void REExplosionFx::SpawnBulletExplosion(const UWorld* World, const FVector& Location)
@@ -53,20 +84,9 @@ void REExplosionFx::SpawnBulletExplosion(const UWorld* World, const FVector& Loc
 		return;
 	}
 
-	if (!GLoadAttempted)
-	{
-		GLoadAttempted = true;
-		GCachedSystem = LoadObject<UNiagaraSystem>(nullptr, ExplosionAssetPath);
-		if (GCachedSystem)
-		{
-			GCachedSystem->AddToRoot();   // GC 가 추적하지 않는 정적 포인터 — 하드 참조 필수
-		}
-		else
-		{
-			// 조용한 무동작 금지 — 폭발이 안 나오는 것을 눈치채기 어렵다.
-			UE_LOG(LogTemp, Error, TEXT("[RE] NS_REBulletExplosion 로드 실패 — 폭발이 표시되지 않는다 (#98)"));
-		}
-	}
+	// 정상 경로에서는 Preload 가 이미 끝냈다 (#107). 여기 남겨두는 건 안전망이다 —
+	// 선로드를 안 탄 월드에서도 폭발은 나와야 한다. 그 경우 첫 스폰이 ~290ms 멈춘다.
+	EnsureLoaded();
 	if (!GCachedSystem)
 	{
 		return;
