@@ -6,6 +6,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "GameFramework/Actor.h"
 #include "Engine/World.h"
+#include "REExplosionFx.h"
 
 void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
@@ -16,6 +17,12 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	{
 		return;
 	}
+
+	// 폭발 에셋 선로드 (#107). 첫 폭발에서 동기 로드가 걸리면 ~290ms 멈추고,
+	// 그 히치가 대쉬 구간에 겹치면 이동거리까지 틀어졌다(#106). 시작 시 한 번에 끝낸다.
+	// 여기가 적기다 — 위 가드가 데디서버·비게임월드를 이미 걸러냈고, 레벨 로드 중이라
+	// 로드 비용이 눈에 띄지 않는다.
+	REExplosionFx::Preload(&InWorld);
 
 	Holder = InWorld.SpawnActor<AActor>();
 	if (!Holder)
