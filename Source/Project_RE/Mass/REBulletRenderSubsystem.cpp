@@ -94,7 +94,10 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		UE_LOG(LogTemp, Error, TEXT("[RE] M_REBullet 로드 실패 — 곡사탄 머티리얼 없이 렌더된다 (#97)"));
 	}
 
-	// 착지 마커 ISM — 빨강 평면 원. Cylinder를 납작하게(Z scale 축소) 눌러 디스크로.
+	// 착지 마커 ISM — 게임 경고 표시처럼 아주 얇은 반투명 링.
+	// Plane 을 쓴다. 이전에는 Cylinder 였는데, Cylinder 는 높이가 100uu 라 Z 스케일 1.0 이
+	// 두께 100uu 짜리 '낮은 원기둥'이었다(#122 피드백). Plane 은 두께 개념이 없어 원천 해결이고,
+	// 0~1 UV 가 깔끔해서 머티리얼에서 링 마스크를 만들기도 쉽다.
 	MarkerISM = NewObject<UInstancedStaticMeshComponent>(Holder);
 	MarkerISM->SetupAttachment(ISM);
 	MarkerISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -103,19 +106,23 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	// 마커는 바닥에 붙은 납작한 디스크라 그림자가 자기 자신에 가려 보이지도 않는다 (#95).
 	MarkerISM->SetCastShadow(false);
 	MarkerISM->RegisterComponent();
-	if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder")))
+	if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane")))
 	{
 		MarkerISM->SetStaticMesh(Mesh);
 	}
-	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
+	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_ArenaMarker.M_ArenaMarker")))
 	{
 		if (UMaterialInstanceDynamic* Dyn = MarkerISM->CreateDynamicMaterialInstance(0, Base))
 		{
-			// HDR 고강도 — 탄환 구체는 곡면 스페큘러 하이라이트로 블룸이 걸려 밝게 보이지만,
-			// 마커는 평평한 원판이라 그 하이라이트가 없어 같은 Color=1.0 값이어도 어둡게 죽는다.
-			// 값 자체를 1.0 위로 올려 블룸 임계값을 넘겨야 각도와 무관하게 확실히 보인다.
-			Dyn->SetVectorParameterValue(TEXT("Color"), FLinearColor(4.f, 0.f, 0.f));
+			// 링 마스크(Unlit/Translucent)라 스페큘러 하이라이트에 기대지 않는다. 그래도 HDR
+			// 값을 1.0 위로 두어야 블룸 임계값을 넘겨 경고 표시로 또렷하게 읽힌다.
+			// 파라미터 이름 "Color" 는 M_ArenaMarker 쪽과 맞춰야 한다 - 다르면 조용히 안 먹는다.
+			Dyn->SetVectorParameterValue(TEXT("Color"), FLinearColor(3.f, 0.15f, 0.15f));
 		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("[RE] M_ArenaMarker 로드 실패 — 마커가 기본 머티리얼로 렌더된다 (#122)"));
 	}
 
 	// 실제 적용된 머티리얼 이름을 찍는다 — CreateDynamicMaterialInstance 가 실패하면

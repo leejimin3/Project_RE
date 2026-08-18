@@ -16,12 +16,18 @@ namespace
 	 *  실측 확정(실RHI 스크린샷 이진탐색): XY 스케일(2.4) 대비 Z 스케일이 1.0 미만이면
 	 *  인스턴스가 화면에서 완전히 사라짐(0.02/0.15/0.4 전부 무렌더 확인, 등방 2.0은 정상 렌더 확인) —
 	 *  ISM 극단적 비등방 스케일에서의 컬링/바운즈 계산 이슈로 추정(엔진 레벨 이슈, 원인 미상).
-	 *  Z=1.0이 확인된 안전 하한선 — 더 낮추지 말 것. */
+	 *  Z=1.0이 확인된 안전 하한선 — 더 낮추지 말 것.
+	 *
+	 *  #122 이후 메시가 Plane 으로 바뀌어 '두께'라는 개념 자체가 없어졌다(마커는 이제 머티리얼
+	 *  링 마스크로 그린다). 그래도 위의 비등방 스케일 함정을 다시 밟지 않도록 1.0 을 유지한다. */
 	constexpr float MarkerThickness = 1.0f;
-	/** Cylinder 기본 반경(cm) — /Engine/BasicShapes/Cylinder. 스케일 = Radius/50. */
+	/** 마커 메시 기본 반경(cm) — /Engine/BasicShapes/Plane 은 100x100 이라 반경 50. 스케일 = Radius/50. */
 	constexpr float CylinderBaseRadius = 50.f;
-	/** 마커 바닥 오프셋(cm) — Target.Z에서 띄워 바닥 매몰/Z-fighting 방지. 실RHI 스크린샷으로 확인된 값. */
-	constexpr float MarkerZOffset = 10.f;
+	/** 마커 바닥 오프셋(cm) — Target.Z에서 띄워 바닥 매몰/Z-fighting 방지.
+	 *  10 이었을 때는 마커가 높이 100 짜리 Cylinder 라 아래가 묻혀도 윗부분이 삐져나와 보였다.
+	 *  #122 에서 두께 없는 Plane 으로 바꾸자 그대로 바닥 속에 묻혀 화면에서 사라졌다 -
+	 *  Main 레벨 바닥 윗면이 Z=40 이라 그보다 위여야 한다. */
+	constexpr float MarkerZOffset = 55.f;
 }
 
 UREArcRenderProcessor::UREArcRenderProcessor()
