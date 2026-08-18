@@ -8,6 +8,15 @@
 #include "Mass/EntityFragments.h"   // FTransformFragment
 #include "Engine/World.h"
 
+namespace
+{
+	/** 곡사탄 폭발 Z 오프셋(cm) — 착지점(Z 2)이 바닥 윗면(Z 40)보다 아래라 그대로 터뜨리면
+	 *  폭발 중심이 바닥에 묻힌다. 마커의 MarkerZOffset(55) 과 같은 근거이므로 같은 값을 쓴다.
+	 *  이름을 마커 쪽과 다르게 둔다: 익명 네임스페이스 동명 상수가 유니티 빌드에서 충돌한
+	 *  전례가 있다(REArcRenderProcessor.cpp 의 ArcPopDuration 주석 참조). */
+	constexpr float ExplosionZOffset = 55.f;
+}
+
 UREArcFxProcessor::UREArcFxProcessor()
 	: EntityQuery(*this)
 {
@@ -56,7 +65,13 @@ void UREArcFxProcessor::Execute(FMassEntityManager& EntityManager, FMassExecutio
 			// 처리 페이즈 끝에 플러시한다 → 다음 프레임에는 엔티티가 이미 없다.
 			if (A[i].Elapsed >= A[i].FlightTime)
 			{
-				REExplosionFx::SpawnBulletExplosion(World, T[i].GetTransform().GetLocation());
+				// 착지 평면은 보스 캡슐 바닥 근사(BossLoc.Z - 88 = Z 2)라 Main 레벨 바닥
+				// 윗면(Z 40)보다 아래다. 그대로 터뜨리면 폭발 중심이 바닥 속에 묻혀
+				// 위로 삐져나온 부분만 보인다 - "중앙이 비었다"는 화면이 이것이다 (#119).
+				// 마커가 MarkerZOffset 55 로 올라간 것과 같은 이유다 (#122).
+				FVector Loc = T[i].GetTransform().GetLocation();
+				Loc.Z += ExplosionZOffset;
+				REExplosionFx::SpawnBulletExplosion(World, Loc);
 			}
 		}
 	});
