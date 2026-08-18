@@ -25,12 +25,14 @@ namespace
 		ECVF_Cheat);
 
 	/**
-	 *  폭발 스케일. 엔진 템플릿 SimpleExplosion 은 기본 크기가 이 게임 스케일(탄 지름 50uu)에
-	 *  비해 과하다 — 실측 스크린샷에서 플레이어를 완전히 덮었다.
+	 *  폭발 스케일. 팩 이펙트는 "Big" 계열이라 이 게임 스케일(탄 지름 50uu)에 비해 과하다 —
+	 *  실측 스크린샷 기준값이다. 엔진 템플릿(SimpleExplosion)을 쓰던 시절 값은 0.25 였다;
+	 *  애셋을 갈아끼우면 이 값도 화면으로 다시 잡아야 한다 (#119).
 	 */
 	constexpr float ExplosionScale = 0.06f;
 
-	/** 폭발 에셋. scripts/make_explosion_fx.py 가 엔진 템플릿을 복제해 만든다. */
+	/** 폭발 에셋. scripts/convert_explosion_fx.py 가 팩의 Cascade 시스템을 Niagara 로
+	 *  변환해 만든다. 팩은 gitignore 대상이라 새 환경에서는 그 스크립트를 돌려야 한다 (#119). */
 	const TCHAR* ExplosionAssetPath = TEXT("/Game/FX/NS_REBulletExplosion.NS_REBulletExplosion");
 
 	/**
