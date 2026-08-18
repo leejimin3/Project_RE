@@ -28,7 +28,7 @@ namespace
 	 *  폭발 스케일. 엔진 템플릿 SimpleExplosion 은 기본 크기가 이 게임 스케일(탄 지름 50uu)에
 	 *  비해 과하다 — 실측 스크린샷에서 플레이어를 완전히 덮었다.
 	 */
-	constexpr float ExplosionScale = 0.25f;
+	constexpr float ExplosionScale = 0.06f;
 
 	/** 폭발 에셋. scripts/make_explosion_fx.py 가 엔진 템플릿을 복제해 만든다. */
 	const TCHAR* ExplosionAssetPath = TEXT("/Game/FX/NS_REBulletExplosion.NS_REBulletExplosion");
