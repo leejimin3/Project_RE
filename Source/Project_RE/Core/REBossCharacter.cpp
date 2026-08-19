@@ -12,7 +12,8 @@
 #include "ProfilingDebugging/CsvProfiler.h"                 // 채움 완료 시점에 캡처 시작 신호 (#88)
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "Animation/AnimInstance.h"
+#include "Animation/AnimSequence.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/SkeletalMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "REStatsSettings.h"
@@ -44,7 +45,9 @@ static TAutoConsoleVariable<float> CVarSpawnKi(
 
 AREBossCharacter::AREBossCharacter()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// 틱은 외관 램프(#130) 전용이라 기본 정지 — BeginPlay가 비-데디에서만 켠다.
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 
 	// 체력 초기화 — Settings 단일 출처 (M3.5 ③, RECharacterBase 동일 패턴).
 	MaxHealth = GetDefault<UREStatsSettings>()->BossMaxHealth;
@@ -55,22 +58,163 @@ AREBossCharacter::AREBossCharacter()
 	HealthBar->SetupAttachment(RootComponent);
 	HealthBar->BarColor = FLinearColor::Red;
 
-	// 보스 가시화 (M3.5 ②) — Quinn 메시 로드 (실패해도 크래시 없이 진행).
+	// 보스 HP바는 골렘 머리 위로 올린다 — 컴포넌트 기본값(Z 120)은 사람 키 기준이라
+	// 골렘(높이 328) 가슴에 박힌다. 컴포넌트는 플레이어와 공유하므로 여기서만 덮는다.
+	HealthBar->SetRelativeLocation(FVector(0.f, 0.f, 270.f));
+
+	// 보스 가시화 (M3.5 ②, #118에서 Quinn → Stone Golem) — 실패해도 크래시 없이 진행.
+	// 스케일은 건드리지 않는다: 원저작 높이 328uu 가 캡슐(HalfHeight 88 → 176uu)의 약 1.9배라
+	// 그대로 두면 의도한 "캡슐보다 큰 보스"가 된다. 캡슐은 불변이다 — 자동사격 트레이스 Z+20,
+	// 스폰 좌표 (600,0,90), 곡사탄 착지 평면이 전부 이 지오메트리에서 파생됐다(#54/#55/#56/#57).
+	// 판정은 캡슐이 하므로 메시가 더 커도 `hit boss` 게이트는 영향받지 않는다.
 	static ConstructorHelpers::FObjectFinder<USkeletalMesh> MeshAsset(
-		TEXT("/Game/Characters/Mannequins/Meshes/SKM_Quinn_Simple.SKM_Quinn_Simple"));
+		TEXT("/Game/Stone_Golem/mesh/SKM_Stone_Golem.SKM_Stone_Golem"));
 	if (MeshAsset.Succeeded())
 	{
 		GetMesh()->SetSkeletalMesh(MeshAsset.Object);
-		GetMesh()->SetRelativeLocation(FVector(0.f, 0.f, -90.f));
-		GetMesh()->SetRelativeRotation(FRotator(0.f, -90.f, 0.f));
+		GetMesh()->SetRelativeLocation(FVector(0.f, 0.f, -90.f));   // 메시 원점=발 → 캡슐 바닥에 접지
+		// 마네킹에서 물려받은 -90은 골렘을 화면 위쪽으로 돌려세웠다. 보스는 화면 아래
+		// (플레이어 스폰 방향)를 봐야 하므로 180도 돌린다.
+		GetMesh()->SetRelativeRotation(FRotator(0.f, 90.f, 0.f));
 	}
 
-	// 로코모션 애님BP — 고정형 보스라 idle 상태 재생이 목적.
-	static ConstructorHelpers::FClassFinder<UAnimInstance> AnimAsset(
-		TEXT("/Game/Characters/Mannequins/Anims/Unarmed/ABP_Unarmed"));
-	if (AnimAsset.Succeeded())
+	// 로코모션 — 고정형 보스라 idle 재생이 목적. 애님BP를 쓰지 않는다:
+	// Stone Golem은 자체 스켈레톤(SK_Stone_Golem_Skeleton)이라 플레이어와 공유하던
+	// ABP_Unarmed가 붙지 않고, 팩 애님이 이 스켈레톤에 네이티브로 붙어 리타겟이 불필요하다.
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> IdleAsset(
+		TEXT("/Game/Stone_Golem/demo/animations/ThirdPersonIdle.ThirdPersonIdle"));
+	if (IdleAsset.Succeeded())
 	{
-		GetMesh()->SetAnimInstanceClass(AnimAsset.Class);
+		IdleAnim = IdleAsset.Object;
+	}
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> LeapAsset(
+		TEXT("/Game/Stone_Golem/demo/animations/ThirdPersonJump_Start.ThirdPersonJump_Start"));
+	if (LeapAsset.Succeeded())
+	{
+		LeapAnim = LeapAsset.Object;
+	}
+}
+
+void AREBossCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// 데디 서버는 화면이 없다 — MID도 애님도 코스메틱이라 통째로 생략한다.
+	// BodyMID가 nullptr로 남고 틱도 꺼진 채라 외관 경로가 전부 자연 no-op이 된다.
+	if (IsNetMode(NM_DedicatedServer))
+	{
+		return;
+	}
+
+	// 슬롯 0 단일 — SKM_Stone_Golem은 머티리얼 슬롯이 하나다.
+	BodyMID = GetMesh() ? GetMesh()->CreateDynamicMaterialInstance(0) : nullptr;
+	PlayIdle();
+
+	// 시작 외관은 램프 없이 즉시 — 첫 페이즈 전에는 전환할 이전 상태가 없다.
+	LookFrom = LookTo = LookForPattern(LookPattern);
+	LookAlpha = 1.f;
+	ApplyLook(LookTo);
+
+	SetActorTickEnabled(true);   // 외관 램프 전용 (데디는 위에서 반환)
+}
+
+AREBossCharacter::FBossLook AREBossCharacter::LookForPattern(EBulletPattern Pattern)
+{
+	FBossLook Look;   // 기본값 = Spiral(회색 화강암 + 팩 기본 빨강 이미시브)
+	switch (Pattern)
+	{
+	case EBulletPattern::Fan:
+		// Snow 스칼라만으로는 하얘지지 않는다 — 그 값은 균열 이미시브를 증폭할 뿐이고
+		// 색은 Color Emis 가 쥔다. 안 덮으면 적열이 되어 빨강+흰색 탄막에 섞이고
+		// 주황 용암(Artillery)과도 계열이 겹친다. 청록으로 가른다.
+		Look.Snow = FanSnowAmount;
+		Look.Emis = FLinearColor(0.15f, 0.70f, 1.0f, 1.0f);
+		break;
+	case EBulletPattern::Artillery:
+		Look.Lava = ArtilleryLavaAmount;
+		break;
+	default: break;
+	}
+	return Look;
+}
+
+void AREBossCharacter::ApplyLook(const FBossLook& Look)
+{
+	if (!BodyMID)
+	{
+		return;
+	}
+	BodyMID->SetScalarParameterValue(TEXT("Snow"), Look.Snow);
+	BodyMID->SetScalarParameterValue(TEXT("Lava"), Look.Lava);
+	BodyMID->SetVectorParameterValue(TEXT("Color Emis"), Look.Emis);
+}
+
+void AREBossCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (LookAlpha >= 1.f)
+	{
+		return;   // 전환 완료 — 매 프레임 같은 값을 다시 쓰지 않는다
+	}
+
+	LookAlpha = FMath::Min(1.f, LookAlpha + DeltaSeconds / LookIntroSec);
+	FBossLook Now;
+	Now.Snow = FMath::Lerp(LookFrom.Snow, LookTo.Snow, LookAlpha);
+	Now.Lava = FMath::Lerp(LookFrom.Lava, LookTo.Lava, LookAlpha);
+	Now.Emis = FMath::Lerp(LookFrom.Emis, LookTo.Emis, LookAlpha);
+	ApplyLook(Now);
+}
+
+void AREBossCharacter::PlayIdle()
+{
+	if (IdleAnim && GetMesh())
+	{
+		GetMesh()->PlayAnimation(IdleAnim, /*bLooping=*/true);
+	}
+}
+
+void AREBossCharacter::PlayLeap()
+{
+	if (!LeapAnim || !GetMesh() || IsNetMode(NM_DedicatedServer))
+	{
+		return;
+	}
+
+	GetMesh()->PlayAnimation(LeapAnim, /*bLooping=*/false);
+	// single-node에는 상태기계가 없다 — 재생 길이만큼 뒤에 손으로 idle로 되돌린다.
+	GetWorldTimerManager().SetTimer(LeapTimer, this, &AREBossCharacter::PlayIdle,
+		LeapAnim->GetPlayLength(), /*bLoop=*/false);
+}
+
+void AREBossCharacter::StartPatternLook(EBulletPattern Pattern)
+{
+	if (!BodyMID || Pattern == LookPattern)
+	{
+		return;   // 데디 서버(MID 없음) 또는 이미 그 외관 — 램프를 다시 시작하지 않는다
+	}
+
+	// 진행 중이던 램프의 현재 값을 시작점으로 굳힌다. 페이즈가 램프보다 빨리 바뀌어도
+	// 색이 이전 목표로 튀지 않고 보이던 자리에서 이어진다.
+	FBossLook Now;
+	Now.Snow = FMath::Lerp(LookFrom.Snow, LookTo.Snow, LookAlpha);
+	Now.Lava = FMath::Lerp(LookFrom.Lava, LookTo.Lava, LookAlpha);
+	Now.Emis = FMath::Lerp(LookFrom.Emis, LookTo.Emis, LookAlpha);
+
+	LookPattern = Pattern;
+	LookFrom = Now;
+	LookTo = LookForPattern(Pattern);
+	LookAlpha = 0.f;
+}
+
+void AREBossCharacter::Multicast_BeginPhaseLook_Implementation(EBulletPattern Pattern)
+{
+	StartPatternLook(Pattern);
+
+	// Artillery만 도약으로 예고한다. 발사는 이 인트로가 끝난 뒤 시작한다(BeginPhase).
+	if (Pattern == EBulletPattern::Artillery)
+	{
+		PlayLeap();
 	}
 }
 
@@ -134,10 +278,17 @@ void AREBossCharacter::BeginPhase()
 
 	UE_LOG(LogTemp, Log, TEXT("[RE] Boss Phase: %s %.1fs"), PhaseName, PhaseSec);
 
+	// 외관/애님 인트로를 페이즈 시작에 알린다 (#130). 발사 Multicast가 패턴을 싣고 있지만
+	// 그건 첫 탄이 나간 뒤에야 도착한다 — "전환이 끝난 뒤 발사"를 하려면 전환 시작을
+	// 따로 알려야 한다. 페이즈당 1회라 대역폭은 무시할 수준.
+	Multicast_BeginPhaseLook(CurrentPhasePattern);
+
+	// 첫 발사를 인트로 뒤로 민다. PhaseSec은 '발사 구간' 길이라 인트로만큼 늘려
+	// 페이즈당 발사 시간을 보존한다 — 안 늘리면 패턴마다 볼리가 줄어든다.
 	GetWorldTimerManager().SetTimer(FireTimer, this,
-		&AREBossCharacter::FireCurrentPattern, FireInterval, /*bLoop=*/true);
+		&AREBossCharacter::FireCurrentPattern, FireInterval, /*bLoop=*/true, /*InFirstDelay=*/LookIntroSec);
 	GetWorldTimerManager().SetTimer(PhaseTimer, this,
-		&AREBossCharacter::EndPhase, PhaseSec, /*bLoop=*/false);
+		&AREBossCharacter::EndPhase, PhaseSec + LookIntroSec, /*bLoop=*/false);
 }
 
 void AREBossCharacter::FireCurrentPattern()
@@ -257,6 +408,9 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EArtilleryShape Sh
 			Elapsed, ArtilleryFlightTime);
 		return;
 	}
+
+	// 외관 보정 — 페이즈 도중 접속한 클라 따라잡기용. 도약은 페이즈 시작에서만 재생한다.
+	StartPatternLook(EBulletPattern::Artillery);
 
 	const FVector BossLoc  = Origin;
 	const FVector PlayerLoc = AimLoc;
@@ -409,6 +563,10 @@ int32 AREBossCharacter::ResolveSpiralCount()
 void AREBossCharacter::Multicast_FireDirect_Implementation(EBulletPattern Pattern, FVector_NetQuantize Origin,
                                                            float AngleDeg, int32 Count, float ServerTime)
 {
+	// 외관 보정 — 정상 경로에서는 Multicast_BeginPhaseLook이 이미 램프를 걸어 no-op다.
+	// 페이즈 도중 접속한 클라만 여기서 따라잡는다.
+	StartPatternLook(Pattern);
+
 	UREBulletSpawnSubsystem* Spawner = GetWorld() ? GetWorld()->GetSubsystem<UREBulletSpawnSubsystem>() : nullptr;
 	if (!Spawner)
 	{

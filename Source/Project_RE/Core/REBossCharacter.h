@@ -8,6 +8,8 @@
 #include "REBossCharacter.generated.h"
 
 class UREHealthBarComponent;
+class UAnimSequence;
+class UMaterialInstanceDynamic;
 
 /**
  *  보스 폰. 탄막 패턴 발사 진입점을 가진다.
@@ -39,6 +41,13 @@ public:
 	void Multicast_FireArtillery(EArtilleryShape Shape, FVector_NetQuantize Origin,
 	                             FVector_NetQuantize AimLoc, int32 CallSeed, float ServerTime);
 
+	/**
+	 *  페이즈 시작 알림 (#130). 외관 램프와 예고 애님을 건다 — 코스메틱 전용이라
+	 *  탄 생성에는 관여하지 않는다. 유실되면 그 페이즈 내내 이전 색으로 남으므로 Reliable.
+	 */
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_BeginPhaseLook(EBulletPattern Pattern);
+
 	/** 페이즈 로테이션 발사 시작. Seed는 서버 전용 PhaseRng 초기화용 — 네트워크 미전송 (#84). */
 	void StartFiring(int32 Seed);
 	/** 발사 정지. 이미 뜬 탄은 수명까지 유지(일괄 소멸 안 함). */
@@ -51,6 +60,11 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:
+	//~ 코스메틱 초기화(MID 생성 + idle 재생). 데디 서버에서는 통째로 생략한다.
+	virtual void BeginPlay() override;
+	//~ 외관 램프 전용. 데디 서버에서는 BeginPlay가 틱을 켜지 않는다.
+	virtual void Tick(float DeltaSeconds) override;
+
 	/** 현재 체력. 서버 권위, 클라 복제. 변경 시 OnRep_Health로 HP바 갱신. */
 	UPROPERTY(ReplicatedUsing = OnRep_Health, VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
 	float Health = 100.f;
@@ -135,4 +149,49 @@ private:
 
 	/** 현재 페이즈 Artillery 1회 일제사(FireCurrentPattern에서 분기). */
 	void FireArtillery();
+
+	//~ 페이즈별 외관 (#118). 보스는 고정형이라 애님BP 없이 single-node로 재생한다 —
+	//  Stone Golem은 자체 스켈레톤이라 ABP_Unarmed(플레이어 공유)가 붙지 않고,
+	//  idle 하나면 충분해 리타겟할 이유가 없다.
+	UPROPERTY() TObjectPtr<UAnimSequence> IdleAnim = nullptr;
+	UPROPERTY() TObjectPtr<UAnimSequence> LeapAnim = nullptr;
+	/** 바디 머티리얼 MID. 데디 서버에서는 생성하지 않으므로 nullptr — 외관 함수들이 자연 no-op. */
+	UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> BodyMID = nullptr;
+	FTimerHandle LeapTimer;   // 도약 원샷 종료 → idle 복귀
+
+	/** 바디 머티리얼의 한 상태. 팩 마스터가 노출한 파라미터가 그대로 필드다. */
+	struct FBossLook
+	{
+		float Snow = 0.f;
+		float Lava = 0.f;
+		FLinearColor Emis = FLinearColor(1.f, 0.f, 0.f, 1.f);   // 팩 기본 MI 값
+	};
+
+	/** 패턴별 목표 외관. */
+	static FBossLook LookForPattern(EBulletPattern Pattern);
+	/** MID에 즉시 기록. */
+	void ApplyLook(const FBossLook& Look);
+	/**
+	 *  패턴 외관으로 가는 램프를 시작한다. 같은 패턴이면 no-op이라
+	 *  발사마다 불러도 진행 중인 램프를 되감지 않는다.
+	 */
+	void StartPatternLook(EBulletPattern Pattern);
+	/** Artillery 페이즈 예고 — 도약 1회 재생 후 타이머로 idle 복귀. */
+	void PlayLeap();
+	/** idle 루프 재생. PlayAnimation이 single-node 모드 전환까지 겸한다. */
+	void PlayIdle();
+
+	FBossLook LookFrom;
+	FBossLook LookTo;
+	float LookAlpha = 1.f;                                  // 1 = 램프 종료(틱 조기 반환)
+	EBulletPattern LookPattern = EBulletPattern::Spiral;    // 현재 목표 패턴
+
+	//~ 팩 MI 프리셋에서 그대로 가져온 값 — MI_Stone_Golem_Inst1(Snow) / Inst2(Lava).
+	static constexpr float FanSnowAmount       = 1.34f;
+	static constexpr float ArtilleryLavaAmount = 2.47f;
+	/**
+	 *  페이즈 인트로 길이(s). 외관 램프 시간이자 첫 발사 지연이다.
+	 *  도약 애님(0.47s)보다 길어 애님도 이 안에서 끝난다.
+	 */
+	static constexpr float LookIntroSec = 0.8f;
 };
