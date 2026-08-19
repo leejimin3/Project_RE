@@ -34,6 +34,27 @@
 namespace
 {
 	/**
+	 *  WBP 위젯 클래스를 경로로 해석한다. 없으면 C++ 클래스로 폴백한다 (#121).
+	 *
+	 *  WBP 는 디자이너에서 룩을 만지기 위한 껍데기이고, 트리를 아직 안 만들었으면
+	 *  C++ 쪽 Initialize() 가 예전 트리를 그대로 구성한다 — 전환 도중에도 화면이 비지 않는다.
+	 *  LoadClass 는 첫 호출에서만 디스크를 친다. HUD 는 possess 시 1회, 결과는 게임당 1회다.
+	 */
+	UClass* ResolveWidgetClass(const TCHAR* WbpPath, UClass* Fallback)
+	{
+		UClass* Loaded = LoadClass<UUserWidget>(nullptr, WbpPath);
+		if (!Loaded)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[UI] WBP 없음 - C++ 폴백 사용: %s"), WbpPath);
+			return Fallback;
+		}
+		return Loaded;
+	}
+}
+
+namespace
+{
+	/**
 	 *  치트 패널 표시 허용 (#100). 0 이면 토글 키를 눌러도 뜨지 않는다.
 	 *  패널은 원래도 키를 눌러야 뜨지만, 촬영 중 실수로 한 번 누르면 그대로 찍힌다.
 	 */
@@ -139,7 +160,9 @@ void AREPlayerController::BeginPlay()
 		// 로컬 컨트롤러 안이라 데디서버에서는 만들어지지 않는다.
 		if (!PlayerHud)
 		{
-			PlayerHud = CreateWidget<UREPlayerHudWidget>(this, UREPlayerHudWidget::StaticClass());
+			PlayerHud = CreateWidget<UREPlayerHudWidget>(this,
+				ResolveWidgetClass(TEXT("/Game/UI/WBP_PlayerHud.WBP_PlayerHud_C"),
+					UREPlayerHudWidget::StaticClass()));
 			if (PlayerHud)
 			{
 				PlayerHud->AddToViewport();
@@ -396,7 +419,9 @@ void AREPlayerController::OnFire(const FInputActionValue& Value)
 
 void AREPlayerController::Client_ShowResult_Implementation(bool bVictory)
 {
-	if (UREResultWidget* Result = CreateWidget<UREResultWidget>(this, UREResultWidget::StaticClass()))
+	UClass* ResultClass = ResolveWidgetClass(TEXT("/Game/UI/WBP_Result.WBP_Result_C"),
+		UREResultWidget::StaticClass());
+	if (UREResultWidget* Result = CreateWidget<UREResultWidget>(this, ResultClass))
 	{
 		Result->SetResult(bVictory);
 		Result->AddToViewport();
