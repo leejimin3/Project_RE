@@ -12,7 +12,8 @@
 #include "ProfilingDebugging/CsvProfiler.h"                 // 채움 완료 시점에 캡처 시작 신호 (#88)
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "Animation/AnimInstance.h"
+#include "Animation/AnimSequence.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/SkeletalMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "REStatsSettings.h"
@@ -55,23 +56,91 @@ AREBossCharacter::AREBossCharacter()
 	HealthBar->SetupAttachment(RootComponent);
 	HealthBar->BarColor = FLinearColor::Red;
 
-	// 보스 가시화 (M3.5 ②) — Quinn 메시 로드 (실패해도 크래시 없이 진행).
+	// 보스 HP바는 골렘 머리 위로 올린다 — 컴포넌트 기본값(Z 120)은 사람 키 기준이라
+	// 골렘(높이 328) 가슴에 박힌다. 컴포넌트는 플레이어와 공유하므로 여기서만 덮는다.
+	HealthBar->SetRelativeLocation(FVector(0.f, 0.f, 270.f));
+
+	// 보스 가시화 (M3.5 ②, #118에서 Quinn → Stone Golem) — 실패해도 크래시 없이 진행.
+	// 스케일은 건드리지 않는다: 원저작 높이 328uu 가 캡슐(HalfHeight 88 → 176uu)의 약 1.9배라
+	// 그대로 두면 의도한 "캡슐보다 큰 보스"가 된다. 캡슐은 불변이다 — 자동사격 트레이스 Z+20,
+	// 스폰 좌표 (600,0,90), 곡사탄 착지 평면이 전부 이 지오메트리에서 파생됐다(#54/#55/#56/#57).
+	// 판정은 캡슐이 하므로 메시가 더 커도 `hit boss` 게이트는 영향받지 않는다.
 	static ConstructorHelpers::FObjectFinder<USkeletalMesh> MeshAsset(
-		TEXT("/Game/Characters/Mannequins/Meshes/SKM_Quinn_Simple.SKM_Quinn_Simple"));
+		TEXT("/Game/Stone_Golem/mesh/SKM_Stone_Golem.SKM_Stone_Golem"));
 	if (MeshAsset.Succeeded())
 	{
 		GetMesh()->SetSkeletalMesh(MeshAsset.Object);
-		GetMesh()->SetRelativeLocation(FVector(0.f, 0.f, -90.f));
+		GetMesh()->SetRelativeLocation(FVector(0.f, 0.f, -90.f));   // 메시 원점=발 → 캡슐 바닥에 접지
 		GetMesh()->SetRelativeRotation(FRotator(0.f, -90.f, 0.f));
 	}
 
-	// 로코모션 애님BP — 고정형 보스라 idle 상태 재생이 목적.
-	static ConstructorHelpers::FClassFinder<UAnimInstance> AnimAsset(
-		TEXT("/Game/Characters/Mannequins/Anims/Unarmed/ABP_Unarmed"));
-	if (AnimAsset.Succeeded())
+	// 로코모션 — 고정형 보스라 idle 재생이 목적. 애님BP를 쓰지 않는다:
+	// Stone Golem은 자체 스켈레톤(SK_Stone_Golem_Skeleton)이라 플레이어와 공유하던
+	// ABP_Unarmed가 붙지 않고, 팩 애님이 이 스켈레톤에 네이티브로 붙어 리타겟이 불필요하다.
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> IdleAsset(
+		TEXT("/Game/Stone_Golem/demo/animations/ThirdPersonIdle.ThirdPersonIdle"));
+	if (IdleAsset.Succeeded())
 	{
-		GetMesh()->SetAnimInstanceClass(AnimAsset.Class);
+		IdleAnim = IdleAsset.Object;
 	}
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> LeapAsset(
+		TEXT("/Game/Stone_Golem/demo/animations/ThirdPersonJump_Start.ThirdPersonJump_Start"));
+	if (LeapAsset.Succeeded())
+	{
+		LeapAnim = LeapAsset.Object;
+	}
+}
+
+void AREBossCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// 데디 서버는 화면이 없다 — MID도 애님도 코스메틱이라 통째로 생략한다.
+	// BodyMID가 nullptr로 남아 ApplyPatternLook이 자연 no-op이 된다.
+	if (IsNetMode(NM_DedicatedServer))
+	{
+		return;
+	}
+
+	// 슬롯 0 단일 — SKM_Stone_Golem은 머티리얼 슬롯이 하나다.
+	BodyMID = GetMesh() ? GetMesh()->CreateDynamicMaterialInstance(0) : nullptr;
+	PlayIdle();
+}
+
+void AREBossCharacter::PlayIdle()
+{
+	if (IdleAnim && GetMesh())
+	{
+		GetMesh()->PlayAnimation(IdleAnim, /*bLooping=*/true);
+	}
+}
+
+void AREBossCharacter::PlayLeap()
+{
+	if (!LeapAnim || !GetMesh() || IsNetMode(NM_DedicatedServer))
+	{
+		return;
+	}
+
+	GetMesh()->PlayAnimation(LeapAnim, /*bLooping=*/false);
+	// single-node에는 상태기계가 없다 — 재생 길이만큼 뒤에 손으로 idle로 되돌린다.
+	GetWorldTimerManager().SetTimer(LeapTimer, this, &AREBossCharacter::PlayIdle,
+		LeapAnim->GetPlayLength(), /*bLoop=*/false);
+}
+
+void AREBossCharacter::ApplyPatternLook(EBulletPattern Pattern)
+{
+	if (!BodyMID)
+	{
+		return;   // 데디 서버 또는 메시 없음
+	}
+
+	// 팩 마스터 머티리얼이 Snow/Lava 스칼라를 노출한다 — 스킨 애셋을 새로 만들 필요가 없다.
+	// 멱등이라 발사마다 불러도 무해하고, 그래서 페이즈 전환을 따로 복제하지 않아도 된다.
+	BodyMID->SetScalarParameterValue(TEXT("Snow"),
+		Pattern == EBulletPattern::Fan ? FanSnowAmount : 0.f);
+	BodyMID->SetScalarParameterValue(TEXT("Lava"),
+		Pattern == EBulletPattern::Artillery ? ArtilleryLavaAmount : 0.f);
 }
 
 void AREBossCharacter::StartFiring(int32 Seed)
@@ -258,6 +327,11 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EArtilleryShape Sh
 		return;
 	}
 
+	// 페이즈 외관 + 일제사 텔레그래프 (#118). 지연 스킵 뒤에 둔다 —
+	// 탄이 안 뜨는 볼리에서 도약만 보이면 거짓 예고가 된다.
+	ApplyPatternLook(EBulletPattern::Artillery);
+	PlayLeap();
+
 	const FVector BossLoc  = Origin;
 	const FVector PlayerLoc = AimLoc;
 	const float   GroundZ  = BossLoc.Z + MarkerGroundOffset;   // 착지 평면(보스 캡슐 바닥 근사)
@@ -409,6 +483,9 @@ int32 AREBossCharacter::ResolveSpiralCount()
 void AREBossCharacter::Multicast_FireDirect_Implementation(EBulletPattern Pattern, FVector_NetQuantize Origin,
                                                            float AngleDeg, int32 Count, float ServerTime)
 {
+	// 페이즈 외관 (#118) — 이 RPC가 패턴을 이미 싣고 있어 외관용 복제가 따로 필요 없다.
+	ApplyPatternLook(Pattern);
+
 	UREBulletSpawnSubsystem* Spawner = GetWorld() ? GetWorld()->GetSubsystem<UREBulletSpawnSubsystem>() : nullptr;
 	if (!Spawner)
 	{

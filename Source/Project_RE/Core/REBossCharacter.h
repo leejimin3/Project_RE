@@ -8,6 +8,8 @@
 #include "REBossCharacter.generated.h"
 
 class UREHealthBarComponent;
+class UAnimSequence;
+class UMaterialInstanceDynamic;
 
 /**
  *  보스 폰. 탄막 패턴 발사 진입점을 가진다.
@@ -51,6 +53,9 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:
+	//~ 코스메틱 초기화(MID 생성 + idle 재생). 데디 서버에서는 통째로 생략한다.
+	virtual void BeginPlay() override;
+
 	/** 현재 체력. 서버 권위, 클라 복제. 변경 시 OnRep_Health로 HP바 갱신. */
 	UPROPERTY(ReplicatedUsing = OnRep_Health, VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
 	float Health = 100.f;
@@ -135,4 +140,27 @@ private:
 
 	/** 현재 페이즈 Artillery 1회 일제사(FireCurrentPattern에서 분기). */
 	void FireArtillery();
+
+	//~ 페이즈별 외관 (#118). 보스는 고정형이라 애님BP 없이 single-node로 재생한다 —
+	//  Stone Golem은 자체 스켈레톤이라 ABP_Unarmed(플레이어 공유)가 붙지 않고,
+	//  idle 하나면 충분해 리타겟할 이유가 없다.
+	UPROPERTY() TObjectPtr<UAnimSequence> IdleAnim = nullptr;
+	UPROPERTY() TObjectPtr<UAnimSequence> LeapAnim = nullptr;
+	/** 바디 머티리얼 MID. 데디 서버에서는 생성하지 않으므로 nullptr — 외관 함수들이 자연 no-op. */
+	UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> BodyMID = nullptr;
+	FTimerHandle LeapTimer;   // 도약 원샷 종료 → idle 복귀
+
+	/**
+	 *  패턴에 맞춰 바디 머티리얼 스칼라를 세팅한다. 멱등이라 발사마다 불러도 무해하다.
+	 *  발사 Multicast가 이미 패턴을 싣고 있어 외관용 복제를 따로 만들지 않는다.
+	 */
+	void ApplyPatternLook(EBulletPattern Pattern);
+	/** Artillery 일제사 텔레그래프 — 도약 1회 재생 후 타이머로 idle 복귀. */
+	void PlayLeap();
+	/** idle 루프 재생. PlayAnimation이 single-node 모드 전환까지 겸한다. */
+	void PlayIdle();
+
+	//~ 팩 MI 프리셋에서 그대로 가져온 값 — MI_Stone_Golem_Inst1(Snow) / Inst2(Lava).
+	static constexpr float FanSnowAmount       = 1.34f;
+	static constexpr float ArtilleryLavaAmount = 2.47f;
 };
