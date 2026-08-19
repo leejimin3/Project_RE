@@ -41,7 +41,7 @@ private:
 	/** 히트스캔 사거리(uu). Settings(AttackRange) 단일 출처. */
 	float AttackRange = 2000.f;
 
-	/** 발사 모션 몽타주. 코스메틱 — 재생은 오너 캐릭터의 Multicast_PlayFireMontage가 전 클라에 전달(M4 #74). */
+	/** 발사 모션 몽타주. 코스메틱 — 재생은 오너 캐릭터의 Multicast_PlayFire가 전 클라에 전달(M4 #74). */
 	UPROPERTY()
 	TObjectPtr<UAnimMontage> FireMontage;
 

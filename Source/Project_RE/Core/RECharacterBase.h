@@ -17,6 +17,7 @@ class UREHealthBarComponent;
 class UAnimMontage;
 class UAnimSequence;
 class UNiagaraSystem;
+class UStaticMeshComponent;
 
 /**
  *  탑뷰 쿼터뷰 플레이어 폰 베이스.
@@ -96,9 +97,13 @@ public:
 	 *
 	 *  신뢰성 근거: Unreliable. 코스메틱이라 연사 중 1발 드랍이 판정/데미지에 영향이 없고,
 	 *  Reliable이면 연사가 신뢰 큐를 점유해 실제 게임플레이 RPC를 밀어낼 수 있다.
+	 *
+	 *  발사 이펙트(#120)도 여기에 얹는다 — 같은 "한 발 쐈다" 순간이고, 따로 RPC를 만들면
+	 *  샷당 RPC가 둘로 늘어난다. BeamEnd 는 표시용 끝점(피격점 또는 사거리 끝)이고
+	 *  판정과는 무관하다. 시작점은 각 클라가 자기 무기 컴포넌트에서 로컬로 구한다.
 	 */
 	UFUNCTION(NetMulticast, Unreliable)
-	void Multicast_PlayFireMontage(UAnimMontage* Montage);
+	void Multicast_PlayFire(UAnimMontage* Montage, FVector_NetQuantize BeamEnd, bool bHit);
 
 	/**
 	 *  대쉬 모션을 모든 인스턴스(서버 자신 + 전 클라)에 재생. 코스메틱 전용.
@@ -146,6 +151,42 @@ protected:
 	 */
 	UPROPERTY()
 	TObjectPtr<UNiagaraSystem> DashVfx;
+
+	//~ 발사 표현 (#120). 전부 코스메틱 — 판정은 UREAttackComponent의 트레이스가 한다.
+
+	/** 손에 든 권총(SM_Pistol). Sarah 스켈레톤의 Pistol_Socket에 붙는다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> WeaponMesh;
+
+	/**
+	 *  표시용 빔. 실린더 하나를 머즐→끝점으로 늘려 쓴다.
+	 *  엔진에 빔 Niagara 시스템이 없어(모듈/이미터 템플릿뿐) 메시+이미시브 머티리얼로 낸다.
+	 *  스폰하지 않고 상주시킨 뒤 보였다 감춘다 — 초당 4발이라 스폰/해제가 낭비다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> BeamMesh;
+
+	/** 총구 섬광. 빔과 같은 머티리얼을 쓴 작은 구. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> MuzzleFlash;
+
+	FTimerHandle FireFxTimer;
+
+	/** 빔/섬광을 BeamEnd 로 배치하고 노출한다. FireFxSec 뒤 HideFireFx 로 되돌린다. */
+	void ShowFireFx(const FVector& BeamEnd);
+	void HideFireFx();
+
+	/**
+	 *  무기 컴포넌트 기준 총구 위치. SM_Pistol 에는 소켓이 없어(실측 0개) 오프셋으로 잡는다.
+	 *  바운즈 X 범위가 [-18.8, +4.2] 라 +X 끝이 총구 쪽이다. 화면으로 맞춘 튜닝값.
+	 */
+	static const FVector MuzzleLocal;
+	/**
+	 *  빔 굵기(uu). 카메라 1500uu · FOV 90 · 1600px 에서 화면 1픽셀 ≈ 1.9uu 라
+	 *  얇게 잡으면 실측으로 안 보인다(3uu = 1.6픽셀이었다). 20uu ≈ 10픽셀.
+	 */
+	static constexpr float BeamThicknessUU = 20.f;   // 실린더 기본 지름 100uu 기준으로 스케일
+	static constexpr float FireFxSec       = 0.06f;  // 발사 간격 0.25s 보다 짧아야 겹치지 않는다
 
 	/** ASC ActorInfo 초기화 공용 헬퍼 (서버/클라 양쪽에서 호출). */
 	void InitASCActorInfo();
