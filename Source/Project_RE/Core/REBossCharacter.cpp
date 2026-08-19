@@ -45,7 +45,9 @@ static TAutoConsoleVariable<float> CVarSpawnKi(
 
 AREBossCharacter::AREBossCharacter()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// 틱은 외관 램프(#130) 전용이라 기본 정지 — BeginPlay가 비-데디에서만 켠다.
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 
 	// 체력 초기화 — Settings 단일 출처 (M3.5 ③, RECharacterBase 동일 패턴).
 	MaxHealth = GetDefault<UREStatsSettings>()->BossMaxHealth;
@@ -71,7 +73,9 @@ AREBossCharacter::AREBossCharacter()
 	{
 		GetMesh()->SetSkeletalMesh(MeshAsset.Object);
 		GetMesh()->SetRelativeLocation(FVector(0.f, 0.f, -90.f));   // 메시 원점=발 → 캡슐 바닥에 접지
-		GetMesh()->SetRelativeRotation(FRotator(0.f, -90.f, 0.f));
+		// 마네킹에서 물려받은 -90은 골렘을 화면 위쪽으로 돌려세웠다. 보스는 화면 아래
+		// (플레이어 스폰 방향)를 봐야 하므로 180도 돌린다.
+		GetMesh()->SetRelativeRotation(FRotator(0.f, 90.f, 0.f));
 	}
 
 	// 로코모션 — 고정형 보스라 idle 재생이 목적. 애님BP를 쓰지 않는다:
@@ -105,6 +109,61 @@ void AREBossCharacter::BeginPlay()
 	// 슬롯 0 단일 — SKM_Stone_Golem은 머티리얼 슬롯이 하나다.
 	BodyMID = GetMesh() ? GetMesh()->CreateDynamicMaterialInstance(0) : nullptr;
 	PlayIdle();
+
+	// 시작 외관은 램프 없이 즉시 — 첫 페이즈 전에는 전환할 이전 상태가 없다.
+	LookFrom = LookTo = LookForPattern(LookPattern);
+	LookAlpha = 1.f;
+	ApplyLook(LookTo);
+
+	SetActorTickEnabled(true);   // 외관 램프 전용 (데디는 위에서 반환)
+}
+
+AREBossCharacter::FBossLook AREBossCharacter::LookForPattern(EBulletPattern Pattern)
+{
+	FBossLook Look;   // 기본값 = Spiral(회색 화강암 + 팩 기본 빨강 이미시브)
+	switch (Pattern)
+	{
+	case EBulletPattern::Fan:
+		// Snow 스칼라만으로는 하얘지지 않는다 — 그 값은 균열 이미시브를 증폭할 뿐이고
+		// 색은 Color Emis 가 쥔다. 안 덮으면 적열이 되어 빨강+흰색 탄막에 섞이고
+		// 주황 용암(Artillery)과도 계열이 겹친다. 청록으로 가른다.
+		Look.Snow = FanSnowAmount;
+		Look.Emis = FLinearColor(0.15f, 0.70f, 1.0f, 1.0f);
+		break;
+	case EBulletPattern::Artillery:
+		Look.Lava = ArtilleryLavaAmount;
+		break;
+	default: break;
+	}
+	return Look;
+}
+
+void AREBossCharacter::ApplyLook(const FBossLook& Look)
+{
+	if (!BodyMID)
+	{
+		return;
+	}
+	BodyMID->SetScalarParameterValue(TEXT("Snow"), Look.Snow);
+	BodyMID->SetScalarParameterValue(TEXT("Lava"), Look.Lava);
+	BodyMID->SetVectorParameterValue(TEXT("Color Emis"), Look.Emis);
+}
+
+void AREBossCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (LookAlpha >= 1.f)
+	{
+		return;   // 전환 완료 — 매 프레임 같은 값을 다시 쓰지 않는다
+	}
+
+	LookAlpha = FMath::Min(1.f, LookAlpha + DeltaSeconds / LookIntroSec);
+	FBossLook Now;
+	Now.Snow = FMath::Lerp(LookFrom.Snow, LookTo.Snow, LookAlpha);
+	Now.Lava = FMath::Lerp(LookFrom.Lava, LookTo.Lava, LookAlpha);
+	Now.Emis = FMath::Lerp(LookFrom.Emis, LookTo.Emis, LookAlpha);
+	ApplyLook(Now);
 }
 
 void AREBossCharacter::PlayIdle()
@@ -128,25 +187,35 @@ void AREBossCharacter::PlayLeap()
 		LeapAnim->GetPlayLength(), /*bLoop=*/false);
 }
 
-void AREBossCharacter::ApplyPatternLook(EBulletPattern Pattern)
+void AREBossCharacter::StartPatternLook(EBulletPattern Pattern)
 {
-	if (!BodyMID)
+	if (!BodyMID || Pattern == LookPattern)
 	{
-		return;   // 데디 서버 또는 메시 없음
+		return;   // 데디 서버(MID 없음) 또는 이미 그 외관 — 램프를 다시 시작하지 않는다
 	}
 
-	// 팩 마스터 머티리얼이 Snow/Lava 스칼라를 노출한다 — 스킨 애셋을 새로 만들 필요가 없다.
-	// 멱등이라 발사마다 불러도 무해하고, 그래서 페이즈 전환을 따로 복제하지 않아도 된다.
-	const bool bFan = (Pattern == EBulletPattern::Fan);
-	BodyMID->SetScalarParameterValue(TEXT("Snow"), bFan ? FanSnowAmount : 0.f);
-	BodyMID->SetScalarParameterValue(TEXT("Lava"),
-		Pattern == EBulletPattern::Artillery ? ArtilleryLavaAmount : 0.f);
+	// 진행 중이던 램프의 현재 값을 시작점으로 굳힌다. 페이즈가 램프보다 빨리 바뀌어도
+	// 색이 이전 목표로 튀지 않고 보이던 자리에서 이어진다.
+	FBossLook Now;
+	Now.Snow = FMath::Lerp(LookFrom.Snow, LookTo.Snow, LookAlpha);
+	Now.Lava = FMath::Lerp(LookFrom.Lava, LookTo.Lava, LookAlpha);
+	Now.Emis = FMath::Lerp(LookFrom.Emis, LookTo.Emis, LookAlpha);
 
-	// Snow 스칼라만으로는 하얘지지 않는다 — 그 값은 균열 이미시브를 증폭할 뿐이고
-	// 색은 Color Emis 가 쥐고 있다(팩 기본 MI = 빨강). 안 덮으면 Fan 이 적열로 나와
-	// 빨강+흰색 탄막에 섞이고 주황 용암(Artillery)과도 계열이 겹친다. 청록으로 가른다.
-	BodyMID->SetVectorParameterValue(TEXT("Color Emis"),
-		bFan ? FLinearColor(0.15f, 0.70f, 1.0f, 1.0f) : FLinearColor(1.0f, 0.f, 0.f, 1.0f));
+	LookPattern = Pattern;
+	LookFrom = Now;
+	LookTo = LookForPattern(Pattern);
+	LookAlpha = 0.f;
+}
+
+void AREBossCharacter::Multicast_BeginPhaseLook_Implementation(EBulletPattern Pattern)
+{
+	StartPatternLook(Pattern);
+
+	// Artillery만 도약으로 예고한다. 발사는 이 인트로가 끝난 뒤 시작한다(BeginPhase).
+	if (Pattern == EBulletPattern::Artillery)
+	{
+		PlayLeap();
+	}
 }
 
 void AREBossCharacter::StartFiring(int32 Seed)
@@ -209,10 +278,17 @@ void AREBossCharacter::BeginPhase()
 
 	UE_LOG(LogTemp, Log, TEXT("[RE] Boss Phase: %s %.1fs"), PhaseName, PhaseSec);
 
+	// 외관/애님 인트로를 페이즈 시작에 알린다 (#130). 발사 Multicast가 패턴을 싣고 있지만
+	// 그건 첫 탄이 나간 뒤에야 도착한다 — "전환이 끝난 뒤 발사"를 하려면 전환 시작을
+	// 따로 알려야 한다. 페이즈당 1회라 대역폭은 무시할 수준.
+	Multicast_BeginPhaseLook(CurrentPhasePattern);
+
+	// 첫 발사를 인트로 뒤로 민다. PhaseSec은 '발사 구간' 길이라 인트로만큼 늘려
+	// 페이즈당 발사 시간을 보존한다 — 안 늘리면 패턴마다 볼리가 줄어든다.
 	GetWorldTimerManager().SetTimer(FireTimer, this,
-		&AREBossCharacter::FireCurrentPattern, FireInterval, /*bLoop=*/true);
+		&AREBossCharacter::FireCurrentPattern, FireInterval, /*bLoop=*/true, /*InFirstDelay=*/LookIntroSec);
 	GetWorldTimerManager().SetTimer(PhaseTimer, this,
-		&AREBossCharacter::EndPhase, PhaseSec, /*bLoop=*/false);
+		&AREBossCharacter::EndPhase, PhaseSec + LookIntroSec, /*bLoop=*/false);
 }
 
 void AREBossCharacter::FireCurrentPattern()
@@ -333,10 +409,8 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EArtilleryShape Sh
 		return;
 	}
 
-	// 페이즈 외관 + 일제사 텔레그래프 (#118). 지연 스킵 뒤에 둔다 —
-	// 탄이 안 뜨는 볼리에서 도약만 보이면 거짓 예고가 된다.
-	ApplyPatternLook(EBulletPattern::Artillery);
-	PlayLeap();
+	// 외관 보정 — 페이즈 도중 접속한 클라 따라잡기용. 도약은 페이즈 시작에서만 재생한다.
+	StartPatternLook(EBulletPattern::Artillery);
 
 	const FVector BossLoc  = Origin;
 	const FVector PlayerLoc = AimLoc;
@@ -489,8 +563,9 @@ int32 AREBossCharacter::ResolveSpiralCount()
 void AREBossCharacter::Multicast_FireDirect_Implementation(EBulletPattern Pattern, FVector_NetQuantize Origin,
                                                            float AngleDeg, int32 Count, float ServerTime)
 {
-	// 페이즈 외관 (#118) — 이 RPC가 패턴을 이미 싣고 있어 외관용 복제가 따로 필요 없다.
-	ApplyPatternLook(Pattern);
+	// 외관 보정 — 정상 경로에서는 Multicast_BeginPhaseLook이 이미 램프를 걸어 no-op다.
+	// 페이즈 도중 접속한 클라만 여기서 따라잡는다.
+	StartPatternLook(Pattern);
 
 	UREBulletSpawnSubsystem* Spawner = GetWorld() ? GetWorld()->GetSubsystem<UREBulletSpawnSubsystem>() : nullptr;
 	if (!Spawner)
