@@ -100,7 +100,7 @@ void AREBossCharacter::BeginPlay()
 	Super::BeginPlay();
 
 	// 데디 서버는 화면이 없다 — MID도 애님도 코스메틱이라 통째로 생략한다.
-	// BodyMID가 nullptr로 남아 ApplyPatternLook이 자연 no-op이 된다.
+	// BodyMID가 nullptr로 남고 틱도 꺼진 채라 외관 경로가 전부 자연 no-op이 된다.
 	if (IsNetMode(NM_DedicatedServer))
 	{
 		return;
