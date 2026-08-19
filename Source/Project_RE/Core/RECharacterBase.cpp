@@ -478,7 +478,7 @@ bool ARECharacterBase::TryDash(FVector Dir)
 	return AbilitySystemComponent->TryActivateAbilityByClass(UREGA_Dash::StaticClass());
 }
 
-void ARECharacterBase::Multicast_PlayFire_Implementation(UAnimMontage* Montage, FVector_NetQuantize BeamEnd, bool bHit)
+void ARECharacterBase::Multicast_PlayFire_Implementation(UAnimSequence* FireAnim, FVector_NetQuantize BeamEnd, bool bHit)
 {
 	// Multicast는 서버에서도 실행된다. 데디 서버는 화면이 없으므로 코스메틱 재생을 생략한다.
 	// 리슨서버/싱글은 여기서 딱 한 번 재생 — 컴포넌트의 직접 재생을 제거했으므로 이중 재생 경로가 없다.
@@ -487,14 +487,30 @@ void ARECharacterBase::Multicast_PlayFire_Implementation(UAnimMontage* Montage, 
 		return;
 	}
 
-	// 몽타주와 이펙트는 각자 판단한다 — 몽타주 애셋은 UE5 템플릿 경로(.gitignore 대상)라
+	// 애님과 이펙트는 각자 판단한다 — 애님 애셋은 UE5 템플릿 경로(.gitignore 대상)라
 	// 없는 환경이 실제로 존재한다. 묶어서 return하면 총이 없다는 이유로 빔까지 사라진다.
-	if (Montage)
+	if (FireAnim)
 	{
 		if (UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
 		{
-			const float Len = AnimInst->Montage_Play(Montage, 1.0f);
-			UE_LOG(LogTemp, Log, TEXT("[Attack] fire montage len=%.2f"), Len);
+			// DefaultSlot 다이나믹 몽타주 — MM_Dash와 같은 경로다 (#132).
+			// 원래는 MM_Pistol_Fire_Montage(Arms 슬롯)를 재생했는데, ABP_Unarmed에 Arms 슬롯
+			// 노드가 없어 포즈를 받아 줄 곳이 없었다. 슬롯이 없어도 재생 자체는 성공하므로
+			// Montage_Play 반환값도 Montage_IsPlaying도 정상이었다 — 로그로는 안 잡혔다.
+			//
+			// 상체 블렌드가 아니라 전신으로 두는 이유: 이 게임은 발사하면 이동이 멈춘다
+			// (REPlayerController::Server_RequestFire의 StopMovementImmediately). 하체가
+			// 따로 돌 일이 없으므로 상체 블렌드를 위해 애님BP를 손댈 이유가 없다.
+			//
+			// MM_Pistol_Fire는 루트모션이 없다(실측) — 대쉬처럼 IgnoreRootMotion으로 감쌀 필요가 없다.
+			UAnimMontage* Played = AnimInst->PlaySlotAnimationAsDynamicMontage(
+				FireAnim, FName("DefaultSlot"), /*BlendInTime=*/0.05f, /*BlendOutTime=*/0.1f);
+			// 로그 문구를 "montage"로 유지한다 — scripts/dedi-verify.ps1 이 이 문자열로
+			// "클라 재생 / 서버 생략"을 판정한다. 재생 방식이 바뀌었어도 검증하는 사실은
+			// 그대로이므로, 코드와 검증기를 같은 커밋에서 함께 바꿔 게이트를 느슨하게 만들지 않는다.
+			// (다이나믹 몽타주도 실제로 UAnimMontage 다 — 문구가 틀린 것도 아니다.)
+			UE_LOG(LogTemp, Log, TEXT("[Attack] fire montage len=%.2f"),
+				Played ? Played->GetPlayLength() : -1.f);
 		}
 	}
 

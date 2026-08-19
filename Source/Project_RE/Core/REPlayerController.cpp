@@ -454,6 +454,15 @@ void AREPlayerController::Server_RequestMove_Implementation(FVector Target)
 		return;
 	}
 
+	// 사격 모션 중에는 이동 요청을 받지 않는다. 발사 시점의 StopMovement 는 '지금 속도'만
+	// 끊을 뿐이라, 바로 다음 클릭이 모션 중간에 걸어나가게 만든다.
+	if (MoveLockUntil >= 0.0 && GetWorld()->GetTimeSeconds() < MoveLockUntil)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[Move] rejected: fire lock (%.2fs 남음)"),
+			MoveLockUntil - GetWorld()->GetTimeSeconds());
+		return;
+	}
+
 	// 서버 권위 — nav 검증 후 패스팔로잉 구동.
 	UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld());
 	FNavLocation NavLoc;
@@ -529,6 +538,9 @@ void AREPlayerController::Server_RequestFire_Implementation(FVector Dir)
 		{
 			Move->StopMovementImmediately();                   // 잔여 속도 제거 (로아 평타 정지)
 		}
+		// 사격 모션이 끝날 때까지 이동 잠금. 연사 중에는 매 발사가 락을 갱신해 계속 잠긴다.
+		MoveLockUntil = GetWorld()->GetTimeSeconds() + Attack->GetFireLockSec();
+
 		// 클라 예측도 같이 끊는다 (#112). 안 끊으면 서버는 섰는데 클라만 계속 밀고 가서
 		// 매 프레임 보정으로 되돌려지는 최악의 조합이 된다.
 		if (ARECharacterBase* RC = Cast<ARECharacterBase>(P))
@@ -607,6 +619,13 @@ void AREPlayerController::RunHeadlessFireProbe()
 		UE_LOG(LogTemp, Log, TEXT("[Attack] probe fire dir=%s"), *Dir.ToString());
 		Server_RequestFire(Dir);   // 1발 — hit boss 기대
 		Server_RequestFire(Dir);   // 즉시 재발사 — rate-limited 기대
+
+		// 발사 직후 이동 요청 — 사격 모션 락에 막혀야 한다. 대쉬의 "immediate retry" 게이트와 같은 취지다.
+		// 막히면 `[Move] rejected: fire lock` 이 찍히고, 막히지 않으면 폰이 +Y로 걸어가
+		// 이어지는 `[Move] probe dist` 가 흔들려 그것으로도 드러난다.
+		const FVector LockProbeTarget = P->GetActorLocation() + FVector(0.f, 200.f, 0.f);
+		UE_LOG(LogTemp, Log, TEXT("[Move] fire lock probe: 이동 요청 (거절 기대)"));
+		Server_RequestMove(LockProbeTarget);
 	});
 	GetWorld()->GetTimerManager().SetTimer(ProbeFireTimer, FireDel, 1.5f, false);
 }
