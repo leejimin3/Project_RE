@@ -31,6 +31,13 @@ public:
 	/** 발사 간격 조회 — 컨트롤러가 클라 로컬 페이싱에 사용. */
 	float GetAttackInterval() const { return AttackInterval; }
 
+	/**
+	 *  발사 후 이동이 잠기는 시간(s). 사격 모션이 끝날 때까지다.
+	 *  모션 애셋이 없는 환경(.gitignore 대상 경로)에서는 발사 간격으로 대체한다 —
+	 *  0을 돌려주면 그 환경만 이동 규칙이 달라져 버린다.
+	 */
+	float GetFireLockSec() const;
+
 private:
 	/** 발사당 데미지. Settings(AttackDamage) 단일 출처 — 생성자에서 로드. */
 	float Damage = 10.f;

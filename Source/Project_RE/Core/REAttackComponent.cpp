@@ -37,6 +37,11 @@ UREAttackComponent::UREAttackComponent()
 	}
 }
 
+float UREAttackComponent::GetFireLockSec() const
+{
+	return FireAnim ? FireAnim->GetPlayLength() : AttackInterval;
+}
+
 bool UREAttackComponent::FireInDirection(const FVector& Dir)
 {
 	// 서버 전용 — 판정·데미지는 서버 권위 (호출자가 Server RPC지만 방어적 재가드).
