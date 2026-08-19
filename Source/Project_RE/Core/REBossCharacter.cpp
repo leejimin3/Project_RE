@@ -137,10 +137,16 @@ void AREBossCharacter::ApplyPatternLook(EBulletPattern Pattern)
 
 	// 팩 마스터 머티리얼이 Snow/Lava 스칼라를 노출한다 — 스킨 애셋을 새로 만들 필요가 없다.
 	// 멱등이라 발사마다 불러도 무해하고, 그래서 페이즈 전환을 따로 복제하지 않아도 된다.
-	BodyMID->SetScalarParameterValue(TEXT("Snow"),
-		Pattern == EBulletPattern::Fan ? FanSnowAmount : 0.f);
+	const bool bFan = (Pattern == EBulletPattern::Fan);
+	BodyMID->SetScalarParameterValue(TEXT("Snow"), bFan ? FanSnowAmount : 0.f);
 	BodyMID->SetScalarParameterValue(TEXT("Lava"),
 		Pattern == EBulletPattern::Artillery ? ArtilleryLavaAmount : 0.f);
+
+	// Snow 스칼라만으로는 하얘지지 않는다 — 그 값은 균열 이미시브를 증폭할 뿐이고
+	// 색은 Color Emis 가 쥐고 있다(팩 기본 MI = 빨강). 안 덮으면 Fan 이 적열로 나와
+	// 빨강+흰색 탄막에 섞이고 주황 용암(Artillery)과도 계열이 겹친다. 청록으로 가른다.
+	BodyMID->SetVectorParameterValue(TEXT("Color Emis"),
+		bFan ? FLinearColor(0.15f, 0.70f, 1.0f, 1.0f) : FLinearColor(1.0f, 0.f, 0.f, 1.0f));
 }
 
 void AREBossCharacter::StartFiring(int32 Seed)
