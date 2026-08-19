@@ -47,18 +47,6 @@ bool UREAttackComponent::FireInDirection(const FVector& Dir)
 	}
 	LastFireTime = Now;
 
-	// 발사 모션 — 코스메틱, 판정과 무관하게 발사 자체에 재생 (M4 #74).
-	// 서버 메시에 직접 재생하면 데디에선 아무도 못 본다 — 오너 캐릭터의 Multicast로 위임한다.
-	// 여기서 직접 재생하지 않으므로 리슨서버 이중 재생 경로가 없다(Multicast가 서버에서도 실행되어 1회).
-	// 배치/신뢰성 근거는 ARECharacterBase::Multicast_PlayFireMontage 주석 참조.
-	if (FireMontage)
-	{
-		if (ARECharacterBase* OwnerChar = Cast<ARECharacterBase>(GetOwner()))
-		{
-			OwnerChar->Multicast_PlayFireMontage(FireMontage);
-		}
-	}
-
 	// 총구 높이(Z+20)에서 Dir 방향으로 사거리만큼 수평 트레이스. 자기 자신 무시.
 	// Z+50이면 보스 캡슐(중심 90, HalfHeight 88 → 상단 178)을 스치듯 넘어가 미스 — 20으로 하향.
 	const FVector Start = GetOwner()->GetActorLocation() + FVector(0.f, 0.f, 20.f);
@@ -66,6 +54,18 @@ bool UREAttackComponent::FireInDirection(const FVector& Dir)
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(REAttack), /*bTraceComplex=*/false, GetOwner());
 	FHitResult Hit;
 	const bool bBlockingHit = GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Pawn, Params);
+
+	// 발사 모션 + 이펙트 — 코스메틱, 판정과 무관하게 발사 자체에 재생 (M4 #74, 이펙트 #120).
+	// 서버 메시에 직접 재생하면 데디에선 아무도 못 본다 — 오너 캐릭터의 Multicast로 위임한다.
+	// 여기서 직접 재생하지 않으므로 리슨서버 이중 재생 경로가 없다(Multicast가 서버에서도 실행되어 1회).
+	// 배치/신뢰성 근거는 ARECharacterBase::Multicast_PlayFire 주석 참조.
+	//
+	// 트레이스 **뒤**에서 부른다 — 빔의 끝점과 임팩트 지점이 판정 결과이기 때문이다.
+	// 판정 자체는 위 트레이스가 이미 끝냈으므로 순서를 옮겨도 결과가 바뀌지 않는다.
+	if (ARECharacterBase* OwnerChar = Cast<ARECharacterBase>(GetOwner()))
+	{
+		OwnerChar->Multicast_PlayFire(FireMontage, bBlockingHit ? Hit.ImpactPoint : End, bBlockingHit);
+	}
 
 	AREBossCharacter* Boss = bBlockingHit ? Cast<AREBossCharacter>(Hit.GetActor()) : nullptr;
 	if (Boss)

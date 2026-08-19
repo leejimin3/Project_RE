@@ -22,6 +22,10 @@
 #include "HAL/IConsoleManager.h"
 #include "NiagaraSystem.h"
 #include "NiagaraFunctionLibrary.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/MaterialInterface.h"
+#include "REExplosionFx.h"
 
 // 치트: 1이면 플레이어 무적(TakeDamage 무피해). 데브 전용, 클라 로컬(ECVF_Cheat).
 static TAutoConsoleVariable<int32> CVarPlayerInvincible(
@@ -60,6 +64,19 @@ static TAutoConsoleVariable<float> CVarDashVfxScale(
 	TEXT("re.Debug.DashVfxScale"),
 	1.f,
 	TEXT("대쉬 잔상 VFX 균등 스케일. 1=원본. 이 애셋에선 간격만 변한다 — 주석 참조."),
+	ECVF_Cheat);
+
+/**
+ *  발사 이펙트 노출 시간(s) 오버라이드 (#120). 0 이하 = 코드 기본값(FireFxSec).
+ *
+ *  기본 0.06s 는 발사 간격(0.25s)에 겹치지 않게 잡은 값인데, 그만큼 짧아서 스크린샷으로
+ *  잡으려면 4프레임 안에 셔터를 맞춰야 한다 — 실제로 계속 1프레임씩 빗나갔다.
+ *  검증할 때 이 값을 크게 주면 아무 프레임에서나 찍힌다. 코스메틱이라 클라 로컬로 충분하다.
+ */
+static TAutoConsoleVariable<float> CVarFireFxSec(
+	TEXT("re.Debug.FireFxSec"),
+	0.f,
+	TEXT("발사 빔/섬광 노출 시간(s). 0 이하 = 기본값. 스크린샷 검증용."),
 	ECVF_Cheat);
 
 ARECharacterBase::ARECharacterBase()
@@ -156,11 +173,118 @@ ARECharacterBase::ARECharacterBase()
 	{
 		DashVfx = DashVfxAsset.Object;
 	}
+
+	//~ 발사 표현 (#120) — 전부 코스메틱. 충돌은 모두 끈다:
+	//  자동사격이 ECC_Pawn 라인트레이스라 오너 부착물이 판정을 가리면 안 된다(HP바와 같은 이유).
+
+	// 총기 — Sarah 스켈레톤이 Pistol_Socket 을 이미 들고 있다(팩 저작). 소켓이 없는 환경에서는
+	// 메시 루트에 붙어 위치만 어긋난다(크래시 없음).
+	WeaponMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Weapon"));
+	WeaponMesh->SetupAttachment(GetMesh(), TEXT("Pistol_Socket"));
+	WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	WeaponMesh->SetCastShadow(false);   // 탑다운 시점에서 총 그림자는 노이즈다
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> PistolAsset(
+		TEXT("/Game/Adventure_Pack/Characters/Shared/Props/Pistol/SM_Pistol.SM_Pistol"));
+	if (PistolAsset.Succeeded())
+	{
+		WeaponMesh->SetStaticMesh(PistolAsset.Object);
+	}
+
+	// 빔/섬광 — 엔진 기본 도형 + 자체 저작 이미시브 머티리얼(scripts/make_beam_material.py).
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderAsset(
+		TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereAsset(
+		TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BeamMatAsset(
+		TEXT("/Game/Materials/M_REBeam.M_REBeam"));
+
+	BeamMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("FireBeam"));
+	BeamMesh->SetupAttachment(RootComponent);
+	BeamMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BeamMesh->SetCastShadow(false);
+	BeamMesh->SetVisibility(false);
+	// 절대 트랜스폼 — 빔은 월드에 그은 선이다. 캡슐에 상대로 두면 발사 직후 플레이어가
+	// 움직이거나 회전할 때 남은 프레임 동안 빔이 같이 끌려가 휜다.
+	BeamMesh->SetUsingAbsoluteLocation(true);
+	BeamMesh->SetUsingAbsoluteRotation(true);
+	BeamMesh->SetUsingAbsoluteScale(true);
+	if (CylinderAsset.Succeeded())
+	{
+		BeamMesh->SetStaticMesh(CylinderAsset.Object);
+	}
+
+	MuzzleFlash = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MuzzleFlash"));
+	MuzzleFlash->SetupAttachment(RootComponent);
+	MuzzleFlash->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	MuzzleFlash->SetCastShadow(false);
+	MuzzleFlash->SetVisibility(false);
+	MuzzleFlash->SetUsingAbsoluteLocation(true);
+	MuzzleFlash->SetUsingAbsoluteScale(true);
+	if (SphereAsset.Succeeded())
+	{
+		MuzzleFlash->SetStaticMesh(SphereAsset.Object);
+	}
+	MuzzleFlash->SetWorldScale3D(FVector(0.22f));   // 구 기본 지름 100uu → 22uu (≈11픽셀, 빔 굵기 주석 참조)
+
+	if (BeamMatAsset.Succeeded())
+	{
+		BeamMesh->SetMaterial(0, BeamMatAsset.Object);
+		MuzzleFlash->SetMaterial(0, BeamMatAsset.Object);
+	}
+}
+
+// SM_Pistol 바운즈 X 범위 [-18.8, +4.2] 에서 +X 끝이 총구 쪽이다. 소켓이 없어 오프셋으로 잡는다.
+const FVector ARECharacterBase::MuzzleLocal(4.f, 0.f, 2.f);
+
+void ARECharacterBase::ShowFireFx(const FVector& BeamEnd)
+{
+	if (!BeamMesh || !WeaponMesh)
+	{
+		return;
+	}
+
+	const FVector Start = WeaponMesh->GetComponentTransform().TransformPosition(MuzzleLocal);
+	const FVector Delta = BeamEnd - Start;
+	const float Len = Delta.Size();
+	if (Len < 1.f)
+	{
+		return;   // 끝점이 총구에 겹침 — 방향을 못 뽑는다
+	}
+
+	// 실린더 기본형: 높이 100uu·지름 100uu, 원점 중앙, 축 = +Z.
+	BeamMesh->SetWorldLocation(Start + Delta * 0.5f);
+	BeamMesh->SetWorldRotation(FRotationMatrix::MakeFromZ(Delta / Len).Rotator());
+	BeamMesh->SetWorldScale3D(FVector(BeamThicknessUU / 100.f, BeamThicknessUU / 100.f, Len / 100.f));
+	BeamMesh->SetVisibility(true);
+
+	MuzzleFlash->SetWorldLocation(Start);
+	MuzzleFlash->SetVisibility(true);
+
+	// 빔은 0.06초만 뜨고 화면으로만 판정할 수 있다 — 스크린샷이 흐릿할 때 기하가 틀린 건지
+	// 룩이 약한 건지 가르려면 이 값이 필요하다(#120 검증에서 실제로 갈랐다).
+	UE_LOG(LogTemp, Log, TEXT("[Attack] beam start=%s end=%s len=%.1f"),
+		*Start.ToCompactString(), *BeamEnd.ToCompactString(), Len);
+
+	const float Override = CVarFireFxSec.GetValueOnGameThread();
+	GetWorldTimerManager().SetTimer(FireFxTimer, this, &ARECharacterBase::HideFireFx,
+		Override > 0.f ? Override : FireFxSec, false);
+}
+
+void ARECharacterBase::HideFireFx()
+{
+	if (BeamMesh)
+	{
+		BeamMesh->SetVisibility(false);
+	}
+	if (MuzzleFlash)
+	{
+		MuzzleFlash->SetVisibility(false);
+	}
 }
 
 void ARECharacterBase::Multicast_PlayDashMontage_Implementation(FVector DashDir)
 {
-	// 데디 서버는 화면이 없으므로 코스메틱 재생을 생략한다 (#74 Multicast_PlayFireMontage와 동일 패턴).
+	// 데디 서버는 화면이 없으므로 코스메틱 재생을 생략한다 (#74 Multicast_PlayFire와 동일 패턴).
 	// "데디는 AnimInstance가 null이라 자연 no-op"으로 봤던 초안 가정은 실측으로 반증됐다 —
 	// 데디 서버 로그에 `[Dash] anim len=0.97 (role=ROLE_Authority)`가 찍혔다. 가드가 없으면
 	// 서버가 IgnoreRootMotion으로 전환한 채 몽타주를 돌려 서버 권위 이동 경로에 개입한다.
@@ -354,19 +478,32 @@ bool ARECharacterBase::TryDash(FVector Dir)
 	return AbilitySystemComponent->TryActivateAbilityByClass(UREGA_Dash::StaticClass());
 }
 
-void ARECharacterBase::Multicast_PlayFireMontage_Implementation(UAnimMontage* Montage)
+void ARECharacterBase::Multicast_PlayFire_Implementation(UAnimMontage* Montage, FVector_NetQuantize BeamEnd, bool bHit)
 {
 	// Multicast는 서버에서도 실행된다. 데디 서버는 화면이 없으므로 코스메틱 재생을 생략한다.
 	// 리슨서버/싱글은 여기서 딱 한 번 재생 — 컴포넌트의 직접 재생을 제거했으므로 이중 재생 경로가 없다.
-	if (!Montage || IsNetMode(NM_DedicatedServer))
+	if (IsNetMode(NM_DedicatedServer))
 	{
 		return;
 	}
 
-	if (UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+	// 몽타주와 이펙트는 각자 판단한다 — 몽타주 애셋은 UE5 템플릿 경로(.gitignore 대상)라
+	// 없는 환경이 실제로 존재한다. 묶어서 return하면 총이 없다는 이유로 빔까지 사라진다.
+	if (Montage)
 	{
-		const float Len = AnimInst->Montage_Play(Montage, 1.0f);
-		UE_LOG(LogTemp, Log, TEXT("[Attack] fire montage len=%.2f"), Len);
+		if (UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+		{
+			const float Len = AnimInst->Montage_Play(Montage, 1.0f);
+			UE_LOG(LogTemp, Log, TEXT("[Attack] fire montage len=%.2f"), Len);
+		}
+	}
+
+	ShowFireFx(BeamEnd);
+
+	// 임팩트는 막힌 지점에만. 빗나간 발의 BeamEnd 는 허공(사거리 끝)이라 거기서 터지면 거짓이다.
+	if (bHit)
+	{
+		REExplosionFx::SpawnBulletExplosion(GetWorld(), BeamEnd);
 	}
 }
 
