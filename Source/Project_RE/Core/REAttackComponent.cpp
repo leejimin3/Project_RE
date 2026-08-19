@@ -6,7 +6,7 @@
 #include "Engine/DamageEvents.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Pawn.h"
-#include "Animation/AnimMontage.h"
+#include "Animation/AnimSequence.h"
 #include "UObject/ConstructorHelpers.h"
 #include "REStatsSettings.h"
 
@@ -21,12 +21,19 @@ UREAttackComponent::UREAttackComponent()
 	AttackInterval = Stats->AttackInterval;
 	AttackRange    = Stats->AttackRange;
 
-	// 발사 모션 (M3.5 ②) — 실패해도 크래시 없이 진행(모션만 생략).
-	static ConstructorHelpers::FObjectFinder<UAnimMontage> MontageAsset(
-		TEXT("/Game/Characters/Mannequins/Anims/Pistol/MM_Pistol_Fire_Montage.MM_Pistol_Fire_Montage"));
-	if (MontageAsset.Succeeded())
+	// 발사 모션 (M3.5 ②, #132에서 교체) — 실패해도 크래시 없이 진행(모션만 생략).
+	//
+	// MM_Pistol_Fire_Montage(및 그것이 감싸던 MM_Pistol_Fire)를 버리고 MM_Pistol_DryFire를 쓴다.
+	// 전자는 **애디티브**(AAT_ROTATION_OFFSET_MESH_SPACE, 실측)라 애디티브 슬롯을 통해서만
+	// 포즈가 적용된다 — 그 슬롯이 몽타주의 `Arms`였고 ABP_Unarmed에는 그 노드가 없다.
+	// 일반 슬롯으로 재생하면 델타만 남아 화면상 아무 변화가 없다(실측으로 확인).
+	// MM_Pistol_DryFire는 AAT_NONE 전신 격발 모션이라 DefaultSlot에서 그대로 보인다.
+	// 루트모션도 없어 대쉬처럼 IgnoreRootMotion으로 감쌀 필요가 없다(실측).
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> FireAnimAsset(
+		TEXT("/Game/Characters/Mannequins/Anims/Pistol/MM_Pistol_DryFire.MM_Pistol_DryFire"));
+	if (FireAnimAsset.Succeeded())
 	{
-		FireMontage = MontageAsset.Object;
+		FireAnim = FireAnimAsset.Object;
 	}
 }
 
@@ -64,7 +71,7 @@ bool UREAttackComponent::FireInDirection(const FVector& Dir)
 	// 판정 자체는 위 트레이스가 이미 끝냈으므로 순서를 옮겨도 결과가 바뀌지 않는다.
 	if (ARECharacterBase* OwnerChar = Cast<ARECharacterBase>(GetOwner()))
 	{
-		OwnerChar->Multicast_PlayFire(FireMontage, bBlockingHit ? Hit.ImpactPoint : End, bBlockingHit);
+		OwnerChar->Multicast_PlayFire(FireAnim, bBlockingHit ? Hit.ImpactPoint : End, bBlockingHit);
 	}
 
 	AREBossCharacter* Boss = bBlockingHit ? Cast<AREBossCharacter>(Hit.GetActor()) : nullptr;

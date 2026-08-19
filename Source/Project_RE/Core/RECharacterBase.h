@@ -103,7 +103,7 @@ public:
 	 *  판정과는 무관하다. 시작점은 각 클라가 자기 무기 컴포넌트에서 로컬로 구한다.
 	 */
 	UFUNCTION(NetMulticast, Unreliable)
-	void Multicast_PlayFire(UAnimMontage* Montage, FVector_NetQuantize BeamEnd, bool bHit);
+	void Multicast_PlayFire(UAnimSequence* FireAnim, FVector_NetQuantize BeamEnd, bool bHit);
 
 	/**
 	 *  대쉬 모션을 모든 인스턴스(서버 자신 + 전 클라)에 재생. 코스메틱 전용.

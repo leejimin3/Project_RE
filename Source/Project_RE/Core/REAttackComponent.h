@@ -6,7 +6,7 @@
 #include "Components/ActorComponent.h"
 #include "REAttackComponent.generated.h"
 
-class UAnimMontage;
+class UAnimSequence;
 
 /**
  *  플레이어 수동공격 컴포넌트 (M3.5 ①, 구 REAutoFireComponent #26).
@@ -41,9 +41,15 @@ private:
 	/** 히트스캔 사거리(uu). Settings(AttackRange) 단일 출처. */
 	float AttackRange = 2000.f;
 
-	/** 발사 모션 몽타주. 코스메틱 — 재생은 오너 캐릭터의 Multicast_PlayFire가 전 클라에 전달(M4 #74). */
+	/**
+	 *  발사 모션(AnimSequence — ABP DefaultSlot에 다이나믹 몽타주로 재생, MM_Dash와 같은 방식).
+	 *  코스메틱 — 재생은 오너 캐릭터의 Multicast_PlayFire가 전 클라에 전달(M4 #74).
+	 *
+	 *  MM_Pistol_Fire_Montage를 쓰지 않는 이유는 #132 참조 — 그 몽타주가 든 애님이 애디티브라
+	 *  애디티브 슬롯(Arms) 없이는 화면에 아무 변화가 없다. 비-애디티브인 DryFire로 갈아탔다.
+	 */
 	UPROPERTY()
-	TObjectPtr<UAnimMontage> FireMontage;
+	TObjectPtr<UAnimSequence> FireAnim;
 
 	/** 서버 마지막 발사 시각(월드초). rate limit 기준. -1 = 미발사. */
 	double LastFireTime = -1.0;
