@@ -28,6 +28,14 @@ namespace
 	 *  #122 에서 두께 없는 Plane 으로 바꾸자 그대로 바닥 속에 묻혀 화면에서 사라졌다 -
 	 *  Main 레벨 바닥 윗면이 Z=40 이라 그보다 위여야 한다. */
 	constexpr float MarkerZOffset = 55.f;
+	/**
+	 *  마커가 완성 크기까지 자라는 시간(s). 탄 위치는 Elapsed 의 함수라 서브샷 어긋내기가
+	 *  그대로 먹지만, 마커 위치는 Target 이라 어긋내기가 안 먹는다 — 그냥 두면 한 프레임에
+	 *  생긴 N개가 완성 크기로 동시에 튀어나와 띠 선단이 뚝뚝 점프한다(ArtilleryStorm 에서
+	 *  육안 확인). 이미 어긋나 있는 Elapsed 로 스케일을 램프해 선단을 연속으로 만든다.
+	 *  판정 반경(FArcBulletFragment::Radius)은 안 건드리므로 데미지는 불변 — 시각 전용이다.
+	 */
+	constexpr float MarkerGrowSec = 0.15f;
 }
 
 UREArcRenderProcessor::UREArcRenderProcessor()
@@ -84,7 +92,9 @@ void UREArcRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 			BulletPop.Add(0.f);
 
 			// 마커: Target 바닥, 반경=Radius(Cylinder 스케일), 낮은 원판.
-			const float RadScale = A[i].Radius / CylinderBaseRadius;
+			// 갓 생긴 마커는 작게 시작해 자란다(위 MarkerGrowSec 주석).
+			const float Grow = FMath::Clamp(A[i].Elapsed / MarkerGrowSec, 0.f, 1.f);
+			const float RadScale = A[i].Radius / CylinderBaseRadius * Grow;
 			FTransform M;
 			M.SetLocation(FVector(A[i].Target.X, A[i].Target.Y, A[i].Target.Z + MarkerZOffset));
 			M.SetScale3D(FVector(RadScale, RadScale, MarkerThickness));
@@ -115,5 +125,14 @@ void UREArcRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 	if (BulletXf.Num() > 0)
 	{
 		ArcISM->SetCustomData(0, BulletXf.Num() - 1, BulletPop, /*bMarkRenderStateDirty=*/true);
+	}
+
+	// 프로브: 동시 체공 곡사탄 수. ArtilleryStorm 의 설계 주장
+	// (체공 ≈ 볼리당_발수 / 발사간격 × 체공시간)이 실제로 성립하는지 보는 유일한 관측점이다.
+	// 매 30회 실행 1회 — 로그 과다 방지. 이름을 직선탄 쪽 ProbeTick 과 다르게 둔다(유니티 빌드 섀도잉).
+	static int32 ArcProbeTick = 0;
+	if (((ArcProbeTick++) % 30) == 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[RE] ArcRenderProbe: live=%d marker=%d"), BulletXf.Num(), MarkerXf.Num());
 	}
 }
