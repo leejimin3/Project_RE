@@ -39,6 +39,13 @@ namespace REBulletPattern
 		Lifetime = S->BulletLifetime;
 	}
 
+	FRoseParams::FRoseParams()
+	{
+		const UREStatsSettings* S = GetDefault<UREStatsSettings>();
+		Speed    = S->BulletSpeed;
+		Lifetime = S->BulletLifetime;
+	}
+
 	TArray<FBulletSpawnParams> GenerateSpiral(const FVector& Origin, const FSpiralParams& P)
 	{
 		TArray<FBulletSpawnParams> Out;
@@ -63,6 +70,25 @@ namespace REBulletPattern
 		{
 			const float Angle = Start + i * Step;
 			Out.Add({ Origin, DirFromDeg(Angle) * P.Speed, P.Lifetime });
+		}
+		return Out;
+	}
+
+	TArray<FBulletSpawnParams> GenerateRose(const FVector& Origin, const FRoseParams& P)
+	{
+		TArray<FBulletSpawnParams> Out;
+		// Max(1,...): Count<=0 시 360/0 나눗셈 방지.
+		const int32 Count = FMath::Max(P.Count, 1);
+		Out.Reserve(Count);
+		const float Step = 360.f / Count;   // Count 무관 균등 링
+		for (int32 i = 0; i < Count; ++i)
+		{
+			const float Angle = P.BaseAngleDeg + i * Step;
+			// 변조는 **절대 각**의 함수다 — 링이 회전해도 로브는 제자리다.
+			// 로브를 돌리는 축은 PhaseDeg 하나뿐이라 두 회전이 서로 상쇄되지 않는다.
+			const float Mod   = FMath::Cos(FMath::DegreesToRadians(P.Lobes * Angle + P.PhaseDeg));
+			const float Speed = P.Speed * (1.f + P.Amp * Mod);
+			Out.Add({ Origin, DirFromDeg(Angle) * Speed, P.Lifetime, (Mod > 0.f) ? 1.f : 0.f });
 		}
 		return Out;
 	}

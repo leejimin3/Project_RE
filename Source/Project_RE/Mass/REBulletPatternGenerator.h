@@ -46,8 +46,34 @@ namespace REBulletPattern
 		float Lifetime       = 3.f;
 	};
 
+	struct FRoseParams
+	{
+		FRoseParams();               // Speed/Lifetime을 Settings에서 초기화
+		int32 Count        = 16;
+		float BaseAngleDeg = 0.f;    // 이번 발사 시작각 (Boss가 누적해 전달)
+		float Speed        = 300.f;  // 기준 속력(변조 전) — 생성자가 Settings로 덮어씀
+		float Lifetime     = 3.f;    // s — 생성자가 Settings로 덮어씀
+		int32 Lobes        = 5;      // k — 속력 변조의 각주기. 로브 수와 같다
+		float Amp          = 0.5f;   // 변조 깊이. 1.0이면 골에서 속력이 0이 된다
+		float PhaseDeg     = 0.f;    // 로브 위상(deg). 호출자가 ω·ServerTime 으로 산출해 넣는다
+	};
+
 	/** 나선 팔 1개: 각도 = BaseAngle + i*AngleStep, i=0..Count-1. */
 	TArray<FBulletSpawnParams> GenerateSpiral(const FVector& Origin, const FSpiralParams& P);
+
+	/**
+	 *  장미 포락선: 각도는 균등 링이고 **속력만** 각도의 함수다.
+	 *      θᵢ = BaseAngle + i·(360/Count)
+	 *      sᵢ = Speed · (1 + Amp·cos(Lobes·θᵢ + PhaseDeg))
+	 *
+	 *  발사 T초 뒤 이 볼리의 파면은 r(θ) = Speed·T·(1 + Amp·cos(Lobes·θ + PhaseDeg)) —
+	 *  Lobes 장 로브의 극좌표 곡선이 자기닮음으로 확대된다. 탄 하나하나는 완전한 직선이고
+	 *  곡선인 것은 집합의 파면뿐이다. PhaseDeg 가 볼리마다 달라 로브가 회전하므로 화면에는
+	 *  크기와 위상이 다른 꽃이 여러 겹 겹쳐 보인다.
+	 *
+	 *  ColorSel 은 로브 부호다 — 빠른 로브와 느린 로브를 색으로 가른다(회피 가독성).
+	 */
+	TArray<FBulletSpawnParams> GenerateRose(const FVector& Origin, const FRoseParams& P);
 
 	/** 부채꼴: CenterAngle 기준 -Spread/2 .. +Spread/2 를 Count 등분 동시 발사. */
 	TArray<FBulletSpawnParams> GenerateFan(const FVector& Origin, const FFanParams& P);

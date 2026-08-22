@@ -130,6 +130,29 @@ private:
 	static constexpr float RestSec            = 1.f;
 	static constexpr float FanFireIntervalSec = 0.5f;
 
+	//~ 장미 포락선(RoseEnvelope) 파라미터. 헤더 상수 — 플레이 후 튜닝.
+	//  각은 균등 링이고 **속력만** 각도의 함수다: s(θ) = BulletSpeed·(1 + Amp·cos(k·θ + ω·t)).
+	//  발사 T초 뒤 그 볼리의 파면이 r(θ) = BulletSpeed·T·(1 + Amp·cos(kθ + ω·t)) 인 k로브
+	//  극좌표 곡선이 되어 자기닮음으로 확대된다 — 탄은 전부 직선이고 곡선인 것은 파면뿐이다.
+	//  발사당 탄 수와 발사 간격은 Spiral과 공유한다(ResolveSpiralCount / FireIntervalSec):
+	//  링 지오메트리가 같아 새 손잡이를 만들 이유가 없다. 동시 체공 = 48/0.15 × 15 ≈ 4,800발로
+	//  Spiral과 같은 예산이고, 곡사와 달리 **착지가 없어** 프레임 비용이 무시할 수준이다.
+	static constexpr float RosePhaseSec      = 8.f;    // 파면이 여러 겹 쌓여야 무늬가 성립한다
+	/** 로브 수 k. 홀수라 로브가 정반대로 겹치지 않는다 — 무늬가 비대칭이 된다. 로브 각폭 72°. */
+	static constexpr int32 RoseLobes         = 5;
+	/**
+	 *  속력 변조 깊이. 0.5면 속력이 기준의 0.5~1.5배(ini BulletSpeed=200 기준 100~300uu/s)라
+	 *  플레이어 거리(600) 도달 시점 T≈3s 에 파면 반경이 300~900 — 로브 진폭 600uu 로 읽힌다.
+	 *  1.0 이면 골의 속력이 0 이 되어 그쪽 탄이 보스 발밑에 눌어붙는다.
+	 */
+	static constexpr float RoseAmp           = 0.5f;
+	/**
+	 *  로브 위상 회전(deg/s). 로브 1주기(360/k = 72°)를 도는 데 1.8초.
+	 *  링 회전(SpiralRotationStepDeg — 볼리마다 137.5°)과는 별개 축이다. 링 회전은 탄이 놓이는
+	 *  각만 바꾸고 로브는 절대 각의 함수라, 두 회전이 맞물려 무늬가 정지하는 일이 없다.
+	 */
+	static constexpr float RoseSpinDegPerSec = 40.f;
+
 	//~ 곡사(Artillery) 페이즈 파라미터. 헤더 상수 — 플레이 후 튜닝.
 	static constexpr float ArtilleryPhaseSec     = 4.f;    // 페이즈 길이
 	static constexpr float ArtilleryFireInterval = 1.8f;   // 일제사 간격(비행시간보다 길게 → 겹침 억제)

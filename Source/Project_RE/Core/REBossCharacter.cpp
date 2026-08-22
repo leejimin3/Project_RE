@@ -42,7 +42,7 @@ static TAutoConsoleVariable<int32> CVarBulletCount(
 static TAutoConsoleVariable<int32> CVarBossPattern(
 	TEXT("re.Debug.BossPattern"),
 	-1,
-	TEXT("검증용: -1=정상 로테이션, 0=Spiral 1=Fan 2=Artillery 3=ArtilleryStorm 고정."),
+	TEXT("검증용: -1=정상 로테이션, 0=Spiral 1=Fan 2=Artillery 3=ArtilleryStorm 4=RoseEnvelope 고정."),
 	ECVF_Cheat);
 
 // #51 클로즈드루프 적분 게인. 수명 지연(수명/발사주기 ≈ 30발) 대비 크면 진동한다.
@@ -150,6 +150,11 @@ AREBossCharacter::FBossLook AREBossCharacter::LookForPattern(EBulletPattern Patt
 		// 이미시브를 금색으로 올려 가른다 — Fan(청록)/Spiral(빨강)과도 안 겹친다.
 		Look.Lava = StormLavaAmount;
 		Look.Emis = FLinearColor(1.0f, 0.85f, 0.2f, 1.0f);
+		break;
+	case EBulletPattern::RoseEnvelope:
+		// 질감 축(Snow/Lava)에는 남는 조합이 없다 — Fan 이 Snow, 곡사 둘이 Lava 를 쓴다.
+		// Spiral 과 같은 화강암에 이미시브만 보라로 가른다(빨강/청록/주황/금색과 안 겹친다).
+		Look.Emis = FLinearColor(0.70f, 0.10f, 1.0f, 1.0f);
 		break;
 	default: break;
 	}
@@ -267,9 +272,9 @@ void AREBossCharacter::BeginPhase()
 	// 완전 랜덤 로테이션. 같은 패턴 2연속 금지, 첫 페이즈 무제약(Spiral 고정 없음).
 	// enum 순서(Spiral=0,Fan=1,Homing=2,Artillery=3)와 로테이션 인덱스가 다르므로 풀 배열로 매핑.
 	// Homing은 백로그 스텁이라 풀에서 제외.
-	static const EBulletPattern Pool[4] = {
+	static const EBulletPattern Pool[5] = {
 		EBulletPattern::Spiral, EBulletPattern::Fan, EBulletPattern::Artillery,
-		EBulletPattern::ArtilleryStorm };
+		EBulletPattern::ArtilleryStorm, EBulletPattern::RoseEnvelope };
 	EBulletPattern NewPattern;
 	const int32 Forced = CVarBossPattern.GetValueOnGameThread();
 	if (Forced >= 0)
@@ -310,6 +315,9 @@ void AREBossCharacter::BeginPhase()
 		PhaseSec = ArtilleryPhaseSec; FireInterval = ArtilleryFireInterval; PhaseName = TEXT("Artillery"); break;
 	case EBulletPattern::ArtilleryStorm:
 		PhaseSec = StormPhaseSec; FireInterval = StormFireInterval; PhaseName = TEXT("ArtilleryStorm"); break;
+	case EBulletPattern::RoseEnvelope:
+		// FireInterval 은 기본값(Spiral과 공유) 그대로 둔다 — 링 지오메트리가 같다.
+		PhaseSec = RosePhaseSec; PhaseName = TEXT("RoseEnvelope"); break;
 	default: break;   // Spiral 기본값
 	}
 
@@ -350,8 +358,11 @@ void AREBossCharacter::FireCurrentPattern()
 	float AngleDeg = 0.f;
 	int32 Count    = 0;
 
-	if (CurrentPhasePattern == EBulletPattern::Spiral)
+	if (CurrentPhasePattern == EBulletPattern::Spiral
+		|| CurrentPhasePattern == EBulletPattern::RoseEnvelope)
 	{
+		// 장미도 균등 링이라 서버가 정할 게 Spiral과 같다 — 링 시작각과 발사당 탄 수뿐이다.
+		// 로브 위상은 ServerTime 에서 순수 유도되므로 페이로드에 실을 값이 없다 (#84).
 		Count    = ResolveSpiralCount();
 		AngleDeg = SpiralBaseAngleDeg;
 		SpiralBaseAngleDeg += SpiralRotationStepDeg;   // 다음 발사에 회전
@@ -677,6 +688,19 @@ void AREBossCharacter::Multicast_FireDirect_Implementation(EBulletPattern Patter
 		FP.Count          = Count;
 		FP.CenterAngleDeg = AngleDeg;
 		Params = REBulletPattern::GenerateFan(Origin, FP);
+	}
+	else if (Pattern == EBulletPattern::RoseEnvelope)
+	{
+		REBulletPattern::FRoseParams RP;
+		RP.Count        = Count;
+		RP.BaseAngleDeg = AngleDeg;
+		RP.Lobes        = RoseLobes;
+		RP.Amp          = RoseAmp;
+		// 로브 위상을 ServerTime 에서 뽑는다 — ShotParity 와 같은 이유다 (#97):
+		// 이 함수는 서버와 클라가 **같은 ServerTime** 으로 실행하므로 복제 없이 무늬가 일치한다.
+		// 로컬 시계나 자체 카운터를 쓰면 멀티캐스트 유실 시 클라마다 로브가 어긋난다.
+		RP.PhaseDeg     = RoseSpinDegPerSec * ServerTime;
+		Params = REBulletPattern::GenerateRose(Origin, RP);
 	}
 	else
 	{
