@@ -35,15 +35,31 @@ static TAutoConsoleVariable<int32> CVarBulletCount(
 
 /**
  *  검증/튜닝용 패턴 고정. -1(기본) = 정상 랜덤 로테이션.
- *  인덱스는 BeginPhase 의 Pool 순서다: 0=Spiral, 1=Fan, 2=Artillery, 3=ArtilleryStorm.
+ *  인덱스는 BeginPhase 의 Pool 순서다(enum 순서가 아니다) — 전체 목록은 아래 헬프 문자열에 있다.
  *  (Homing 은 백로그 스텁이라 Pool 에 없다.)
  *  페이즈 진입 시점 조회 — 재시작 없이 다음 페이즈부터 반영된다.
  */
 static TAutoConsoleVariable<int32> CVarBossPattern(
 	TEXT("re.Debug.BossPattern"),
 	-1,
-	TEXT("검증용: -1=정상 로테이션, 0=Spiral 1=Fan 2=Artillery 3=ArtilleryStorm 4=RoseEnvelope 고정."),
+	TEXT("검증용: -1=정상 로테이션, 0=Spiral 1=Fan 2=Artillery 3=ArtilleryStorm 4=RoseEnvelope "
+	     "5=Phyllotaxis 6=CounterSpiral 7=Cardioid 8=LissajousStorm 9=BezierVortex 고정."),
 	ECVF_Cheat);
+
+namespace REBoss
+{
+	/**
+	 *  곡사(포물선 착지 + 마커) 계열인가. 발사 라우팅과 RPC 구현 양쪽이 이걸로 갈린다 —
+	 *  두 곳에 각각 나열하면 패턴을 늘릴 때 한쪽만 고쳐 조용히 어긋난다.
+	 */
+	static bool IsArcPattern(EBulletPattern P)
+	{
+		return P == EBulletPattern::Artillery
+			|| P == EBulletPattern::ArtilleryStorm
+			|| P == EBulletPattern::LissajousStorm
+			|| P == EBulletPattern::BezierVortex;
+	}
+}
 
 // #51 클로즈드루프 적분 게인. 수명 지연(수명/발사주기 ≈ 30발) 대비 크면 진동한다.
 // 튜닝 노브(리빌드 없이 -ExecCmds로 스윕). 기본값은 실측으로 확정.
@@ -156,6 +172,29 @@ AREBossCharacter::FBossLook AREBossCharacter::LookForPattern(EBulletPattern Patt
 		// Spiral 과 같은 화강암에 이미시브만 보라로 가른다(빨강/청록/주황/금색과 안 겹친다).
 		Look.Emis = FLinearColor(0.70f, 0.10f, 1.0f, 1.0f);
 		break;
+	//~ 아래 다섯은 (질감, 색) 쌍이 위와 겹치지 않도록 배분했다 — 색만으로는 10개가 안 갈린다.
+	case EBulletPattern::Cardioid:
+		// 색만 주황으로 가르면 Spiral(회색 화강암 + 빨강)과 화면에서 잘 안 갈렸다 —
+		// 실제로 그랬다. 질감까지 흰 화강암으로 바꾼다(흰 화강암 + 주황은 남는 조합이다).
+		Look.Snow = CardioidSnowAmount;
+		Look.Emis = FLinearColor(1.0f, 0.45f, 0.05f, 1.0f);
+		break;
+	case EBulletPattern::Phyllotaxis:
+		Look.Snow = PhyllotaxisSnowAmount;                    // 흰 화강암 + 녹색 균열
+		Look.Emis = FLinearColor(0.25f, 1.0f, 0.15f, 1.0f);
+		break;
+	case EBulletPattern::CounterSpiral:
+		Look.Lava = CounterLavaAmount;                        // 용암 + 자홍
+		Look.Emis = FLinearColor(1.0f, 0.10f, 0.55f, 1.0f);
+		break;
+	case EBulletPattern::LissajousStorm:
+		Look.Lava = LissaLavaAmount;                          // 용암 + 연두
+		Look.Emis = FLinearColor(0.55f, 1.0f, 0.20f, 1.0f);
+		break;
+	case EBulletPattern::BezierVortex:
+		Look.Snow = VortexSnowAmount;                         // 흰 화강암 + 진파랑
+		Look.Emis = FLinearColor(0.10f, 0.25f, 1.0f, 1.0f);
+		break;
 	default: break;
 	}
 	return Look;
@@ -235,7 +274,7 @@ void AREBossCharacter::Multicast_BeginPhaseLook_Implementation(EBulletPattern Pa
 	StartPatternLook(Pattern);
 
 	// 곡사 계열만 도약으로 예고한다. 발사는 이 인트로가 끝난 뒤 시작한다(BeginPhase).
-	if (Pattern == EBulletPattern::Artillery || Pattern == EBulletPattern::ArtilleryStorm)
+	if (REBoss::IsArcPattern(Pattern))
 	{
 		PlayLeap();
 	}
@@ -272,9 +311,11 @@ void AREBossCharacter::BeginPhase()
 	// 완전 랜덤 로테이션. 같은 패턴 2연속 금지, 첫 페이즈 무제약(Spiral 고정 없음).
 	// enum 순서(Spiral=0,Fan=1,Homing=2,Artillery=3)와 로테이션 인덱스가 다르므로 풀 배열로 매핑.
 	// Homing은 백로그 스텁이라 풀에서 제외.
-	static const EBulletPattern Pool[5] = {
+	static const EBulletPattern Pool[10] = {
 		EBulletPattern::Spiral, EBulletPattern::Fan, EBulletPattern::Artillery,
-		EBulletPattern::ArtilleryStorm, EBulletPattern::RoseEnvelope };
+		EBulletPattern::ArtilleryStorm, EBulletPattern::RoseEnvelope,
+		EBulletPattern::Phyllotaxis, EBulletPattern::CounterSpiral, EBulletPattern::Cardioid,
+		EBulletPattern::LissajousStorm, EBulletPattern::BezierVortex };
 	EBulletPattern NewPattern;
 	const int32 Forced = CVarBossPattern.GetValueOnGameThread();
 	if (Forced >= 0)
@@ -318,6 +359,16 @@ void AREBossCharacter::BeginPhase()
 	case EBulletPattern::RoseEnvelope:
 		// FireInterval 은 기본값(Spiral과 공유) 그대로 둔다 — 링 지오메트리가 같다.
 		PhaseSec = RosePhaseSec; PhaseName = TEXT("RoseEnvelope"); break;
+	case EBulletPattern::Phyllotaxis:
+		PhaseSec = PhyllotaxisPhaseSec; PhaseName = TEXT("Phyllotaxis"); break;
+	case EBulletPattern::CounterSpiral:
+		PhaseSec = CounterPhaseSec; PhaseName = TEXT("CounterSpiral"); break;
+	case EBulletPattern::Cardioid:
+		PhaseSec = CardioidPhaseSec; PhaseName = TEXT("Cardioid"); break;
+	case EBulletPattern::LissajousStorm:
+		PhaseSec = LissaPhaseSec; FireInterval = LissaFireInterval; PhaseName = TEXT("LissajousStorm"); break;
+	case EBulletPattern::BezierVortex:
+		PhaseSec = VortexPhaseSec; FireInterval = VortexFireInterval; PhaseName = TEXT("BezierVortex"); break;
 	default: break;   // Spiral 기본값
 	}
 
@@ -342,8 +393,7 @@ void AREBossCharacter::FireCurrentPattern()
 	{
 		return;
 	}
-	if (CurrentPhasePattern == EBulletPattern::Artillery
-		|| CurrentPhasePattern == EBulletPattern::ArtilleryStorm)
+	if (REBoss::IsArcPattern(CurrentPhasePattern))
 	{
 		FireArtillery();
 		return;
@@ -367,9 +417,24 @@ void AREBossCharacter::FireCurrentPattern()
 		AngleDeg = SpiralBaseAngleDeg;
 		SpiralBaseAngleDeg += SpiralRotationStepDeg;   // 다음 발사에 회전
 	}
-	else   // Fan
+	else if (CurrentPhasePattern == EBulletPattern::Phyllotaxis)
 	{
-		Count = REBulletPattern::FFanParams().Count;
+		// 발수는 클로즈드루프에 맡기지 않는다 — 원반의 씨앗 수가 곧 무늬라 볼리마다 같아야 한다.
+		Count    = PhyllotaxisCount;
+		AngleDeg = SpiralBaseAngleDeg;
+		SpiralBaseAngleDeg += SpiralRotationStepDeg;
+	}
+	else if (CurrentPhasePattern == EBulletPattern::CounterSpiral)
+	{
+		// 링 누적각은 Spiral 과 공유하되 증가량이 다르다. 팔 B 의 부호 뒤집기는 제너레이터가 한다.
+		Count    = CounterCount;
+		AngleDeg = SpiralBaseAngleDeg;
+		SpiralBaseAngleDeg += CounterRotationStepDeg;
+	}
+	else   // Fan / Cardioid — 둘 다 페이로드의 각을 '플레이어 조준'에 쓴다
+	{
+		Count = (CurrentPhasePattern == EBulletPattern::Cardioid)
+			? CardioidCount : REBulletPattern::FFanParams().Count;
 		// 플레이어 방향 조준. 폰 없으면 0°(기존 기본) 폴백.
 		// 클라는 이 각을 유도할 수 없다(복제 위치가 서버와 다름) → 페이로드로 보낸다.
 		// 최근접 생존자를 조준한다 (#85). 전원 사망이면 0° 폴백 — 곧 EndGame이 발사를 끊는다.
@@ -460,12 +525,27 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 		return;
 	}
 
-	// 두 곡사 페이즈가 이 경로를 공유한다 — 갈리는 것은 체공/고도/발수뿐이다.
+	// 곡사 계열 네 패턴이 이 경로를 공유한다 — 갈리는 것은 체공/고도/발수와 착지 지오메트리뿐이다.
 	// 클라는 페이즈 로직을 안 돌리므로 어느 쪽인지 페이로드로 받아야 한다 (#84).
-	const bool  bStorm     = (Pattern == EBulletPattern::ArtilleryStorm);
-	const float FlightTime = bStorm ? StormFlightTime : ArtilleryFlightTime;
-	const float MaxHeight  = bStorm ? StormMaxHeight  : ArtilleryMaxHeight;
-	const int32 Count      = bStorm ? StormCount      : ArtilleryCount;
+	const bool bStorm  = (Pattern == EBulletPattern::ArtilleryStorm);
+	const bool bLissa  = (Pattern == EBulletPattern::LissajousStorm);
+	const bool bVortex = (Pattern == EBulletPattern::BezierVortex);
+
+	float FlightTime = ArtilleryFlightTime;
+	float MaxHeight  = ArtilleryMaxHeight;   // 소용돌이는 탄마다 덮어쓴다(층 만들기)
+	int32 Count      = ArtilleryCount;
+	if (bStorm)
+	{
+		FlightTime = StormFlightTime;  MaxHeight = StormMaxHeight;  Count = StormCount;
+	}
+	else if (bLissa)
+	{
+		FlightTime = LissaFlightTime;  MaxHeight = LissaMaxHeight;  Count = LissaCount;
+	}
+	else if (bVortex)
+	{
+		FlightTime = VortexFlightTime; MaxHeight = VortexMaxHeight; Count = VortexCount;
+	}
 
 	// 지연 보정 — 이미 착지한 탄은 스폰하지 않는다. 착지점 생성·난수 뽑기보다 먼저 검사해 헛수고를 막는다.
 	const float Elapsed = GetElapsedSince(ServerTime);
@@ -497,6 +577,19 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 		const float T1 = FMath::Clamp((SweepIdx * Count + Count - 1) / Denom, 0.f, 1.f);
 		Targets = REBulletPattern::GenSweepSpiral(BossLoc, StormMinRadius, StormMaxRadius,
 		                                          StormSweepTurns, T0, T1, Count, StormArms, GroundZ);
+	}
+	else if (bLissa)
+	{
+		// 볼리 하나가 매듭 전체를 그린다. 위상을 ServerTime 에서 유도해 복제 없이 양쪽이 맞춘다.
+		Targets = REBulletPattern::GenLissajous(BossLoc, LissaExtent, LissaExtent,
+		                                        LissaFreqX, LissaFreqY,
+		                                        LissaDeltaDegPerSec * ServerTime, Count, GroundZ);
+	}
+	else if (bVortex)
+	{
+		// 착지 링을 볼리마다 돌린다 — 안 돌리면 같은 자리에 계속 떨어져 소용돌이가 안 이어진다.
+		Targets = REBulletPattern::GenRing(BossLoc, VortexRadius, Count, GroundZ,
+		                                   VortexSpinDegPerSec * ServerTime);
 	}
 	else
 	{
@@ -533,8 +626,27 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 		P.FlightTime = FlightTime;
 		P.MaxHeight  = MaxHeight;
 		P.Damage     = ArtilleryDamage;
-		P.Radius     = ArtilleryRadius;
+		// 판정·마커 반경은 패턴의 지오메트리 축척을 따라간다 — 곡선을 그리는 패턴에서
+		// 반경이 크면 선 굵기가 무늬 자체를 뭉갠다.
+		P.Radius     = bLissa ? LissaRadius : ArtilleryRadius;
 		P.Elapsed    = Elapsed;
+		if (bVortex)
+		{
+			// 고도를 탄마다 어긋내 층을 만든다. 궤적이 정규화 보간이라 높이를 바꿔도 착지
+			// 타이밍은 안 변한다 — 층이 져도 링은 여전히 동시에 떨어진다.
+			const float f = (Targets.Num() > 1) ? ((float)i / (Targets.Num() - 1)) : 0.f;
+			P.MaxHeight  = FMath::Lerp(VortexMinHeight, VortexMaxHeight, f);
+			// 제어점을 접선으로 밀어 직선 대신 휘감아 들어가게 한다. 끝점은 그대로다.
+			P.CtrlOffset = REBulletPattern::ArcSwirlOffset(P.Start, P.Target, VortexSwirl);
+			// 폭풍과 같은 어긋내기. 안 하면 Count 발이 한 프레임에 통째로 나가 소용돌이가
+			// 이어진 리본이 아니라 덩어리로 보인다(실제로 그랬다). 마커는 Target 기반이라
+			// 어긋내기가 안 먹지만 스케일 램프가 Elapsed 를 쓰므로 링도 순차로 자란다.
+			P.Elapsed += VortexFireInterval * (float)(Count - 1 - i) / Count;
+			if (P.Elapsed >= FlightTime)
+			{
+				continue;   // 지연이 커서 이미 착지했을 발은 버린다
+			}
+		}
 		if (bStorm)
 		{
 			// 이 볼리의 슬롯들은 '지난 발사 주기 동안 한 발씩 나간' 것이다. 슬롯 0 이 가장 먼저
@@ -701,6 +813,30 @@ void AREBossCharacter::Multicast_FireDirect_Implementation(EBulletPattern Patter
 		// 로컬 시계나 자체 카운터를 쓰면 멀티캐스트 유실 시 클라마다 로브가 어긋난다.
 		RP.PhaseDeg     = RoseSpinDegPerSec * ServerTime;
 		Params = REBulletPattern::GenerateRose(Origin, RP);
+	}
+	else if (Pattern == EBulletPattern::Phyllotaxis)
+	{
+		REBulletPattern::FPhyllotaxisParams PhP;
+		PhP.Count        = Count;
+		PhP.BaseAngleDeg = AngleDeg;
+		Params = REBulletPattern::GeneratePhyllotaxis(Origin, PhP);
+	}
+	else if (Pattern == EBulletPattern::CounterSpiral)
+	{
+		REBulletPattern::FCounterSpiralParams CsP;
+		CsP.Count        = Count;
+		CsP.BaseAngleDeg = AngleDeg;
+		Params = REBulletPattern::GenerateCounterSpiral(Origin, CsP);
+	}
+	else if (Pattern == EBulletPattern::Cardioid)
+	{
+		REBulletPattern::FCardioidParams CdP;
+		CdP.Count       = Count;
+		CdP.AimAngleDeg = AngleDeg;
+		CdP.Amp         = CardioidAmp;
+		// 링 회전은 ServerTime 에서 유도한다 — 페이로드의 각 자리는 조준이 쓰고 있다 (#84).
+		CdP.RingBaseDeg = CardioidRingSpinDegPerSec * ServerTime;
+		Params = REBulletPattern::GenerateCardioid(Origin, CdP);
 	}
 	else
 	{

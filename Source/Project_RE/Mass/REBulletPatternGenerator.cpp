@@ -93,6 +93,79 @@ namespace REBulletPattern
 		return Out;
 	}
 
+	FPhyllotaxisParams::FPhyllotaxisParams()
+	{
+		const UREStatsSettings* S = GetDefault<UREStatsSettings>();
+		Speed    = S->BulletSpeed;
+		Lifetime = S->BulletLifetime;
+	}
+
+	TArray<FBulletSpawnParams> GeneratePhyllotaxis(const FVector& Origin, const FPhyllotaxisParams& P)
+	{
+		TArray<FBulletSpawnParams> Out;
+		const int32 Count = FMath::Max(P.Count, 1);
+		Out.Reserve(Count);
+		for (int32 i = 0; i < Count; ++i)
+		{
+			const float Angle = P.BaseAngleDeg + i * P.DivergenceDeg;
+			// √ 는 원판 균등 면적 보정이다 — 선형으로 주면 안쪽이 성기고 바깥이 뭉친다.
+			const float Speed = P.Speed * FMath::Sqrt((float)(i + 1) / Count);
+			// 색은 씨앗 인덱스 홀짝 — 이웃한 나선 줄기끼리 갈려 원반의 나선 결이 드러난다.
+			Out.Add({ Origin, DirFromDeg(Angle) * Speed, P.Lifetime, float(i & 1) });
+		}
+		return Out;
+	}
+
+	FCounterSpiralParams::FCounterSpiralParams()
+	{
+		const UREStatsSettings* S = GetDefault<UREStatsSettings>();
+		Speed    = S->BulletSpeed;
+		Lifetime = S->BulletLifetime;
+	}
+
+	TArray<FBulletSpawnParams> GenerateCounterSpiral(const FVector& Origin, const FCounterSpiralParams& P)
+	{
+		TArray<FBulletSpawnParams> Out;
+		const int32 Total = FMath::Max(P.Count, 2);
+		const int32 PerArm = Total / 2;
+		Out.Reserve(PerArm * 2);
+		const float Step = 360.f / PerArm;   // 팔 하나가 균등 링을 이룬다
+		for (int32 Arm = 0; Arm < 2; ++Arm)
+		{
+			// 팔 B 는 시작각 부호만 뒤집는다 — 볼리가 쌓이면 두 나선이 반대로 감긴다.
+			const float Base = (Arm == 0) ? P.BaseAngleDeg : -P.BaseAngleDeg;
+			for (int32 i = 0; i < PerArm; ++i)
+			{
+				Out.Add({ Origin, DirFromDeg(Base + i * Step) * P.Speed, P.Lifetime, float(Arm) });
+			}
+		}
+		return Out;
+	}
+
+	FCardioidParams::FCardioidParams()
+	{
+		const UREStatsSettings* S = GetDefault<UREStatsSettings>();
+		Speed    = S->BulletSpeed;
+		Lifetime = S->BulletLifetime;
+	}
+
+	TArray<FBulletSpawnParams> GenerateCardioid(const FVector& Origin, const FCardioidParams& P)
+	{
+		TArray<FBulletSpawnParams> Out;
+		const int32 Count = FMath::Max(P.Count, 1);
+		Out.Reserve(Count);
+		const float Step = 360.f / Count;
+		for (int32 i = 0; i < Count; ++i)
+		{
+			const float Angle = P.RingBaseDeg + i * Step;
+			// 조준각과의 차가 0 인 방향이 가장 빠르다 → 파면이 그쪽으로 볼록해진다.
+			const float Mod   = FMath::Cos(FMath::DegreesToRadians(Angle - P.AimAngleDeg));
+			const float Speed = P.Speed * (1.f + P.Amp * Mod);
+			Out.Add({ Origin, DirFromDeg(Angle) * Speed, P.Lifetime, (Mod > 0.f) ? 1.f : 0.f });
+		}
+		return Out;
+	}
+
 	FSpiralParams MakeSpiralRing(int32 Count, float BaseAngleDeg)
 	{
 		FSpiralParams P;
@@ -103,14 +176,15 @@ namespace REBulletPattern
 		return P;
 	}
 
-	TArray<FVector> GenRing(const FVector& Center, float Radius, int32 N, float GroundZ)
+	TArray<FVector> GenRing(const FVector& Center, float Radius, int32 N, float GroundZ, float BaseAngleDeg)
 	{
 		TArray<FVector> Out;
 		const int32 Count = FMath::Max(N, 0);
 		Out.Reserve(Count);
+		const float Base = FMath::DegreesToRadians(BaseAngleDeg);
 		for (int32 i = 0; i < Count; ++i)
 		{
-			const float Ang = 2.f * PI * i / FMath::Max(Count, 1);
+			const float Ang = Base + 2.f * PI * i / FMath::Max(Count, 1);
 			Out.Add(FVector(Center.X + Radius * FMath::Cos(Ang),
 			                Center.Y + Radius * FMath::Sin(Ang), GroundZ));
 		}
@@ -211,6 +285,34 @@ namespace REBulletPattern
 			                PlayerLoc.Y + ClusterRadius * FMath::Sin(Ang), GroundZ));
 		}
 		return Out;
+	}
+
+	TArray<FVector> GenLissajous(const FVector& Center, float ExtentX, float ExtentY,
+	                             int32 FreqX, int32 FreqY, float DeltaDeg, int32 N, float GroundZ)
+	{
+		TArray<FVector> Out;
+		const int32 Count = FMath::Max(N, 0);
+		Out.Reserve(Count);
+		const float Delta = FMath::DegreesToRadians(DeltaDeg);
+		for (int32 i = 0; i < Count; ++i)
+		{
+			// φ 는 [0,2π) 를 N등분한다 — 마지막 점이 첫 점과 겹치지 않도록 N 으로 나눈다.
+			const float Phi = 2.f * PI * i / FMath::Max(Count, 1);
+			Out.Add(FVector(Center.X + ExtentX * FMath::Sin(FreqX * Phi + Delta),
+			                Center.Y + ExtentY * FMath::Sin(FreqY * Phi), GroundZ));
+		}
+		return Out;
+	}
+
+	FVector ArcSwirlOffset(const FVector& Start, const FVector& Target, float Swirl)
+	{
+		FVector D = Target - Start;
+		D.Z = 0.f;
+		if (!D.Normalize())
+		{
+			return FVector::ZeroVector;   // 수평으로 겹침 — 접선이 없다. 직선 폴백.
+		}
+		return FVector(-D.Y, D.X, 0.f) * Swirl;   // 진행 방향 좌측 수직
 	}
 
 	TArray<FVector> GenRandom(const FVector& Center, float ArenaRadius, int32 N, FRandomStream& Rng, float GroundZ)

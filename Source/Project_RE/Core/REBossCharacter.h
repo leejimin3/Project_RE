@@ -153,6 +153,91 @@ private:
 	 */
 	static constexpr float RoseSpinDegPerSec = 40.f;
 
+	//~ 해바라기(Phyllotaxis) 파라미터. 각 i·137.5°, 속력 Speed·√((i+1)/N).
+	//  발사당 탄 수가 곧 원반의 씨앗 수라 Spiral(48)보다 훨씬 크게 잡는다 — 점 격자가 성기면
+	//  Vogel 배열이 안 읽힌다. 직선탄이라 착지 비용이 없어 이 정도는 감당한다
+	//  (동시 체공 = 200/0.15 × 15 ≈ 20,000발, 기준선 50,000발 p99 15.00ms 대비 여유).
+	static constexpr float PhyllotaxisPhaseSec = 8.f;
+	static constexpr int32 PhyllotaxisCount    = 200;
+
+	//~ 역회전 이중 나선(CounterSpiral) 파라미터.
+	//  Count 는 두 팔 **합계**다. 팔 회전은 Spiral 의 누적각을 공유하되 팔 B 가 부호를 뒤집는다 —
+	//  두 나선이 반대로 감기며 교차해 마름모 격자가 생긴다.
+	static constexpr float CounterPhaseSec = 8.f;
+	static constexpr int32 CounterCount    = 96;
+	/**
+	 *  볼리당 팔 회전량(deg). 황금각(137.5°)은 격자를 뭉개므로 쓰지 않는다 — 격자가 읽히려면
+	 *  회전이 링 간격(360/48 = 7.5°)보다 작아야 두 나선의 교차점이 이어진 줄로 보인다.
+	 */
+	static constexpr float CounterRotationStepDeg = 5.f;
+
+	//~ 심장형 조준(Cardioid) 파라미터.
+	//  FireDirect 페이로드의 각은 하나뿐이고 그 자리를 **조준각**이 쓴다. 링 자체 회전은
+	//  상수·ServerTime 에서 순수 유도하므로 실을 필요가 없다 (#84).
+	static constexpr float CardioidPhaseSec = 7.f;
+	static constexpr int32 CardioidCount    = 64;
+	/** 변조 깊이. 1.0 이면 반대편 속력이 0 이라 탄이 보스 발밑에 눌어붙는다. */
+	static constexpr float CardioidAmp      = 0.6f;
+	/** 링 회전(deg/s). 링 간격(360/64 = 5.625°)과 비정합이라 방사 스포크가 안 생긴다. */
+	static constexpr float CardioidRingSpinDegPerSec = 63.f;
+
+	//~ 곡사 리사주(LissajousStorm) 파라미터.
+	//  볼리 하나가 매듭 전체를 그린다 — 이 패턴의 정체성은 밀도가 아니라 **바닥에 그려지는
+	//  수학 곡선**이고, 그러려면 동시에 떠 있는 매듭 겹수가 적어야 한다.
+	//  겹수 = FlightTime / FireInterval 이다. 0.2/4.0 은 20겹이라 회전한 매듭들이 상자를
+	//  통째로 메워 둥근 사각형 덩어리가 됐다 — 실제로 그랬다. 5겹으로 낮춘다.
+	//  비용도 같이 내려간다: 착지율 60/0.5 = 120/s 로 폭풍(160/s, 9.23ms)보다 싸다.
+	//  착지 프레임마다 도는 폭발 Niagara 가 이 패턴 비용의 대부분이었다(Draws 1723).
+	static constexpr float LissaPhaseSec     = 9.f;
+	static constexpr float LissaFireInterval = 0.5f;
+	static constexpr float LissaFlightTime   = 2.5f;
+	static constexpr float LissaMaxHeight    = 350.f;
+	/**
+	 *  곡선 위 표본 수. 이 값이 곧 매듭의 해상도다 — 점 간격이 마커 지름(2×120=240)보다
+	 *  커지면 곡선이 끊긴 점 무더기로 보인다. 30 으로는 실제로 그랬다.
+	 */
+	static constexpr int32 LissaCount        = 60;
+	/**
+	 *  매듭의 반폭(uu). 아레나 반경 2000 안쪽이면 착지점이 바닥 위이긴 하나 그것만으론 부족하다 —
+	 *  1100 은 화면(가로 약 3000uu)에 다 안 들어와 무늬가 잘렸다. 750 이면 통째로 보이고
+	 *  같은 표본 수로 점 간격도 좁아진다.
+	 */
+	static constexpr float LissaExtent       = 750.f;
+	/**
+	 *  폭발·마커 반경(uu). Artillery 의 120 을 그대로 쓰면 마커 지름(240)이 매듭의 로브
+	 *  간격(≈E/2 = 375)에 육박해 안쪽이 메워지고 무늬가 둥근 사각형 덩어리로 보인다 —
+	 *  실제로 그랬다. 곡선이 읽히려면 **선 굵기가 로브 간격보다 충분히 얇아야** 한다.
+	 *  덤으로 마커 면적이 1/4 이 되어 Draw 오버드로도 같이 내려간다.
+	 */
+	static constexpr float LissaRadius       = 60.f;
+	/** 서로소라야 곡선이 닫힌 매듭이 된다. 3:2 는 가장 읽기 쉬운 매듭이다. */
+	static constexpr int32 LissaFreqX        = 3;
+	static constexpr int32 LissaFreqY        = 2;
+	/** 위상 회전(deg/s) — 매듭이 통째로 꿈틀거린다. */
+	static constexpr float LissaDeltaDegPerSec = 25.f;
+
+	//~ 곡사 소용돌이(BezierVortex) 파라미터.
+	//  착지점은 보스 둘레 링이고, 2차 베지어 제어점을 Start→Target 의 **접선**으로 밀어
+	//  탄이 직선 대신 옆으로 크게 휘감아 들어간다. 착지 시각·착지점·마커는 제어점과
+	//  무관하므로(끝점 고정) 회피 규칙은 일반 곡사와 같고 화면만 3D 소용돌이가 된다.
+	static constexpr float VortexPhaseSec     = 9.f;
+	static constexpr float VortexFireInterval = 0.2f;
+	static constexpr float VortexFlightTime   = 3.5f;
+	/**
+	 *  볼리당 발수 = 착지 링의 점 수. 링 둘레 2π·900 을 이 값으로 나눈 간격이 마커 지름(240)
+	 *  보다 작아야 링이 끊기지 않는다 — 36 이면 157uu 다.
+	 */
+	static constexpr int32 VortexCount        = 36;
+	static constexpr float VortexRadius       = 900.f;
+	/** 접선 오프셋(uu). 반경과 비슷한 크기라야 휘감김이 화면에서 읽힌다. */
+	static constexpr float VortexSwirl        = 900.f;
+	/** 링 회전(deg/s) — 볼리마다 착지 링이 돌아 소용돌이가 이어진다. */
+	static constexpr float VortexSpinDegPerSec = 55.f;
+	//~ 고도를 탄마다 어긋내 층을 만든다. 궤적이 정규화 보간이라 높이를 바꿔도 착지 타이밍은
+	//  안 변한다 — 층이 생겨도 링은 동시에 착지한다.
+	static constexpr float VortexMinHeight = 250.f;
+	static constexpr float VortexMaxHeight = 800.f;
+
 	//~ 곡사(Artillery) 페이즈 파라미터. 헤더 상수 — 플레이 후 튜닝.
 	static constexpr float ArtilleryPhaseSec     = 4.f;    // 페이즈 길이
 	static constexpr float ArtilleryFireInterval = 1.8f;   // 일제사 간격(비행시간보다 길게 → 겹침 억제)
@@ -271,6 +356,13 @@ private:
 	static constexpr float ArtilleryLavaAmount = 2.47f;
 	/** 폭풍 이미시브 — 용암은 Artillery 와 공유하므로 색으로 가른다(주황 vs 금색). */
 	static constexpr float StormLavaAmount     = 2.47f;
+	//~ 패턴이 9개라 질감 축(Snow/Lava)만으로는 안 갈린다. **(질감, 이미시브 색) 쌍**이
+	//  유일하도록 배분한다 — LookForPattern 의 각 case 가 그 쌍 하나씩을 집는다.
+	static constexpr float CardioidSnowAmount    = 1.34f;
+	static constexpr float PhyllotaxisSnowAmount = 1.34f;
+	static constexpr float CounterLavaAmount     = 2.47f;
+	static constexpr float LissaLavaAmount       = 2.47f;
+	static constexpr float VortexSnowAmount      = 1.34f;
 	/**
 	 *  페이즈 인트로 길이(s). 외관 램프 시간이자 첫 발사 지연이다.
 	 *  도약 애님(0.47s)보다 길어 애님도 이 안에서 끝난다.

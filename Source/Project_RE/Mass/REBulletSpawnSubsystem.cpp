@@ -70,7 +70,8 @@ void UREBulletSpawnSubsystem::EnsureArcArchetype(FMassEntityManager& EntityManag
 }
 
 FMassEntityHandle UREBulletSpawnSubsystem::SpawnArcBullet(FVector Start, FVector Target, float FlightTime,
-                                                          float MaxHeight, float Damage, float Radius, float InElapsed)
+                                                          float MaxHeight, float Damage, float Radius, float InElapsed,
+                                                          FVector CtrlOffset)
 {
 	FMassEntityManager* EM = GetEntityManager();
 	if (!EM)
@@ -87,9 +88,11 @@ FMassEntityHandle UREBulletSpawnSubsystem::SpawnArcBullet(FVector Start, FVector
 	FArcBulletFragment& Arc = EM->GetFragmentDataChecked<FArcBulletFragment>(Entity);
 	Arc.Start      = Start;
 	Arc.Target     = Target;
+	// 제어점을 여기서 한 번만 굳힌다 — 매 프레임 다시 만들면 Sim 이 MaxHeight 와 오프셋을
+	// 둘 다 들고 있어야 한다. CtrlOffset 이 0 이면 기존 포물선과 대수적으로 같은 궤적이다.
+	Arc.Ctrl       = (Start + Target) * 0.5f + FVector(0.f, 0.f, 2.f * MaxHeight) + CtrlOffset;
 	Arc.FlightTime = FlightTime;
 	Arc.Elapsed    = InElapsed;
-	Arc.MaxHeight  = MaxHeight;
 	Arc.Damage     = Damage;
 	Arc.Radius     = Radius;
 
@@ -100,6 +103,7 @@ void UREBulletSpawnSubsystem::SpawnArcBulletBatch(TConstArrayView<REBulletPatter
 {
 	for (const REBulletPattern::FArcBulletSpawnParams& P : Params)
 	{
-		SpawnArcBullet(P.Start, P.Target, P.FlightTime, P.MaxHeight, P.Damage, P.Radius, P.Elapsed);
+		SpawnArcBullet(P.Start, P.Target, P.FlightTime, P.MaxHeight, P.Damage, P.Radius, P.Elapsed,
+		               P.CtrlOffset);
 	}
 }

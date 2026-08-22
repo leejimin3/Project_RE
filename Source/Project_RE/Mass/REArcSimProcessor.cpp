@@ -35,12 +35,14 @@ void UREArcSimProcessor::Execute(FMassEntityManager& EntityManager, FMassExecuti
 			A.Elapsed += Dt;
 			const float t = (A.FlightTime > 0.f) ? FMath::Min(A.Elapsed / A.FlightTime, 1.f) : 1.f;
 
-			const float X = FMath::Lerp(A.Start.X, A.Target.X, t);
-			const float Y = FMath::Lerp(A.Start.Y, A.Target.Y, t);
-			const float BaseZ = FMath::Lerp(A.Start.Z, A.Target.Z, t);
-			const float Z = BaseZ + 4.f * A.MaxHeight * t * (1.f - t);   // 포물선 높이
+			// 2차 베지어. 제어점이 중점 + (0,0,2·MaxHeight) 면 XY 는 정확히 선형보간으로,
+			// Z 는 정확히 4·MaxHeight·t(1-t) 로 환원된다 — 기존 포물선의 일반화다.
+			// 제어점에 XY 성분이 실리면 탄이 직선을 벗어나 휘감아 들어간다.
+			// 끝점은 t=0/1 에서 Start/Target 그대로라 착지 시각·착지점은 제어점과 무관하다.
+			const float u = 1.f - t;
+			const FVector Pos = u * u * A.Start + 2.f * u * t * A.Ctrl + t * t * A.Target;
 
-			Transforms[i].GetMutableTransform().SetLocation(FVector(X, Y, Z));
+			Transforms[i].GetMutableTransform().SetLocation(Pos);
 
 			if (A.Elapsed >= A.FlightTime)
 			{

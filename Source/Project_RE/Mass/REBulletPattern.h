@@ -16,7 +16,12 @@ enum class EBulletPattern : uint8
 	Homing,
 	Artillery,       // 곡사: 포물선 착지 + 예고 마커 + 범위 데미지
 	ArtilleryStorm,  // 곡사 폭풍: 짧은 간격 + 긴 체공으로 동시 체공 탄을 쌓는다. 착지 모양은 Spiral 고정.
-	RoseEnvelope     // 장미 포락선: 균등 링에 각도별 속력 변조 — 직선탄만으로 파면이 곡선을 그린다.
+	RoseEnvelope,    // 장미 포락선: 균등 링에 각도별 속력 변조 — 직선탄만으로 파면이 곡선을 그린다.
+	Phyllotaxis,     // 해바라기: 각 황금각 + 속력 √ 분포 — 파면이 Vogel 원반(점 격자)이 된다.
+	CounterSpiral,   // 역회전 이중 나선: 반대로 감기는 두 나선이 교차해 마름모 격자를 만든다.
+	Cardioid,        // 심장형 조준: 로브 하나짜리 리마송이 플레이어를 향해 볼록해진다.
+	LissajousStorm,  // 곡사 리사주: 착지점이 매듭 곡선. δ 가 돌아 무늬가 통째로 꿈틀거린다.
+	BezierVortex     // 곡사 소용돌이: 2차 베지어 제어점을 접선으로 밀어 공중에서 휘감아 들어간다.
 };
 
 /** 곡사 착지점 모양. Artillery 페이즈에서 랜덤 선택. */
