@@ -76,13 +76,16 @@ void AREGameMode::BeginPlay()
 	// #5 검증: 보스 스폰 후 탄막 트리거 → 싱글 경로 스폰 카운트 실증.
 	// AlwaysSpawn: 캡슐 충돌로 스폰 실패하는 것 방지.
 	// Z=90: 탄환이 보스 위치에서 스폰되므로 바닥(Z=0) 위로 띄워 매몰/z-fighting 방지 (#17 데모 가시성).
-	// X=600: PlayerStart(원점 부근)와 이격 — 겹치면 스폰 즉시 피격으로 프레임 3에 즉사 DEFEAT (#54).
-	//        탄속 300×수명 3s = 사거리 900 안쪽이라 위협은 유지, 도달까지 ~2s 회피 여유.
-	//        REActorBulletSpawner::SpawnOrigin(측정 비교군)과 반드시 동일 좌표 유지.
+	// X=0: 보스가 바닥(원점 중심 ±2000) 정중앙이다 — 보스 중심으로 도는 곡사 패턴이
+	//      바닥 밖으로 새지 않는다. PlayerStart 를 (-600,0,120)으로 빼서 이격을 유지한다:
+	//      겹치면 스폰 즉시 피격으로 프레임 3에 즉사 DEFEAT (#54). 보스는 여전히 플레이어
+	//      기준 +X 600 이라 이격 거리와 상대 배치는 예전과 같다(대쉬·이동 프로브 지오메트리 불변).
+	//      탄속 300×수명 3s = 사거리 900 안쪽이라 위협은 유지, 도달까지 ~2s 회피 여유.
+	//      REActorBulletSpawner::SpawnOrigin(측정 비교군)과 반드시 동일 좌표 유지.
 	FActorSpawnParameters BossSpawnParams;
 	BossSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	if (AREBossCharacter* Boss = GetWorld()->SpawnActor<AREBossCharacter>(
-			AREBossCharacter::StaticClass(), FVector(600.f, 0.f, 90.f), FRotator::ZeroRotator, BossSpawnParams))
+			AREBossCharacter::StaticClass(), FVector(0.f, 0.f, 90.f), FRotator::ZeroRotator, BossSpawnParams))
 	{
 		// #64: 발사 주체를 Boss로 이관. 발사 시작은 클라 준비 후 (#84) — 여기서 켜지 않는다.
 		DemoBoss = Boss;
@@ -236,7 +239,7 @@ APawn* AREGameMode::SpawnDefaultPawnAtTransform_Implementation(AController* NewP
                                                                const FTransform& SpawnTransform)
 {
 	// 맵에 PlayerStart가 하나뿐이라 N인이면 같은 자리에 겹친다 — 인덱스별로 흩는다 (#85).
-	// +Y인 이유(#56): 보스가 +X 600에 있어 +X로 흩으면 플레이어를 탄막 레인에 밀어넣는다.
+	// +Y인 이유(#56): 보스가 플레이어 기준 +X 600에 있어 +X로 흩으면 플레이어를 탄막 레인에 밀어넣는다.
 	// 1인이면 Half=0, SpawnedPawnCount=0 → 오프셋이 정확히 0이라 싱글 스폰 좌표가 불변이다.
 	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
 	const float Half = (Expected - 1) * 0.5f;

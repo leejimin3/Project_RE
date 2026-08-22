@@ -91,6 +91,31 @@ namespace REBulletPattern
 		return Out;
 	}
 
+	TArray<FVector> GenSweepSpiral(const FVector& Center, float MinRadius, float MaxRadius, float Turns,
+	                               float T0, float T1, int32 N, int32 Arms, float GroundZ)
+	{
+		TArray<FVector> Out;
+		const int32 Slots   = FMath::Max(N, 0);
+		const int32 ArmNum  = FMath::Max(Arms, 1);
+		const float ArmStep = 360.f / ArmNum;
+		Out.Reserve(Slots * ArmNum);
+		for (int32 s = 0; s < Slots; ++s)
+		{
+			// Slots==1 이면 T0 하나만 낸다(0 나눗셈 방지).
+			const float f = (Slots > 1) ? ((float)s / (Slots - 1)) : 0.f;
+			const float t = FMath::Lerp(T0, T1, f);
+			const float Radius  = FMath::Lerp(MinRadius, MaxRadius, t);
+			const float BaseDeg = t * 360.f * Turns;
+			for (int32 a = 0; a < ArmNum; ++a)
+			{
+				const float Ang = FMath::DegreesToRadians(BaseDeg + a * ArmStep);
+				Out.Add(FVector(Center.X + Radius * FMath::Cos(Ang),
+				                Center.Y + Radius * FMath::Sin(Ang), GroundZ));
+			}
+		}
+		return Out;
+	}
+
 	TArray<FVector> GenLine(const FVector& BossLoc, const FVector& PlayerLoc, float WallLen, int32 N, float GroundZ)
 	{
 		TArray<FVector> Out;

@@ -14,7 +14,8 @@ enum class EBulletPattern : uint8
 	Spiral,
 	Fan,
 	Homing,
-	Artillery   // 곡사: 포물선 착지 + 예고 마커 + 범위 데미지
+	Artillery,       // 곡사: 포물선 착지 + 예고 마커 + 범위 데미지
+	ArtilleryStorm   // 곡사 폭풍: 짧은 간격 + 긴 체공으로 동시 체공 탄을 쌓는다. 착지 모양은 Spiral 고정.
 };
 
 /** 곡사 착지점 모양. Artillery 페이즈에서 랜덤 선택. */

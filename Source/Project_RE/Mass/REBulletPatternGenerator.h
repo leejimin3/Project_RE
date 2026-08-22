@@ -76,6 +76,23 @@ namespace REBulletPattern
 	//~ 착지점 생성기 — 전부 월드 착지점(Z=GroundZ) 배열 반환. 순수함수(FRandomStream 제외).
 	/** 원형 링: 중심 C, 반경 R, N개 균등각. */
 	TArray<FVector> GenRing(const FVector& Center, float Radius, int32 N, float GroundZ);
+
+	/**
+	 *  스윕 나선: 한 발씩 이어 그리는 **단일** 나선. 진행도 t 는 0=제일 안쪽, 1=제일 바깥이고
+	 *  반경 = Lerp(MinRadius, MaxRadius, t), 각 = t·360·Turns 다.
+	 *
+	 *  T0..T1 을 N등분해 슬롯을 만든다. 이 구간이 곧 '한 볼리가 실어 나르는 서브샷'이다 —
+	 *  보스는 발사 주기마다 RPC 를 한 번 보내되 그 안의 N슬롯은 지난 주기 동안 한 발씩 나간
+	 *  것으로 취급한다(호출자가 비행 경과를 어긋나게 준다). 초당 N/주기 발을 단발로 쏘면서
+	 *  RPC 는 주기당 1회로 묶는 것이 목적이다.
+	 *
+	 *  Arms 는 같은 슬롯에서 동시에 나가는 팔의 수다. 팔 a 는 360/Arms·a 만큼 각이 어긋나
+	 *  같은 나선이 Arms 겹으로 겹쳐 돈다 — 체공 탄을 Arms 배로 늘리는 손잡이다.
+	 *  반환은 **슬롯 우선** 순서다: [슬롯0팔0, 슬롯0팔1, …, 슬롯1팔0, …] — 총 N×Arms 개.
+	 *  호출자는 i/Arms 로 슬롯을 얻어 비행 경과를 어긋낸다(같은 슬롯의 팔들은 동시 발사다).
+	 */
+	TArray<FVector> GenSweepSpiral(const FVector& Center, float MinRadius, float MaxRadius, float Turns,
+	                               float T0, float T1, int32 N, int32 Arms, float GroundZ);
 	/** 라인: 보스→플레이어 방향의 수직 벽. 중심=플레이어, 길이 WallLen, N등분. */
 	TArray<FVector> GenLine(const FVector& BossLoc, const FVector& PlayerLoc, float WallLen, int32 N, float GroundZ);
 	/** 격자: 중심 기준 ±Extent 범위 Cols×Rows 균등 그리드. */

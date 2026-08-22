@@ -33,6 +33,18 @@ static TAutoConsoleVariable<int32> CVarBulletCount(
 	TEXT("측정용: -1=오픈루프(Settings BulletsPerShot 고정), 0 이상=목표 동시 탄수 클로즈드루프."),
 	ECVF_Cheat);
 
+/**
+ *  검증/튜닝용 패턴 고정. -1(기본) = 정상 랜덤 로테이션.
+ *  인덱스는 BeginPhase 의 Pool 순서다: 0=Spiral, 1=Fan, 2=Artillery, 3=ArtilleryStorm.
+ *  (Homing 은 백로그 스텁이라 Pool 에 없다.)
+ *  페이즈 진입 시점 조회 — 재시작 없이 다음 페이즈부터 반영된다.
+ */
+static TAutoConsoleVariable<int32> CVarBossPattern(
+	TEXT("re.Debug.BossPattern"),
+	-1,
+	TEXT("검증용: -1=정상 로테이션, 0=Spiral 1=Fan 2=Artillery 3=ArtilleryStorm 고정."),
+	ECVF_Cheat);
+
 // #51 클로즈드루프 적분 게인. 수명 지연(수명/발사주기 ≈ 30발) 대비 크면 진동한다.
 // 튜닝 노브(리빌드 없이 -ExecCmds로 스윕). 기본값은 실측으로 확정.
 static TAutoConsoleVariable<float> CVarSpawnKi(
@@ -133,6 +145,12 @@ AREBossCharacter::FBossLook AREBossCharacter::LookForPattern(EBulletPattern Patt
 	case EBulletPattern::Artillery:
 		Look.Lava = ArtilleryLavaAmount;
 		break;
+	case EBulletPattern::ArtilleryStorm:
+		// 용암은 Artillery 와 같은 값이라 그것만으론 두 곡사 페이즈가 구분되지 않는다.
+		// 이미시브를 금색으로 올려 가른다 — Fan(청록)/Spiral(빨강)과도 안 겹친다.
+		Look.Lava = StormLavaAmount;
+		Look.Emis = FLinearColor(1.0f, 0.85f, 0.2f, 1.0f);
+		break;
 	default: break;
 	}
 	return Look;
@@ -211,8 +229,8 @@ void AREBossCharacter::Multicast_BeginPhaseLook_Implementation(EBulletPattern Pa
 {
 	StartPatternLook(Pattern);
 
-	// Artillery만 도약으로 예고한다. 발사는 이 인트로가 끝난 뒤 시작한다(BeginPhase).
-	if (Pattern == EBulletPattern::Artillery)
+	// 곡사 계열만 도약으로 예고한다. 발사는 이 인트로가 끝난 뒤 시작한다(BeginPhase).
+	if (Pattern == EBulletPattern::Artillery || Pattern == EBulletPattern::ArtilleryStorm)
 	{
 		PlayLeap();
 	}
@@ -249,19 +267,36 @@ void AREBossCharacter::BeginPhase()
 	// 완전 랜덤 로테이션. 같은 패턴 2연속 금지, 첫 페이즈 무제약(Spiral 고정 없음).
 	// enum 순서(Spiral=0,Fan=1,Homing=2,Artillery=3)와 로테이션 인덱스가 다르므로 풀 배열로 매핑.
 	// Homing은 백로그 스텁이라 풀에서 제외.
-	static const EBulletPattern Pool[3] = {
-		EBulletPattern::Spiral, EBulletPattern::Fan, EBulletPattern::Artillery };
+	static const EBulletPattern Pool[4] = {
+		EBulletPattern::Spiral, EBulletPattern::Fan, EBulletPattern::Artillery,
+		EBulletPattern::ArtilleryStorm };
 	EBulletPattern NewPattern;
-	do
+	const int32 Forced = CVarBossPattern.GetValueOnGameThread();
+	if (Forced >= 0)
 	{
-		NewPattern = Pool[PhaseRng.RandRange(0, 2)];
-	} while (!bFirstPhase && NewPattern == CurrentPhasePattern);
+		// 검증/튜닝 경로 — 로테이션도 no-repeat도 건너뛴다. PhaseRng는 뽑지 않는다
+		// (Artillery의 CallSeed가 같은 스트림을 쓰므로 여기서 뽑으면 고정 모드마다 수열이 달라진다).
+		NewPattern = Pool[FMath::Clamp(Forced, 0, UE_ARRAY_COUNT(Pool) - 1)];
+	}
+	else
+	{
+		do
+		{
+			NewPattern = Pool[PhaseRng.RandRange(0, UE_ARRAY_COUNT(Pool) - 1)];
+		} while (!bFirstPhase && NewPattern == CurrentPhasePattern);
+	}
 	bFirstPhase = false;
 	CurrentPhasePattern = NewPattern;
 	if (CurrentPhasePattern == EBulletPattern::Artillery)
 	{
 		CurrentArtilleryShape = (EArtilleryShape)PhaseRng.RandRange(
 			(int32)EArtilleryShape::Ring, (int32)EArtilleryShape::Random);
+	}
+	else if (CurrentPhasePattern == EBulletPattern::ArtilleryStorm)
+	{
+		// 폭풍의 착지 모양은 시간의 함수라 Shape 열거로 표현되지 않는다 — 로그 표기용으로만 고정한다.
+		CurrentArtilleryShape = EArtilleryShape::Spiral;
+		StormVolleyIdx = 0;   // 스윕은 페이즈마다 안쪽에서 다시 시작한다
 	}
 
 	float PhaseSec = SpiralPhaseSec;
@@ -273,6 +308,8 @@ void AREBossCharacter::BeginPhase()
 		PhaseSec = FanPhaseSec; FireInterval = FanFireIntervalSec; PhaseName = TEXT("Fan"); break;
 	case EBulletPattern::Artillery:
 		PhaseSec = ArtilleryPhaseSec; FireInterval = ArtilleryFireInterval; PhaseName = TEXT("Artillery"); break;
+	case EBulletPattern::ArtilleryStorm:
+		PhaseSec = StormPhaseSec; FireInterval = StormFireInterval; PhaseName = TEXT("ArtilleryStorm"); break;
 	default: break;   // Spiral 기본값
 	}
 
@@ -297,7 +334,8 @@ void AREBossCharacter::FireCurrentPattern()
 	{
 		return;
 	}
-	if (CurrentPhasePattern == EBulletPattern::Artillery)
+	if (CurrentPhasePattern == EBulletPattern::Artillery
+		|| CurrentPhasePattern == EBulletPattern::ArtilleryStorm)
 	{
 		FireArtillery();
 		return;
@@ -387,11 +425,22 @@ void AREBossCharacter::FireArtillery()
 	// 클라는 PhaseRng가 없으므로 이 시드로 로컬 스트림을 만들어 같은 착지점을 얻는다.
 	const int32 CallSeed = (int32)PhaseRng.GetUnsignedInt();
 
-	Multicast_FireArtillery(CurrentArtilleryShape, BossLoc, PlayerLoc, CallSeed, GetServerNow());
+	// 스윕 진행도의 분자. 볼리 인덱스로 낸다 — 프레임률과 무관하게 페이즈당 정확히 한 번 훑는다.
+	// 서버 전용 상태이므로 클라는 유도할 수 없다 → 페이로드로 보낸다 (#84).
+	int32 SweepIdx = 0;
+	if (CurrentPhasePattern == EBulletPattern::ArtilleryStorm)
+	{
+		SweepIdx = StormVolleyIdx++;
+	}
+
+	Multicast_FireArtillery(CurrentPhasePattern, CurrentArtilleryShape, BossLoc, PlayerLoc, CallSeed,
+	                        SweepIdx, GetServerNow());
 }
 
-void AREBossCharacter::Multicast_FireArtillery_Implementation(EArtilleryShape Shape, FVector_NetQuantize Origin,
-                                                              FVector_NetQuantize AimLoc, int32 CallSeed, float ServerTime)
+void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pattern, EArtilleryShape Shape,
+                                                              FVector_NetQuantize Origin,
+                                                              FVector_NetQuantize AimLoc, int32 CallSeed,
+                                                              int32 SweepIdx, float ServerTime)
 {
 	UREBulletSpawnSubsystem* Spawner = GetWorld() ? GetWorld()->GetSubsystem<UREBulletSpawnSubsystem>() : nullptr;
 	if (!Spawner)
@@ -400,17 +449,24 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EArtilleryShape Sh
 		return;
 	}
 
+	// 두 곡사 페이즈가 이 경로를 공유한다 — 갈리는 것은 체공/고도/발수뿐이다.
+	// 클라는 페이즈 로직을 안 돌리므로 어느 쪽인지 페이로드로 받아야 한다 (#84).
+	const bool  bStorm     = (Pattern == EBulletPattern::ArtilleryStorm);
+	const float FlightTime = bStorm ? StormFlightTime : ArtilleryFlightTime;
+	const float MaxHeight  = bStorm ? StormMaxHeight  : ArtilleryMaxHeight;
+	const int32 Count      = bStorm ? StormCount      : ArtilleryCount;
+
 	// 지연 보정 — 이미 착지한 탄은 스폰하지 않는다. 착지점 생성·난수 뽑기보다 먼저 검사해 헛수고를 막는다.
 	const float Elapsed = GetElapsedSince(ServerTime);
-	if (Elapsed >= ArtilleryFlightTime)
+	if (Elapsed >= FlightTime)
 	{
 		UE_LOG(LogTemp, Log, TEXT("[RE] Boss FireArtillery: skipped (Elapsed=%.3f >= FlightTime=%.2f)"),
-			Elapsed, ArtilleryFlightTime);
+			Elapsed, FlightTime);
 		return;
 	}
 
 	// 외관 보정 — 페이즈 도중 접속한 클라 따라잡기용. 도약은 페이즈 시작에서만 재생한다.
-	StartPatternLook(EBulletPattern::Artillery);
+	StartPatternLook(Pattern);
 
 	const FVector BossLoc  = Origin;
 	const FVector PlayerLoc = AimLoc;
@@ -420,46 +476,75 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EArtilleryShape Sh
 	FRandomStream CallRng(CallSeed);
 
 	TArray<FVector> Targets;
-	switch (Shape)
+	if (bStorm)
 	{
-	case EArtilleryShape::Ring:
-		Targets = REBulletPattern::GenRing(BossLoc, /*Radius=*/500.f, ArtilleryCount, GroundZ);
-		break;
-	case EArtilleryShape::Line:
-		Targets = REBulletPattern::GenLine(BossLoc, PlayerLoc, /*WallLen=*/900.f, ArtilleryCount, GroundZ);
-		break;
-	case EArtilleryShape::Grid:
-		Targets = REBulletPattern::GenGrid(BossLoc, /*ExtentX=*/600.f, /*ExtentY=*/600.f, /*Cols=*/4, /*Rows=*/3, GroundZ);
-		break;
-	case EArtilleryShape::Spiral:
-		Targets = REBulletPattern::GenArcSpiral(BossLoc, /*MaxRadius=*/600.f, ArtilleryCount, GroundZ);
-		break;
-	case EArtilleryShape::PlayerAimed:
-		Targets = REBulletPattern::GenPlayerCluster(PlayerLoc, /*ClusterRadius=*/150.f, /*RingN=*/4, GroundZ);
-		break;
-	case EArtilleryShape::Random:
-		Targets = REBulletPattern::GenRandom(BossLoc, /*ArenaRadius=*/800.f, ArtilleryCount, CallRng, GroundZ);
-		break;
+		// 폭풍: 단일 나선을 한 발씩 이어 그린다. 이 볼리가 맡은 구간은 전체 발수 중
+		// [SweepIdx*Count, SweepIdx*Count + Count-1] 번째 발이다. Clamp 는 타이머가
+		// 예상보다 더 돌았을 때 바깥 끝에 머물게 한다.
+		const float Denom = (float)FMath::Max(StormShotsPerSweep - 1, 1);
+		const float T0 = FMath::Clamp((SweepIdx * Count)             / Denom, 0.f, 1.f);
+		const float T1 = FMath::Clamp((SweepIdx * Count + Count - 1) / Denom, 0.f, 1.f);
+		Targets = REBulletPattern::GenSweepSpiral(BossLoc, StormMinRadius, StormMaxRadius,
+		                                          StormSweepTurns, T0, T1, Count, StormArms, GroundZ);
+	}
+	else
+	{
+		switch (Shape)
+		{
+		case EArtilleryShape::Ring:
+			Targets = REBulletPattern::GenRing(BossLoc, /*Radius=*/500.f, Count, GroundZ);
+			break;
+		case EArtilleryShape::Line:
+			Targets = REBulletPattern::GenLine(BossLoc, PlayerLoc, /*WallLen=*/900.f, Count, GroundZ);
+			break;
+		case EArtilleryShape::Grid:
+			Targets = REBulletPattern::GenGrid(BossLoc, /*ExtentX=*/600.f, /*ExtentY=*/600.f, /*Cols=*/4, /*Rows=*/3, GroundZ);
+			break;
+		case EArtilleryShape::Spiral:
+			Targets = REBulletPattern::GenArcSpiral(BossLoc, /*MaxRadius=*/600.f, Count, GroundZ);
+			break;
+		case EArtilleryShape::PlayerAimed:
+			Targets = REBulletPattern::GenPlayerCluster(PlayerLoc, /*ClusterRadius=*/150.f, /*RingN=*/4, GroundZ);
+			break;
+		case EArtilleryShape::Random:
+			Targets = REBulletPattern::GenRandom(BossLoc, /*ArenaRadius=*/800.f, Count, CallRng, GroundZ);
+			break;
+		}
 	}
 
 	TArray<REBulletPattern::FArcBulletSpawnParams> Shots;
 	Shots.Reserve(Targets.Num());
-	for (const FVector& T : Targets)
+	for (int32 i = 0; i < Targets.Num(); ++i)
 	{
 		REBulletPattern::FArcBulletSpawnParams P;
 		P.Start      = BossLoc;
-		P.Target     = T;
-		P.FlightTime = ArtilleryFlightTime;
-		P.MaxHeight  = ArtilleryMaxHeight;
+		P.Target     = Targets[i];
+		P.FlightTime = FlightTime;
+		P.MaxHeight  = MaxHeight;
 		P.Damage     = ArtilleryDamage;
 		P.Radius     = ArtilleryRadius;
 		P.Elapsed    = Elapsed;
+		if (bStorm)
+		{
+			// 이 볼리의 슬롯들은 '지난 발사 주기 동안 한 발씩 나간' 것이다. 슬롯 0 이 가장 먼저
+			// 나갔으므로 그만큼 비행이 진행돼 있어야 한다 — 안 어긋내면 한 점에서 동시에 출발해
+			// 일제사로 보인다. 어긋내면 화면상 초당 Count/주기 발 단발 사격이 된다.
+			// 나누는 단위는 발이 아니라 **슬롯**이다: 같은 슬롯의 팔들은 동시 발사다
+			// (GenSweepSpiral 이 슬롯 우선으로 채우므로 i/StormArms 가 슬롯 인덱스다).
+			const int32 Slot = i / StormArms;
+			P.Elapsed += StormFireInterval * (float)(Count - 1 - Slot) / Count;
+			if (P.Elapsed >= FlightTime)
+			{
+				continue;   // 지연이 커서 이미 착지했을 서브샷은 버린다
+			}
+		}
 		Shots.Add(P);
 	}
 	Spawner->SpawnArcBulletBatch(Shots);
 
-	UE_LOG(LogTemp, Log, TEXT("[RE] Boss FireArtillery: Shape=%d N=%d Elapsed=%.3f role=%s"),
-		(int32)Shape, Shots.Num(), Elapsed, *UEnum::GetValueAsString(GetLocalRole()));
+	UE_LOG(LogTemp, Log, TEXT("[RE] Boss FireArtillery: Pattern=%d Shape=%d N=%d Flight=%.2f Sweep=%d Elapsed=%.3f role=%s"),
+		(int32)Pattern, (int32)Shape, Shots.Num(), FlightTime, SweepIdx, Elapsed,
+		*UEnum::GetValueAsString(GetLocalRole()));
 }
 
 void AREBossCharacter::EndPhase()

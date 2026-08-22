@@ -34,12 +34,13 @@ public:
 	                          float AngleDeg, int32 Count, float ServerTime);
 
 	/**
-	 *  곡사탄(Artillery) 1회 일제사 (#84). Line/PlayerAimed가 먹는 조준점과
+	 *  곡사탄(Artillery/ArtilleryStorm) 1회 일제사 (#84). Line/PlayerAimed가 먹는 조준점과
 	 *  Random이 먹는 시드를 서버가 정해 보낸다 — 클라는 PhaseRng를 돌리지 않는다.
+	 *  Pattern 은 어느 페이즈가 쐈는지다 — 체공/고도/발수가 여기서 갈린다. Shape 는 착지 모양만 쥔다.
 	 */
 	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_FireArtillery(EArtilleryShape Shape, FVector_NetQuantize Origin,
-	                             FVector_NetQuantize AimLoc, int32 CallSeed, float ServerTime);
+	void Multicast_FireArtillery(EBulletPattern Pattern, EArtilleryShape Shape, FVector_NetQuantize Origin,
+	                             FVector_NetQuantize AimLoc, int32 CallSeed, int32 SweepIdx, float ServerTime);
 
 	/**
 	 *  페이즈 시작 알림 (#130). 외관 램프와 예고 애님을 건다 — 코스메틱 전용이라
@@ -139,7 +140,63 @@ private:
 	static constexpr int32 ArtilleryCount        = 12;     // 일제사 착지점 수(모양별 기준)
 	static constexpr float MarkerGroundOffset     = -88.f; // 캡슐 중심→바닥(착지 평면). 판정은 XY라 시각용.
 
+	//~ 곡사 폭풍(ArtilleryStorm) 파라미터. 헤더 상수 — 플레이 후 튜닝.
+	//  탄은 **한 발씩** 나가며 단일 나선을 안에서 밖으로 **한 번** 훑는다 — 페이즈 = 스윕 1회다.
+	//  RPC 는 발사 주기마다 1회지만 그 안의 StormCount 발은 지난 주기 동안 한 발씩 나간 것으로
+	//  취급한다(각자 다른 나선 위치 + 어긋난 비행 경과). 화면상 초당 80발 단발 사격이면서
+	//  네트워크는 20 RPC/s 로 남는다 — 초당 80회 Reliable 멀티캐스트는 낼 수 없다.
+	//  Count/Interval 은 '한 프레임에 몇 발이 생기느냐'를 정한다. 탄은 어긋난 Elapsed 덕에
+	//  뭉침이 안 보이지만 **마커는 위치가 Target 이라 어긋내기가 안 먹어** 생성 단위가 그대로
+	//  드러난다 — 한 번에 뜨는 마커 수가 곧 Count 다. 그래서 초당 발수를 유지한 채 Count 를
+	//  낮추고 Interval 을 같은 비율로 줄였다(12/0.15 → 4/0.05).
+	//  동시 체공 탄 = Count × Arms / FireInterval × FlightTime = 4×2/0.05 × 6 ≈ 960발.
+	//  비용은 체공수가 아니라 착지율(Count/FireInterval = 80/s)이 쥔다 — 착지 프레임마다
+	//  폭발 Niagara 1개 + TakeDamage 가 돈다. 체공시간을 늘리는 쪽이 밀도를 싸게 산다.
+	//  Radius/Damage 는 Artillery 와 공유한다(별도 상수 안 둔다).
+	static constexpr float StormPhaseSec      = 10.f;   // 스윕 1회 길이
+	static constexpr float StormFireInterval  = 0.05f;  // 볼리 간격 = 생성 이벤트 주기(RPC 20/s)
+	static constexpr float StormFlightTime    = 6.f;    // 체공. 동시 체공 탄에 그대로 비례한다
+	/**
+	 *  포물선 최대 고도. 궤적이 물리가 아니라 정규화 보간이라(REArcSimProcessor) 높이와
+	 *  체공 시간은 완전히 독립이다 — 이 값을 바꿔도 착지 타이밍은 안 변한다.
+	 *  800 은 탑다운 카메라(높이 1500) 위로 탄이 솟아 화면 밖으로 나갔다 — 절반으로 낮췄다.
+	 */
+	static constexpr float StormMaxHeight     = 400.f;
+	static constexpr int32 StormCount         = 4;      // 볼리당 슬롯 수 = 단발 사격의 시간 해상도
+	/**
+	 *  나선 팔 수. 팔마다 360/Arms 도씩 각이 어긋난 같은 나선이 겹쳐 돈다.
+	 *  체공 탄이 정확히 이 배수로 늘어나고, 착지율(=비용)도 같은 배수로 는다 —
+	 *  착지마다 폭발 Niagara 1개 + TakeDamage 가 돌기 때문이다.
+	 *  같은 슬롯의 팔들은 **동시** 발사다(비행 경과 어긋내기는 슬롯 단위).
+	 */
+	static constexpr int32 StormArms          = 2;
+	/** 스윕 시작 반경. 0이면 첫 볼리의 발들이 보스 발밑 한 점에 겹친다. */
+	static constexpr float StormMinRadius     = 150.f;
+	/**
+	 *  스윕 끝 반경. 바닥은 원점 중심 ±2000(윗면 Z=40, 실측)이고 보스도 원점이라
+	 *  2000까지가 바닥 안이다 — 이 값은 그 안쪽이므로 모든 착지점이 바닥 위에 있다.
+	 */
+	static constexpr float StormMaxRadius     = 1500.f;
+	/**
+	 *  나선 간격 — 한 바퀴 돌 때 반경이 커지는 양(uu). 바퀴 수가 아니라 **간격**이 상수다:
+	 *  바퀴 수를 고정하면 반경을 키울 때 간격이 같이 벌어져 나선이 통째로 성겨진다.
+	 *  이 값이 곧 인접한 나선 띠 사이 거리다. 마커 지름(2×120=240)보다 작으면 인접 띠가
+	 *  겹쳐 회피 통로가 사라진다 — 지금 값이 그렇다(의도된 선택: 밀도 우선).
+	 */
+	static constexpr float StormRadiusPerTurn = 200.f;
+	/** 스윕 1회의 회전 바퀴 수. 간격에서 역산한다 — 반경을 바꿔도 나선의 촘촘함이 안 변한다. */
+	static constexpr float StormSweepTurns    = (StormMaxRadius - StormMinRadius) / StormRadiusPerTurn;
+	/**
+	 *  스윕 1회의 볼리 수 = 페이즈당 발사 횟수. 첫 발사가 인트로 종료 시점이라 +1 이다
+	 *  (BeginPhase 의 InFirstDelay 참조). 스윕 진행도 분모다.
+	 */
+	static constexpr int32 StormVolleyCount   = (int32)(StormPhaseSec / StormFireInterval) + 1;
+	/** 스윕 1회의 총 발수. 나선 진행도의 분모다 — 탄 하나가 이 중 한 칸을 차지한다. */
+	static constexpr int32 StormShotsPerSweep = StormVolleyCount * StormCount;
+
 	EArtilleryShape CurrentArtilleryShape = EArtilleryShape::Ring;
+	/** 폭풍 스윕 진행도의 분자. 서버 전용 — 클라는 페이즈를 안 돌리므로 페이로드로 받는다 (#84). */
+	int32 StormVolleyIdx = 0;
 
 	/**
 	 *  최근접 생존 플레이어 폰 (#85). 없으면 nullptr.
@@ -147,7 +204,7 @@ private:
 	 */
 	const APawn* FindNearestLivingPlayerPawn() const;
 
-	/** 현재 페이즈 Artillery 1회 일제사(FireCurrentPattern에서 분기). */
+	/** 현재 페이즈 Artillery/ArtilleryStorm 1회 일제사(FireCurrentPattern에서 분기). */
 	void FireArtillery();
 
 	//~ 페이즈별 외관 (#118). 보스는 고정형이라 애님BP 없이 single-node로 재생한다 —
@@ -189,6 +246,8 @@ private:
 	//~ 팩 MI 프리셋에서 그대로 가져온 값 — MI_Stone_Golem_Inst1(Snow) / Inst2(Lava).
 	static constexpr float FanSnowAmount       = 1.34f;
 	static constexpr float ArtilleryLavaAmount = 2.47f;
+	/** 폭풍 이미시브 — 용암은 Artillery 와 공유하므로 색으로 가른다(주황 vs 금색). */
+	static constexpr float StormLavaAmount     = 2.47f;
 	/**
 	 *  페이즈 인트로 길이(s). 외관 램프 시간이자 첫 발사 지연이다.
 	 *  도약 애님(0.47s)보다 길어 애님도 이 안에서 끝난다.
