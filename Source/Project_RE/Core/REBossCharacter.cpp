@@ -391,7 +391,11 @@ void AREBossCharacter::BeginPhase()
 	{
 		// 폭풍의 착지 모양은 시간의 함수라 Shape 열거로 표현되지 않는다 — 로그 표기용으로만 고정한다.
 		CurrentArtilleryShape = EArtilleryShape::Spiral;
-		StormVolleyIdx = 0;   // 스윕은 페이즈마다 안쪽에서 다시 시작한다
+		PhaseVolleyIdx = 0;   // 스윕은 페이즈마다 안쪽에서 다시 시작한다
+	}
+	else if (CurrentPhasePattern == EBulletPattern::MicroMissile)
+	{
+		PhaseVolleyIdx = 0;   // 방향 순환도 페이즈마다 동쪽에서 다시 시작한다
 	}
 
 	float PhaseSec = SpiralPhaseSec;
@@ -579,12 +583,19 @@ void AREBossCharacter::FireArtillery()
 	// 클라는 PhaseRng가 없으므로 이 시드로 로컬 스트림을 만들어 같은 착지점을 얻는다.
 	const int32 CallSeed = (int32)PhaseRng.GetUnsignedInt();
 
-	// 스윕 진행도의 분자. 볼리 인덱스로 낸다 — 프레임률과 무관하게 페이즈당 정확히 한 번 훑는다.
+	// 볼리 일련번호. 프레임률과 무관하게 볼리마다 정확히 1씩 는다 — 폭풍은 스윕 진행도의
+	// 분자로, 마이크로 미사일은 발사 방향 순환 인덱스로 쓴다.
 	// 서버 전용 상태이므로 클라는 유도할 수 없다 → 페이로드로 보낸다 (#84).
+	//
+	// 마이크로 미사일에서 ServerTime 파생을 안 쓰는 이유: 타이머가 ±5ms 흔들려
+	// floor(ServerTime/Interval) 이 인덱스를 건너뛰거나 반복한다(실측 간격 104/98/103/97/105ms).
+	// 그러면 동→서→북→남 순환이 깨져 연속한 두 발이 인접 방향에서 오기도 한다.
+	// 카운터는 지터와 무관하게 정확히 1씩 는다.
 	int32 SweepIdx = 0;
-	if (CurrentPhasePattern == EBulletPattern::ArtilleryStorm)
+	if (CurrentPhasePattern == EBulletPattern::ArtilleryStorm
+		|| CurrentPhasePattern == EBulletPattern::MicroMissile)
 	{
-		SweepIdx = StormVolleyIdx++;
+		SweepIdx = PhaseVolleyIdx++;
 	}
 
 	Multicast_FireArtillery(CurrentPhasePattern, CurrentArtilleryShape, BossLoc, PlayerLoc, CallSeed,
@@ -717,15 +728,12 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 	}
 	else if (bMicro)
 	{
-		// 목표는 **발사 순간의** 플레이어 위치다(유도가 아니다). 네 발을 각자 발사 방향으로
-		// 조금 벌려 마커가 한 점에 포개지지 않게 한다 — 안 벌리면 4발인 게 안 읽힌다.
-		Targets.Reserve(MicroCount);
-		for (int32 d = 0; d < MicroCount; ++d)
-		{
-			const FVector Dir = REBoss::CompassDir(d);
-			Targets.Add(FVector(PlayerLoc.X + Dir.X * MicroSpread,
-			                    PlayerLoc.Y + Dir.Y * MicroSpread, GroundZ));
-		}
+		// 목표는 **발사 순간의** 플레이어 위치다(유도가 아니다). 착지점을 그 발의 발사
+		// 방향으로 조금 벌려 연사가 한 점에 뭉치지 않게 한다.
+		// 볼리 일련번호로 방향을 돌린다 — 타이머 지터와 무관하게 동→서→북→남이 정확히 순환한다.
+		const FVector Dir = REBoss::CompassDir(SweepIdx % MicroDirCount);
+		Targets.Add(FVector(PlayerLoc.X + Dir.X * MicroSpread,
+		                    PlayerLoc.Y + Dir.Y * MicroSpread, GroundZ));
 	}
 	else
 	{
@@ -769,8 +777,10 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 		if (bMicro)
 		{
 			// 초기 접선을 나침반 축으로 고정한다 — 목표가 어디든 먼저 그 방향으로 뻗는다.
+			// 착지점을 벌릴 때와 **같은 인덱스**를 써야 뻗는 방향과 착탄 쪽이 맞는다.
+			const FVector MDir = REBoss::CompassDir(SweepIdx % MicroDirCount);
 			const REBulletPattern::FArcShapeOffsets Sh =
-				REBulletPattern::ArcCompassLob(P.Start, P.Target, REBoss::CompassDir(i),
+				REBulletPattern::ArcCompassLob(P.Start, P.Target, MDir,
 				                               MicroOutDist, MicroRise1, MicroRise2);
 			P.Ctrl1Offset = Sh.Ctrl1;
 			P.Ctrl2Offset = Sh.Ctrl2;

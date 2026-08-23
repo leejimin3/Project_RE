@@ -401,17 +401,38 @@ private:
 	static constexpr float SpiroSwing        = 700.f;
 
 	//~ 마이크로 미사일(MicroMissile) 파라미터.
-	//  곡사 베지어 4발이 한 볼리다. **유도가 아니다** — 발사 순간의 플레이어 위치를 목표로
-	//  잡고 궤적이 그 자리에서 완전히 결정된다. 목표점은 곡사 RPC 가 이미 싣고 다니는
-	//  AimLoc 이라 새 페이로드가 필요 없다 (#84).
-	//  네 발은 각각 동/서/남/북 윗대각선으로 먼저 뻗었다가 꺾여 들어간다 — 초기 방향이
-	//  목표와 무관하므로 어디로 도망쳐도 네 방향에서 동시에 온다.
-	//  발수가 4뿐이라 밀도 패턴이 아니라 **정밀 회피** 패턴이다. 14개 중 유일하게 성긴 쪽이다.
+	//  곡사 베지어 **한 발씩** 빠르게 연사한다(머신건). **유도가 아니다** — 발사 순간의
+	//  플레이어 위치를 목표로 잡고 궤적이 그 자리에서 완전히 결정된다. 목표점은 곡사 RPC 가
+	//  이미 싣고 다니는 AimLoc 이라 새 페이로드가 필요 없다 (#84).
+	//  발사 방향은 동→서→북→남으로 순환한다. 연속한 두 발이 정반대에서 오므로 한쪽으로만
+	//  도망치면 다음 발에 걸린다 — 위협은 밀도가 아니라 **연사 속도와 방향 교대**에서 나온다.
+	//  순환 인덱스는 서버의 볼리 일련번호(PhaseVolleyIdx)를 페이로드의 SweepIdx 자리에 실어
+	//  보낸다 — 그 자리는 폭풍만 쓰고 있어 비어 있었다. ServerTime 에서 파생하면 타이머
+	//  지터(실측 ±5ms)에 인덱스가 건너뛰어 순환이 깨진다. 클라 로컬 카운터는 멀티캐스트
+	//  유실 시 방향이 어긋나므로 쓸 수 없다 (#97 과 같은 이유).
 	static constexpr float MicroPhaseSec     = 7.f;
-	static constexpr float MicroFireInterval = 0.5f;
-	/** 체공(s). "빠르게 공격"이 요구라 예고 시간을 Artillery(1.5)보다 짧게 잡는다. */
-	static constexpr float MicroFlightTime   = 1.1f;
-	static constexpr int32 MicroCount        = 4;      // 동/서/남/북 — 축 수와 같아야 한다
+	/**
+	 *  발사 간격(s) = 머신건의 연사 속도. 초당 10발이고 RPC 도 10/s 다 —
+	 *  ArtilleryStorm 이 20/s 를 쓰므로 대역폭 여유가 있다.
+	 */
+	static constexpr float MicroFireInterval = 0.1f;
+	/**
+	 *  체공(s). **이 값이 회피 가능성을 혼자 정한다.**
+	 *  목표는 발사 순간의 플레이어 위치이므로 착지 시점까지 플레이어가 움직인 거리가
+	 *  판정 반경(MicroRadius 90)을 넘으면 빗나간다. MaxWalkSpeed 는 ACharacter 기본 600 이라
+	 *  600 × 0.6 = 360uu 로 **4배 여유** — 계속 움직이면 확실히 피해지고 서 있으면 확정 피격이다.
+	 *  더 줄이면 여유가 사라지고, 0.15 아래로는 이동거리(90)가 반경과 같아져 회피가 불가능해진다.
+	 */
+	static constexpr float MicroFlightTime   = 0.6f;
+	/**
+	 *  볼리당 발수. **1이라야 머신건이 된다.**
+	 *  4발을 한 RPC 에 담고 Elapsed 로 어긋내는 방법도 있지만, 그러면 마커는 같은 프레임에
+	 *  전부 뜨고 탄만 비행 중간에서 튀어나온다 — RoseField 에서 고친 바로 그 버그다.
+	 *  한 발씩 실제로 쏘는 쪽이 정직하고, 발사 방향은 아래 순환으로 갈린다.
+	 */
+	static constexpr int32 MicroCount        = 1;
+	/** 발사 방향 축 수(동/서/북/남). REBoss::CompassDir 의 축 수와 같아야 한다. */
+	static constexpr int32 MicroDirCount     = 4;
 	static constexpr float MicroMaxHeight    = 100.f;
 	/** 꺾이기 전 나침반 방향으로 뻗는 거리(uu). 작으면 그냥 포물선처럼 보인다. */
 	static constexpr float MicroOutDist      = 900.f;
@@ -419,8 +440,8 @@ private:
 	static constexpr float MicroRise1        = 550.f;  // 출발 쪽 — 윗대각선을 만드는 값
 	static constexpr float MicroRise2        = 250.f;  // 착지 쪽 — 급강하 각을 쥔다
 	/**
-	 *  네 발의 착지점을 플레이어 기준으로 자기 발사 방향만큼 벌리는 거리(uu).
-	 *  0 이면 네 마커가 한 점에 완전히 포개져 한 개로 보인다 — 4발인 게 안 읽힌다.
+	 *  착지점을 플레이어 기준으로 그 발의 발사 방향만큼 벌리는 거리(uu).
+	 *  0 이면 연사가 전부 같은 점을 때려 착탄이 한 자리에 뭉친다 — 방향이 도는 게 안 읽힌다.
 	 */
 	static constexpr float MicroSpread       = 80.f;
 	/** 폭발·마커 반경. "마이크로"라 Artillery(120)보다 작게 잡는다. */
@@ -496,8 +517,12 @@ private:
 	static constexpr int32 StormShotsPerSweep = StormVolleyCount * StormCount;
 
 	EArtilleryShape CurrentArtilleryShape = EArtilleryShape::Ring;
-	/** 폭풍 스윕 진행도의 분자. 서버 전용 — 클라는 페이즈를 안 돌리므로 페이로드로 받는다 (#84). */
-	int32 StormVolleyIdx = 0;
+	/**
+	 *  페이즈 내 볼리 일련번호. 서버 전용 — 클라는 페이즈를 안 돌리므로 페이로드(SweepIdx)로
+	 *  받는다 (#84). 두 패턴이 쓴다: 폭풍은 스윕 진행도의 분자로, 마이크로 미사일은 발사
+	 *  방향 순환 인덱스로.
+	 */
+	int32 PhaseVolleyIdx = 0;
 
 	/**
 	 *  최근접 생존 플레이어 폰 (#85). 없으면 nullptr.
