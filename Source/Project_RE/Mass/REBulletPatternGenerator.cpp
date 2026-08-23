@@ -93,55 +93,6 @@ namespace REBulletPattern
 		return Out;
 	}
 
-	FPhyllotaxisParams::FPhyllotaxisParams()
-	{
-		const UREStatsSettings* S = GetDefault<UREStatsSettings>();
-		Speed    = S->BulletSpeed;
-		Lifetime = S->BulletLifetime;
-	}
-
-	TArray<FBulletSpawnParams> GeneratePhyllotaxis(const FVector& Origin, const FPhyllotaxisParams& P)
-	{
-		TArray<FBulletSpawnParams> Out;
-		const int32 Count = FMath::Max(P.Count, 1);
-		Out.Reserve(Count);
-		for (int32 i = 0; i < Count; ++i)
-		{
-			const float Angle = P.BaseAngleDeg + i * P.DivergenceDeg;
-			// √ 는 원판 균등 면적 보정이다 — 선형으로 주면 안쪽이 성기고 바깥이 뭉친다.
-			const float Speed = P.Speed * FMath::Sqrt((float)(i + 1) / Count);
-			// 색은 씨앗 인덱스 홀짝 — 이웃한 나선 줄기끼리 갈려 원반의 나선 결이 드러난다.
-			Out.Add({ Origin, DirFromDeg(Angle) * Speed, P.Lifetime, float(i & 1) });
-		}
-		return Out;
-	}
-
-	FCounterSpiralParams::FCounterSpiralParams()
-	{
-		const UREStatsSettings* S = GetDefault<UREStatsSettings>();
-		Speed    = S->BulletSpeed;
-		Lifetime = S->BulletLifetime;
-	}
-
-	TArray<FBulletSpawnParams> GenerateCounterSpiral(const FVector& Origin, const FCounterSpiralParams& P)
-	{
-		TArray<FBulletSpawnParams> Out;
-		const int32 Total = FMath::Max(P.Count, 2);
-		const int32 PerArm = Total / 2;
-		Out.Reserve(PerArm * 2);
-		const float Step = 360.f / PerArm;   // 팔 하나가 균등 링을 이룬다
-		for (int32 Arm = 0; Arm < 2; ++Arm)
-		{
-			// 팔 B 는 시작각 부호만 뒤집는다 — 볼리가 쌓이면 두 나선이 반대로 감긴다.
-			const float Base = (Arm == 0) ? P.BaseAngleDeg : -P.BaseAngleDeg;
-			for (int32 i = 0; i < PerArm; ++i)
-			{
-				Out.Add({ Origin, DirFromDeg(Base + i * Step) * P.Speed, P.Lifetime, float(Arm) });
-			}
-		}
-		return Out;
-	}
-
 	FCardioidParams::FCardioidParams()
 	{
 		const UREStatsSettings* S = GetDefault<UREStatsSettings>();
@@ -475,6 +426,19 @@ namespace REBulletPattern
 		// 각자 자기 끝점 쪽으로 되밀면 오르내림이 가팔라져 아치가 된다.
 		O.Ctrl1 = (Start  - Mid) * 0.5f + FVector(0.f, 0.f, Rise);
 		O.Ctrl2 = (Target - Mid) * 0.5f + FVector(0.f, 0.f, Rise);
+		return O;
+	}
+
+	FArcShapeOffsets ArcCompassLob(const FVector& Start, const FVector& Target, const FVector& Dir,
+	                               float OutDist, float Rise1, float Rise2)
+	{
+		const FVector Mid = (Start + Target) * 0.5f;
+		FArcShapeOffsets O;
+		// 차수 상승 기본값은 두 제어점이 중점 쪽으로 ⅔ 당겨져 있다. 그 당김을 되돌린 뒤
+		// (Start-Mid)·⅔ 나침반 방향으로 밀어야 초기 접선이 목표 방향에 오염되지 않는다.
+		O.Ctrl1 = (Start  - Mid) * (2.f / 3.f) + Dir * OutDist + FVector(0.f, 0.f, Rise1);
+		// 착지 쪽도 당김을 되돌려 착지점 **바로 위**에 둔다 → 수평 접근이 아니라 급강하가 된다.
+		O.Ctrl2 = (Target - Mid) * (2.f / 3.f) + FVector(0.f, 0.f, Rise2);
 		return O;
 	}
 

@@ -75,43 +75,6 @@ namespace REBulletPattern
 	 */
 	TArray<FBulletSpawnParams> GenerateRose(const FVector& Origin, const FRoseParams& P);
 
-	struct FPhyllotaxisParams
-	{
-		FPhyllotaxisParams();        // Speed/Lifetime을 Settings에서 초기화
-		int32 Count         = 200;
-		float BaseAngleDeg  = 0.f;   // 이번 발사 시작각 (Boss가 누적해 전달)
-		float Speed         = 300.f; // 가장 바깥 탄의 속력 — 생성자가 Settings로 덮어씀
-		float Lifetime      = 3.f;   // s — 생성자가 Settings로 덮어씀
-		float DivergenceDeg = 137.507764f;   // 황금각. 이 값이라야 어느 방향으로도 줄이 안 선다
-	};
-
-	/**
-	 *  해바라기(Vogel) 원반: 각 i·137.5°, 속력 Speed·√((i+1)/Count).
-	 *  T초 뒤 탄 i 의 반경이 Speed·T·√((i+1)/N) 이 되어 파면이 Vogel 나선 — 즉 해바라기 씨앗
-	 *  배열이 된다. √ 는 원판 균등 면적 보정이고 황금각은 어느 방향에서도 줄이 서지 않게 한다.
-	 *  Rose 가 굵은 띠라면 이쪽은 균일한 점 격자다 — 같은 직선탄인데 화면이 전혀 다르다.
-	 *  안쪽 탄일수록 느려 보스 발밑에 조밀한 핵이 생기고, 그게 그대로 근접 위험 구역이 된다.
-	 */
-	TArray<FBulletSpawnParams> GeneratePhyllotaxis(const FVector& Origin, const FPhyllotaxisParams& P);
-
-	struct FCounterSpiralParams
-	{
-		FCounterSpiralParams();      // Speed/Lifetime을 Settings에서 초기화
-		int32 Count        = 96;     // 두 팔 **합계**. 홀수면 팔 하나가 한 발 많다
-		float BaseAngleDeg = 0.f;    // 팔 A 의 시작각. 팔 B 는 부호가 뒤집힌다
-		float Speed        = 300.f;
-		float Lifetime     = 3.f;
-	};
-
-	/**
-	 *  역회전 이중 나선: 같은 링을 두 벌 쏘되 회전 방향이 반대다.
-	 *  팔 A 는 각 +BaseAngle + i·Step, 팔 B 는 -BaseAngle + i·Step 에서 출발한다.
-	 *  두 나선이 서로 반대로 감기며 교차해 마름모 격자(모아레)가 생긴다 — 격자 구멍이
-	 *  곧 회피 통로이고, 통로가 두 방향으로 동시에 흘러 읽기가 까다롭다.
-	 *  ColorSel 로 팔을 갈라 어느 격자에 속한 탄인지 눈으로 분리된다.
-	 */
-	TArray<FBulletSpawnParams> GenerateCounterSpiral(const FVector& Origin, const FCounterSpiralParams& P);
-
 	struct FCardioidParams
 	{
 		FCardioidParams();           // Speed/Lifetime을 Settings에서 초기화
@@ -318,4 +281,16 @@ namespace REBulletPattern
 	 *  Swing 부호를 탄마다 뒤집으면 이웃 궤적이 서로 엇갈려 공중에 리본이 짜인다.
 	 */
 	FArcShapeOffsets ArcSCurve(const FVector& Start, const FVector& Target, float Swing, float Rise);
+
+	/**
+	 *  나침반 로브: 출발 제어점을 **Start→Target 과 무관한 고정 방향** Dir 로 밀어낸다.
+	 *  3차 베지어의 초기 접선이 (Ctrl1 − Start) 라, 이렇게 하면 탄이 목표와 상관없이 먼저
+	 *  그 방향(동/서/남/북)으로 비스듬히 솟았다가 꺾여 들어간다 — 유도가 아니라 **고정된
+	 *  발사 방향 + 고정된 착지점**이므로 궤적이 발사 순간에 완전히 결정된다.
+	 *  착지 제어점은 착지점 바로 위로 당겨 급강하시킨다.
+	 *
+	 *  Dir 은 수평 단위벡터를 기대한다(정규화하지 않는다 — 호출자가 축 벡터를 그대로 준다).
+	 */
+	FArcShapeOffsets ArcCompassLob(const FVector& Start, const FVector& Target, const FVector& Dir,
+	                               float OutDist, float Rise1, float Rise2);
 }

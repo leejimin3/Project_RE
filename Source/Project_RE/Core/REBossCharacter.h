@@ -119,6 +119,14 @@ private:
 	/** Spiral 발사당 탄 수. 클로즈드루프는 서버 ISM 상태에 의존 — 서버 전용 결정. */
 	int32 ResolveSpiralCount();
 
+	/**
+	 *  패턴별 발사 간격(s). **발사 간격의 단일 출처다.**
+	 *  페이즈 타이머(BeginPhase)와 볼리 내부 어긋내기(Multicast_FireDirect_Implementation)가
+	 *  같은 값을 봐야 하는데, 후자는 클라에서도 돌아 페이즈 지역변수를 볼 수 없다.
+	 *  두 곳에 각각 스위치를 두면 패턴을 늘릴 때 한쪽만 고쳐 조용히 어긋난다.
+	 */
+	static float FireIntervalFor(EBulletPattern P);
+
 	/** 사망 여부. 서버 전용 — 클라 시각처리는 스코프 밖이라 비복제. */
 	bool bIsDead = false;
 
@@ -132,6 +140,22 @@ private:
 	bool bFirstPhase = true;    // 첫 페이즈만 no-repeat 제약 예외 (무제약 랜덤 시작)
 	FTimerHandle FireTimer;     // 페이즈 내 발사 반복
 	FTimerHandle PhaseTimer;    // 페이즈 종료/대기 전환
+
+	/**
+	 *  패턴 지오메트리의 바깥 한계(uu). 바닥이 원점 중심 정사각 ±2000(실측)이라 이 값이면
+	 *  축 방향으로 가장자리 바로 안쪽이다. **모서리(2828)는 원형 패턴으로는 구조적으로
+	 *  못 덮는다** — 덮으려면 탄이 바닥 밖으로 나가야 한다.
+	 *  범위를 쥔 상수를 여기 하나로 모은다 — 패턴마다 매직넘버로 흩어져 있으면
+	 *  "필드를 다 덮는가"를 한눈에 확인할 수 없다.
+	 */
+	static constexpr float ArenaRadius = 1900.f;
+
+	/**
+	 *  볼리 안에서 탄이 죽는 시각을 벌리는 폭(s). 0 이면 한 볼리가 **같은 프레임에 통째로
+	 *  증발한다** — 속력이 제각각인 패턴(장미·심장형·블룸)에서 파면 한 줄이 한 번에 사라져
+	 *  눈에 거슬린다. 인덱스에 비례해 수명을 깎아 흩어지며 사라지게 한다.
+	 */
+	static constexpr float VolleyDeathSpreadSec = 0.8f;
 
 	static constexpr float SpiralPhaseSec     = 5.f;
 	static constexpr float FanPhaseSec        = 3.f;
@@ -161,24 +185,6 @@ private:
 	 */
 	static constexpr float RoseSpinDegPerSec = 40.f;
 
-	//~ 해바라기(Phyllotaxis) 파라미터. 각 i·137.5°, 속력 Speed·√((i+1)/N).
-	//  발사당 탄 수가 곧 원반의 씨앗 수라 Spiral(48)보다 훨씬 크게 잡는다 — 점 격자가 성기면
-	//  Vogel 배열이 안 읽힌다. 직선탄이라 착지 비용이 없어 이 정도는 감당한다
-	//  (동시 체공 = 200/0.15 × 15 ≈ 20,000발, 기준선 50,000발 p99 15.00ms 대비 여유).
-	static constexpr float PhyllotaxisPhaseSec = 8.f;
-	static constexpr int32 PhyllotaxisCount    = 200;
-
-	//~ 역회전 이중 나선(CounterSpiral) 파라미터.
-	//  Count 는 두 팔 **합계**다. 팔 회전은 Spiral 의 누적각을 공유하되 팔 B 가 부호를 뒤집는다 —
-	//  두 나선이 반대로 감기며 교차해 마름모 격자가 생긴다.
-	static constexpr float CounterPhaseSec = 8.f;
-	static constexpr int32 CounterCount    = 96;
-	/**
-	 *  볼리당 팔 회전량(deg). 황금각(137.5°)은 격자를 뭉개므로 쓰지 않는다 — 격자가 읽히려면
-	 *  회전이 링 간격(360/48 = 7.5°)보다 작아야 두 나선의 교차점이 이어진 줄로 보인다.
-	 */
-	static constexpr float CounterRotationStepDeg = 5.f;
-
 	//~ 심장형 조준(Cardioid) 파라미터.
 	//  FireDirect 페이로드의 각은 하나뿐이고 그 자리를 **조준각**이 쓴다. 링 자체 회전은
 	//  상수·ServerTime 에서 순수 유도하므로 실을 필요가 없다 (#84).
@@ -197,20 +203,25 @@ private:
 	//  비용도 같이 내려간다: 착지율 60/0.5 = 120/s 로 폭풍(160/s, 9.23ms)보다 싸다.
 	//  착지 프레임마다 도는 폭발 Niagara 가 이 패턴 비용의 대부분이었다(Draws 1723).
 	static constexpr float LissaPhaseSec     = 9.f;
-	static constexpr float LissaFireInterval = 0.5f;
+	/**
+	 *  아레나 전체(Extent 1900)를 덮으려고 곡선이 길어져 표본이 60→150 으로 늘었고,
+	 *  착지율이 120→300/s 로 뛰어 15.17ms(게이트 16.6)가 됐다. 간격으로 되돌린다:
+	 *  150/1.0 = 150/s. 겹수는 2.5 라 곡선 가독성도 유지된다.
+	 */
+	static constexpr float LissaFireInterval = 1.0f;
 	static constexpr float LissaFlightTime   = 2.5f;
 	static constexpr float LissaMaxHeight    = 350.f;
 	/**
 	 *  곡선 위 표본 수. 이 값이 곧 매듭의 해상도다 — 점 간격이 마커 지름(2×120=240)보다
 	 *  커지면 곡선이 끊긴 점 무더기로 보인다. 30 으로는 실제로 그랬다.
 	 */
-	static constexpr int32 LissaCount        = 60;
+	static constexpr int32 LissaCount        = 150;
 	/**
 	 *  매듭의 반폭(uu). 아레나 반경 2000 안쪽이면 착지점이 바닥 위이긴 하나 그것만으론 부족하다 —
 	 *  1100 은 화면(가로 약 3000uu)에 다 안 들어와 무늬가 잘렸다. 750 이면 통째로 보이고
 	 *  같은 표본 수로 점 간격도 좁아진다.
 	 */
-	static constexpr float LissaExtent       = 750.f;
+	static constexpr float LissaExtent       = ArenaRadius;
 	/**
 	 *  폭발·마커 반경(uu). Artillery 의 120 을 그대로 쓰면 마커 지름(240)이 매듭의 로브
 	 *  간격(≈E/2 = 375)에 육박해 안쪽이 메워지고 무늬가 둥근 사각형 덩어리로 보인다 —
@@ -229,14 +240,22 @@ private:
 	//  탄이 직선 대신 옆으로 크게 휘감아 들어간다. 착지 시각·착지점·마커는 제어점과
 	//  무관하므로(끝점 고정) 회피 규칙은 일반 곡사와 같고 화면만 3D 소용돌이가 된다.
 	static constexpr float VortexPhaseSec     = 9.f;
-	static constexpr float VortexFireInterval = 0.2f;
+	/**
+	 *  발수를 링 둘레에 맞춰 52로 올리면서 착지율이 180→260/s 로 뛰어 13.72ms 가 됐다 —
+	 *  게이트 16.6 에 17%%밖에 안 남는다. 간격으로 착지율을 되돌린다(52/0.28 = 186/s).
+	 */
+	static constexpr float VortexFireInterval = 0.28f;
 	static constexpr float VortexFlightTime   = 3.5f;
 	/**
 	 *  볼리당 발수 = 착지 링의 점 수. 링 둘레 2π·900 을 이 값으로 나눈 간격이 마커 지름(240)
 	 *  보다 작아야 링이 끊기지 않는다 — 36 이면 157uu 다.
 	 */
-	static constexpr int32 VortexCount        = 36;
-	static constexpr float VortexRadius       = 900.f;
+	static constexpr int32 VortexCount        = 52;
+	//~ 링 반경이 톱니로 팽창한다 — 고정 링이면 그 띠 밖은 영영 안전하다.
+	//  AerialDome 과 같은 수법이고 위상을 ServerTime 에서 뽑으므로 페이로드가 필요 없다.
+	static constexpr float VortexMinRadius   = 400.f;
+	static constexpr float VortexMaxRadius   = ArenaRadius;
+	static constexpr float VortexExpandSec   = 5.f;
 	/** 접선 오프셋(uu). 반경과 비슷한 크기라야 휘감김이 화면에서 읽힌다. */
 	static constexpr float VortexSwirl        = 900.f;
 	/** 링 회전(deg/s) — 볼리마다 착지 링이 돌아 소용돌이가 이어진다. */
@@ -338,7 +357,7 @@ private:
 	static constexpr float RoseFieldFlightTime   = 1.5f;
 	/** 곡선 위 표본 수. 장미 둘레(≈18,000uu) / 마커 지름(240) 을 넘겨야 곡선이 이어진다. */
 	static constexpr int32 RoseFieldCount        = 110;
-	static constexpr float RoseFieldRadius       = 1900.f;
+	static constexpr float RoseFieldRadius       = ArenaRadius;
 	/** 꽃잎 계수. 짝수라 꽃잎이 2×K = 4장 나온다. */
 	static constexpr int32 RoseFieldPetals       = 2;
 	/** 볼리당 48° 회전. 꽃잎 주기(360/4 = 90°)를 두 볼리에 덮는다. */
@@ -355,7 +374,7 @@ private:
 	//~ 링 반경이 톱니로 팽창한다 — 고정 링이면 가운데와 바깥이 영영 안전하다.
 	//  주기마다 안쪽에서 다시 시작해 '퍼지는 충격파'로 읽힌다.
 	static constexpr float DomeMinRadius    = 350.f;
-	static constexpr float DomeMaxRadius    = 1900.f;
+	static constexpr float DomeMaxRadius    = ArenaRadius;
 	static constexpr float DomeExpandSec    = 4.f;
 	static constexpr float DomeSpinDegPerSec = 15.f;
 	static constexpr float DomeMaxHeight    = 100.f;
@@ -368,7 +387,7 @@ private:
 	static constexpr float SpiroFlightTime   = 1.5f;
 	/** 로제트는 고리가 겹쳐 곡선이 길다 — 장미보다 표본을 더 준다. */
 	static constexpr int32 SpiroCount        = 150;
-	static constexpr float SpiroRadius       = 1900.f;
+	static constexpr float SpiroRadius       = ArenaRadius;
 	//~ 하이포트로코이드 파라미터. 서로소(5,3)라 도형이 닫히고, D 가 크면 고리가 깊어진다.
 	static constexpr int32 SpiroBigR         = 5;
 	static constexpr int32 SpiroSmallR       = 3;
@@ -380,6 +399,32 @@ private:
 	static constexpr float SpiroRise         = 330.f;
 	/** S자 진폭. 이웃 탄끼리 부호가 뒤집혀 이 값의 2배만큼 벌어졌다 만난다. */
 	static constexpr float SpiroSwing        = 700.f;
+
+	//~ 마이크로 미사일(MicroMissile) 파라미터.
+	//  곡사 베지어 4발이 한 볼리다. **유도가 아니다** — 발사 순간의 플레이어 위치를 목표로
+	//  잡고 궤적이 그 자리에서 완전히 결정된다. 목표점은 곡사 RPC 가 이미 싣고 다니는
+	//  AimLoc 이라 새 페이로드가 필요 없다 (#84).
+	//  네 발은 각각 동/서/남/북 윗대각선으로 먼저 뻗었다가 꺾여 들어간다 — 초기 방향이
+	//  목표와 무관하므로 어디로 도망쳐도 네 방향에서 동시에 온다.
+	//  발수가 4뿐이라 밀도 패턴이 아니라 **정밀 회피** 패턴이다. 14개 중 유일하게 성긴 쪽이다.
+	static constexpr float MicroPhaseSec     = 7.f;
+	static constexpr float MicroFireInterval = 0.5f;
+	/** 체공(s). "빠르게 공격"이 요구라 예고 시간을 Artillery(1.5)보다 짧게 잡는다. */
+	static constexpr float MicroFlightTime   = 1.1f;
+	static constexpr int32 MicroCount        = 4;      // 동/서/남/북 — 축 수와 같아야 한다
+	static constexpr float MicroMaxHeight    = 100.f;
+	/** 꺾이기 전 나침반 방향으로 뻗는 거리(uu). 작으면 그냥 포물선처럼 보인다. */
+	static constexpr float MicroOutDist      = 900.f;
+	//~ 정점 = MaxHeight + 0.375·(Rise1+Rise2) = 100 + 300 = 400. 곡사 기준 고도를 안 넘는다.
+	static constexpr float MicroRise1        = 550.f;  // 출발 쪽 — 윗대각선을 만드는 값
+	static constexpr float MicroRise2        = 250.f;  // 착지 쪽 — 급강하 각을 쥔다
+	/**
+	 *  네 발의 착지점을 플레이어 기준으로 자기 발사 방향만큼 벌리는 거리(uu).
+	 *  0 이면 네 마커가 한 점에 완전히 포개져 한 개로 보인다 — 4발인 게 안 읽힌다.
+	 */
+	static constexpr float MicroSpread       = 80.f;
+	/** 폭발·마커 반경. "마이크로"라 Artillery(120)보다 작게 잡는다. */
+	static constexpr float MicroRadius       = 90.f;
 
 	//~ 곡사(Artillery) 페이즈 파라미터. 헤더 상수 — 플레이 후 튜닝.
 	static constexpr float ArtilleryPhaseSec     = 4.f;    // 페이즈 길이
@@ -406,7 +451,12 @@ private:
 	//  Radius/Damage 는 Artillery 와 공유한다(별도 상수 안 둔다).
 	static constexpr float StormPhaseSec      = 10.f;   // 스윕 1회 길이
 	static constexpr float StormFireInterval  = 0.05f;  // 볼리 간격 = 생성 이벤트 주기(RPC 20/s)
-	static constexpr float StormFlightTime    = 6.f;    // 체공. 동시 체공 탄에 그대로 비례한다
+	/**
+	 *  체공(s). 6 은 탄이 너무 느리게 떨어졌다 — 3 으로 줄여 낙하가 빨라진다.
+	 *  동시 체공 탄이 여기에 정비례하므로 밀도가 절반이 된다(960 → 480). 착지율은 안 변해
+	 *  프레임 비용도 그대로다 — 밀도를 되찾으려면 Arms 를 올려야 하고 그건 비용이 붙는다.
+	 */
+	static constexpr float StormFlightTime    = 3.f;
 	/**
 	 *  포물선 최대 고도. 궤적이 물리가 아니라 정규화 보간이라(REArcSimProcessor) 높이와
 	 *  체공 시간은 완전히 독립이다 — 이 값을 바꿔도 착지 타이밍은 안 변한다.
@@ -427,7 +477,7 @@ private:
 	 *  스윕 끝 반경. 바닥은 원점 중심 ±2000(윗면 Z=40, 실측)이고 보스도 원점이라
 	 *  2000까지가 바닥 안이다 — 이 값은 그 안쪽이므로 모든 착지점이 바닥 위에 있다.
 	 */
-	static constexpr float StormMaxRadius     = 1500.f;
+	static constexpr float StormMaxRadius     = ArenaRadius;
 	/**
 	 *  나선 간격 — 한 바퀴 돌 때 반경이 커지는 양(uu). 바퀴 수가 아니라 **간격**이 상수다:
 	 *  바퀴 수를 고정하면 반경을 키울 때 간격이 같이 벌어져 나선이 통째로 성겨진다.
@@ -507,8 +557,7 @@ private:
 	static constexpr float RoseFieldLavaAmount   = 2.47f;
 	static constexpr float DomeSnowAmount        = 1.34f;
 	static constexpr float SpiroLavaAmount       = 2.47f;
-	static constexpr float PhyllotaxisSnowAmount = 1.34f;
-	static constexpr float CounterLavaAmount     = 2.47f;
+	static constexpr float MicroSnowAmount       = 1.34f;
 	static constexpr float LissaLavaAmount       = 2.47f;
 	static constexpr float VortexSnowAmount      = 1.34f;
 	/**
