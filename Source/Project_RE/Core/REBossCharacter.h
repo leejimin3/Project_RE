@@ -54,6 +54,14 @@ public:
 	/** 발사 정지. 이미 뜬 탄은 수명까지 유지(일괄 소멸 안 함). */
 	void StopFiring();
 
+	/**
+	 *  화면에 표시할 현재 패턴. 외관 상태(LookPattern)를 그대로 쓴다 — 그 값이 페이즈 시작
+	 *  방송과 발사 RPC 양쪽에서 갱신되므로 **클라도 새 복제 없이 이미 알고 있다** (#84).
+	 *  데디 서버에서는 BodyMID 가 없어 갱신되지 않지만 HUD 는 클라 전용이라 무관하다.
+	 *  페이즈 사이 Rest 구간에는 직전 패턴이 남는다 — 보스가 Rest 를 방송하지 않는다.
+	 */
+	EBulletPattern GetDisplayPattern() const { return LookPattern; }
+
 	//~ 서버 권위 데미지 진입점. 서버에서만 Health 차감.
 	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent,
 	                         AController* EventInstigator, AActor* DamageCauser) override;

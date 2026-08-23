@@ -39,6 +39,12 @@ private:
 	/** ISM 인스턴스 수(직선탄 + 곡사탄). Mass 엔티티가 아니라 실제 그려지는 수다. */
 	void RefreshBulletCount();
 
+	/** 보스가 지금 쏘는 패턴 이름. 보스의 외관 상태에서 읽는다 — 새 복제 경로가 없다. */
+	void RefreshPattern();
+
+	/** 켜져 있는 데브 치트 나열. 하나도 없으면 줄째로 접는다. */
+	void RefreshCheats();
+
 	UPROPERTY()
 	TObjectPtr<UProgressBar> HealthBar = nullptr;
 
@@ -56,4 +62,19 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UVerticalBox> BulletBox = nullptr;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> PatternText = nullptr;
+
+	UPROPERTY()
+	TObjectPtr<UVerticalBox> PatternBox = nullptr;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> CheatText = nullptr;
+
+	UPROPERTY()
+	TObjectPtr<UVerticalBox> CheatBox = nullptr;
+
+	/** 보스 약참조 캐시. 매 틱 액터를 훑지 않기 위한 것 — 죽거나 없으면 다시 찾는다. */
+	TWeakObjectPtr<class AREBossCharacter> CachedBoss;
 };
