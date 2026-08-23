@@ -42,12 +42,17 @@ struct FArcBulletFragment : public FMassFragment
 	FVector Start      = FVector::ZeroVector;
 	FVector Target     = FVector::ZeroVector;
 	/**
-	 *  2차 베지어 제어점(월드). 궤적은 Start·Ctrl·Target 이고 끝점은 항상 Start/Target 이라
-	 *  착지 시각·착지점·마커는 제어점과 무관하다 — 바뀌는 건 가는 길뿐이다.
-	 *  Ctrl = 중점 + (0,0,2·MaxHeight) 로 두면 기존 포물선(4H·t(1-t))과 대수적으로 같은 식이 된다.
-	 *  스포너가 MaxHeight 와 CtrlOffset 에서 계산해 채운다.
+	 *  3차 베지어 제어점(월드). 궤적은 Start·Ctrl1·Ctrl2·Target 이고 끝점은 항상
+	 *  Start/Target 이라 착지 시각·착지점·마커는 제어점과 무관하다 — 바뀌는 건 가는 길뿐이다.
+	 *
+	 *  2차는 3차의 특수 케이스다(차수 상승): 2차 제어점 C 에 대해
+	 *      Ctrl1 = Start + ⅔(C − Start),  Ctrl2 = Target + ⅔(C − Target)
+	 *  이면 두 곡선이 완전히 같다. 그리고 C = 중점 + (0,0,2·MaxHeight) 면 그 2차 곡선이
+	 *  다시 기존 포물선(XY 선형보간 + 4H·t(1-t))과 같다. 즉 오프셋이 전부 0이면 원래 궤적이다.
+	 *  스포너가 MaxHeight 와 세 오프셋에서 계산해 채운다.
 	 */
-	FVector Ctrl       = FVector::ZeroVector;
+	FVector Ctrl1      = FVector::ZeroVector;
+	FVector Ctrl2      = FVector::ZeroVector;
 	float   FlightTime = 1.5f;
 	float   Elapsed    = 0.f;
 	float   Damage     = 15.f;

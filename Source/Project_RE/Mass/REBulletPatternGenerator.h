@@ -134,6 +134,60 @@ namespace REBulletPattern
 	 */
 	TArray<FBulletSpawnParams> GenerateCardioid(const FVector& Origin, const FCardioidParams& P);
 
+	//~ 곡선 블룸 — 탄을 곡선 위에 스폰하고 속도를 위치 벡터에 비례시킨다.
+	//
+	//  속력 변조(Rose/Cardioid)는 파면이 r(θ) 인 극좌표 곡선이라 **한 각도에 한 반경**인
+	//  모양(별모양 영역)만 만든다 — ∞ 처럼 자기교차하는 곡선은 원리상 못 만든다.
+	//  블룸은 그 제약이 없다: 모양을 스폰 위치로 직접 그리고 속도를 위치에 비례시키면
+	//
+	//      V = P·k   →   위치(T) = P + P·k·T = P·(1 + kT)
+	//
+	//  가 되어 도형이 **완전한 자기닮음으로** 부푼다. 어떤 닫힌 곡선이든 된다.
+	//  FBulletSpawnParams::Location 이 원래 탄별 필드라 스폰 인프라는 그대로다.
+	//  지연 보정(Location += Velocity·Elapsed)도 등속 직선이라 정확히 맞는다.
+
+	struct FCurveBloomParams
+	{
+		FCurveBloomParams();         // Lifetime 을 Settings에서 초기화
+		/**
+		 *  초당 배율 증가량(1/s). T초 뒤 도형 크기가 (1 + ScaleRate·T) 배가 된다.
+		 *  곡선 반경 R 인 점의 속력이 R·ScaleRate 이므로 큰 도형일수록 빨라진다.
+		 */
+		float ScaleRate = 1.75f;
+		float Lifetime  = 3.f;
+	};
+
+	/**
+	 *  곡선(보스 기준 오프셋 배열) 위에 탄을 놓고 바깥으로 자기닮음 확대시킨다.
+	 *  ColorSel 은 표본 인덱스 홀짝 — 곡선을 따라 색이 번갈아 곡선의 진행이 읽힌다.
+	 */
+	TArray<FBulletSpawnParams> GenerateCurveBloom(const FVector& Origin, TConstArrayView<FVector2D> Curve,
+	                                              const FCurveBloomParams& P);
+
+	//~ 곡선 생성기 — 전부 원점 기준 2D 오프셋. 순수 함수.
+
+	/**
+	 *  별 다각형 {N/Skip}: 꼭짓점 N개를 Skip 칸씩 건너뛰며 이은 성형별({7/3} 등).
+	 *  변마다 SegPerEdge 개로 표본을 잘라 **직선 변**을 낸다 — 각진 모서리가 이 도형의 정체성이라
+	 *  꼭짓점만 찍으면 안 된다. gcd(N,Skip)=1 이라야 한붓그리기로 닫힌다.
+	 */
+	TArray<FVector2D> GenStarPolygon(int32 N, int32 Skip, float Radius, float RotDeg, int32 SegPerEdge);
+
+	/**
+	 *  베르누이 렘니스케이트(∞). x = A·cos u/(1+sin²u), y = A·sin u·cos u/(1+sin²u).
+	 *  원점에서 자기교차하므로 극좌표 r(θ) 로는 표현되지 않는다 — 블룸이라야 나오는 모양이다.
+	 */
+	TArray<FVector2D> GenLemniscate(int32 N, float A, float RotDeg);
+
+	/**
+	 *  Gielis 초공식:  r(φ) = [ |cos(m·φ/4)/a|^n2 + |sin(m·φ/4)/b|^n3 ]^(-1/n1)
+	 *  m 이 대칭 가지 수, n1 이 뾰족함이다. m 을 연속으로 움직이면 꽃↔별↔다각형으로 변태한다
+	 *  (정수가 아니어도 정의된다 — 비대칭 중간 모양이 나온다).
+	 *  a=b=1 고정. Radius 는 최대 반경으로 정규화한 뒤 곱한다 — m 이 변해도 크기가 안 튄다.
+	 */
+	TArray<FVector2D> GenSuperformula(int32 N, float M, float N1, float N2, float N3,
+	                                  float Radius, float RotDeg);
+
 	/** 부채꼴: CenterAngle 기준 -Spread/2 .. +Spread/2 를 Count 등분 동시 발사. */
 	TArray<FBulletSpawnParams> GenerateFan(const FVector& Origin, const FFanParams& P);
 
@@ -158,11 +212,18 @@ namespace REBulletPattern
 		float   Elapsed    = 0.f;
 
 		/**
-		 *  베지어 제어점의 **추가** 오프셋. 0 이면 기존 포물선과 완전히 같은 궤적이다.
-		 *  궤적은 Start·Ctrl·Target 의 2차 베지어이고 Ctrl = 중점 + (0,0,2·MaxHeight) + 이 값이다.
-		 *  XY 성분을 주면 탄이 직선을 벗어나 옆으로 휘감아 들어간다(Z까지 같이 쓰는 3D 궤적).
+		 *  **2차** 제어점의 추가 오프셋. 궤적의 뼈대는 C = 중점 + (0,0,2·MaxHeight) + 이 값이고,
+		 *  스포너가 이걸 3차로 차수 상승시킨다. XY 성분을 주면 탄이 직선을 벗어나 한쪽으로
+		 *  휘감아 들어간다 — 대칭적인 한 번 휨이다.
 		 */
 		FVector CtrlOffset = FVector::ZeroVector;
+		/**
+		 *  차수 상승 뒤 **3차 제어점 각각**에 더하는 오프셋. 두 값을 다르게 주면 2차로는
+		 *  못 만드는 궤적이 나온다 — 서로 반대로 밀면 S자, 같은 방향으로 밀면 감김이 깊어진다.
+		 *  Ctrl1 은 출발 쪽, Ctrl2 는 착지 쪽 굽힘을 쥔다. 둘 다 0 이면 순수 2차 궤적이다.
+		 */
+		FVector Ctrl1Offset = FVector::ZeroVector;
+		FVector Ctrl2Offset = FVector::ZeroVector;
 	};
 
 	//~ 착지점 생성기 — 전부 월드 착지점(Z=GroundZ) 배열 반환. 순수함수(FRandomStream 제외).
@@ -212,5 +273,49 @@ namespace REBulletPattern
 	 *  착지점은 t=1 에서 정확히 Target 이라 마커·판정은 그대로다 — 변하는 건 가는 길뿐이다.
 	 *  Start 와 Target 이 수평으로 겹치면 접선이 정의되지 않아 0을 돌려준다(직선 폴백).
 	 */
+	/**
+	 *  장미 착지: r = Radius·cos(Petals·θ). r 이 음수인 구간은 반대쪽 꽃잎을 그리므로
+	 *  **부호를 살려야** 꽃이 완성된다(|r| 로 접으면 꽃잎이 절반만 나온다).
+	 *  Petals 가 홀수면 꽃잎 Petals 장, 짝수면 2×Petals 장이다.
+	 */
+	TArray<FVector> GenRoseCurve(const FVector& Center, float Radius, int32 Petals,
+	                             float RotDeg, int32 N, float GroundZ);
+
+	/**
+	 *  하이포트로코이드(스피로그래프) 착지:
+	 *      x = (R−r)·cos t + D·cos((R−r)/r · t)
+	 *      y = (R−r)·sin t − D·sin((R−r)/r · t)
+	 *  R,r 이 서로소면 t 를 2π·r 까지 돌려야 도형이 닫힌다 — 그 구간을 N등분한다.
+	 *  최대 반경이 (R−r)+D 이므로 그 값으로 정규화한 뒤 Radius 를 곱해 아레나에 맞춘다.
+	 */
+	TArray<FVector> GenHypotrochoid(const FVector& Center, float Radius, int32 BigR, int32 SmallR,
+	                                float D, float RotDeg, int32 N, float GroundZ);
+
 	FVector ArcSwirlOffset(const FVector& Start, const FVector& Target, float Swirl);
+
+	//~ 3차 궤적 성형 프리셋 — 제어점 **쌍**을 낸다. 2차(제어점 하나)로는 한 번 휘는 것밖에
+	//  못 하므로 아래 셋은 전부 3차라야 나오는 모양이다.
+	struct FArcShapeOffsets
+	{
+		FVector Ctrl1 = FVector::ZeroVector;
+		FVector Ctrl2 = FVector::ZeroVector;
+	};
+
+	/**
+	 *  나선 기둥: 두 제어점을 **같은** 접선 방향으로 밀되 뒤쪽을 더 멀리 민다.
+	 *  탄이 솟았다가 축을 크게 감아 돌아 착지점으로 떨어진다 — 볼리가 쌓이면 회전하는 기둥이다.
+	 */
+	FArcShapeOffsets ArcSpiralColumn(const FVector& Start, const FVector& Target, float Swirl, float Rise);
+
+	/**
+	 *  돔 껍질: 제어점을 각자 자기 끝점 쪽으로 당기고 위로 올린다 →
+	 *  급상승 · 고공 수평 이동 · 급강하. 착지점을 링으로 두면 궤적들이 반구 껍질의 자오선이 된다.
+	 */
+	FArcShapeOffsets ArcDomeShell(const FVector& Start, const FVector& Target, float Rise);
+
+	/**
+	 *  S자: 두 제어점을 **반대** 접선 방향으로 민다. 탄이 한 번 왼쪽, 한 번 오른쪽으로 휜다.
+	 *  Swing 부호를 탄마다 뒤집으면 이웃 궤적이 서로 엇갈려 공중에 리본이 짜인다.
+	 */
+	FArcShapeOffsets ArcSCurve(const FVector& Start, const FVector& Target, float Swing, float Rise);
 }

@@ -235,8 +235,143 @@ private:
 	static constexpr float VortexSpinDegPerSec = 55.f;
 	//~ 고도를 탄마다 어긋내 층을 만든다. 궤적이 정규화 보간이라 높이를 바꿔도 착지 타이밍은
 	//  안 변한다 — 층이 생겨도 링은 동시에 착지한다.
-	static constexpr float VortexMinHeight = 250.f;
-	static constexpr float VortexMaxHeight = 800.f;
+	//  800 은 탑다운 카메라(높이 1500) 위로 솟아 화면 밖으로 나갔다 — 폭풍이 같은 이유로
+	//  800→400 을 겪었다(StormMaxHeight 주석). 곡사 기준 고도인 400 을 상한으로 맞춘다.
+	static constexpr float VortexMinHeight = 150.f;
+	static constexpr float VortexMaxHeight = 400.f;
+
+	//~ 곡선 블룸 3종(StarBloom / LemniscateBloom / SuperformulaBloom) 공용 파라미터.
+	//  탄을 곡선 위에 스폰하고 속도를 위치 벡터에 비례시킨다 → 도형이 자기닮음으로 부푼다.
+	//  회전·변태 위상은 전부 ServerTime 에서 순수 유도하므로 페이로드에 실을 값이 없다 (#84) —
+	//  FireDirect 의 각 자리는 안 쓴다(0을 보낸다). 발사 간격은 Spiral 과 공유한다.
+	/**
+	 *  초당 배율 증가량(1/s). T초 뒤 도형이 (1 + ScaleRate·T) 배가 된다.
+	 *  수명과 짝지어 **소멸 반경**을 정한다: R₀·(1 + Rate·Life). 아래 값들은 그 곱이
+	 *  아레나 반경(2000) 언저리가 되도록 잡혀 있다.
+	 */
+	static constexpr float BloomScaleRate = 1.7f;
+	/**
+	 *  블룸 전용 수명(s). ini 기본(15초)을 쓰면 도형이 4,400uu 까지 부풀어 **대부분의 시간을
+	 *  맵 밖에서 보낸다** — 화면에는 이미 가장자리를 지나간 잔해만 남는다.
+	 *  7초면 165·(1+1.7·7) = 2,100uu 로 아레나 가장자리에 닿으며 소멸한다.
+	 */
+	static constexpr float BloomLifetime = 7.f;
+	/**
+	 *  도형 회전(deg/s). 커버리지를 만드는 것이 이 값이다: 반경 r 의 탄은 (r/R₀−1)/Rate 초 전에
+	 *  발사됐으므로 바깥일수록 더 돌아가 있고, 팔이 나선으로 감긴다(장미와 같은 원리).
+	 *  수명 7초 × 55°/s = 385° 라 한 바퀴를 넘겨 가장자리에 각도 구멍이 남지 않는다.
+	 */
+	//~ 도형 회전(deg/s) — 도형마다 다르다. 두 요구가 반대로 당긴다:
+	//    · 너무 빠르면 겹쳐 보이는 복사본이 제각기 다른 각으로 누워 도형이 뭉갠다.
+	//      (55°/s 는 수명 7초 동안 385°를 훑어 실제로 통째로 뭉갰다.)
+	//    · 너무 느리면 도형의 각도 구멍이 제자리에 남아 거기 선 플레이어가 영영 안전하다.
+	//  **k겹 대칭 도형은 수명 동안 360/k 만 훑으면 구멍이 닫힌다** — 그 최소치 언저리를 쓴다.
+	/** {7/3} 별은 7겹 대칭 → 51° 면 된다. 12×7 = 84°. */
+	static constexpr float StarBloomSpinDegPerSec = 12.f;
+	/** ∞ 는 **2겹** 대칭이라 180°가 필요하다. 27×7 = 189°. 여기만 유독 빠른 이유가 이것이다. */
+	static constexpr float LemniSpinDegPerSec     = 27.f;
+	/** 초공식은 m=4~8 이라 최소 4겹 → 90°. 14×7 = 98°. */
+	static constexpr float SuperSpinDegPerSec     = 14.f;
+	/**
+	 *  블룸 전용 발사 간격(s). **이 패턴이 읽히느냐를 이 값이 혼자 정한다.**
+	 *  동시에 보이는 복사본 사이의 반경 간격이 R₀·ScaleRate·이 값이고, 그게 탄 지름(70uu)보다
+	 *  작으면 이웃 복사본이 서로 겹쳐 도형이 통째로 뭉갠다.
+	 *  Spiral 과 공유하던 0.15 는 165·1.7·0.15 = 42uu 라 지름보다 작았다 — 실제로 뭉갰다.
+	 *  0.4 면 112uu 로 분리된다. 수명 7초 동안 17겹이 고른 간격으로 퍼진다.
+	 */
+	static constexpr float BloomFireInterval = 0.4f;
+
+	static constexpr float StarBloomPhaseSec = 8.f;
+	/** 별 다각형 {N/Skip}. gcd(7,3)=1 이라 한붓그리기로 닫힌다. */
+	static constexpr int32 StarBloomVerts    = 7;
+	static constexpr int32 StarBloomSkip     = 3;
+	/** 변당 표본 수. 꼭짓점만 찍으면 각진 변이 사라져 별이 안 읽힌다. 총 발수 = Verts × 이 값. */
+	static constexpr int32 StarBloomSegPerEdge = 40;
+	static constexpr float StarBloomRadius   = 165.f;
+
+	static constexpr float LemniPhaseSec = 8.f;
+	static constexpr int32 LemniCount    = 200;
+	/** 렘니스케이트 반폭(uu). u=0 에서 x=A 라 이 값이 그대로 반폭이다. */
+	static constexpr float LemniA        = 165.f;
+
+	static constexpr float SuperPhaseSec = 9.f;
+	static constexpr int32 SuperCount    = 240;
+	static constexpr float SuperRadius   = 165.f;
+	/** n1 이 작을수록 뾰족하다. 0.3 은 별처럼 각이 선다. */
+	static constexpr float SuperN1       = 0.3f;
+	static constexpr float SuperN2       = 1.7f;
+	static constexpr float SuperN3       = 1.7f;
+	//~ m 은 대칭 가지 수다. 정수가 아니어도 정의되므로 연속으로 움직여 모양을 변태시킨다.
+	//  범위를 넓게 잡으면 중간에 비대칭 찌그러진 모양을 지나 난잡해 보인다 — 4~8 로 좁힌다.
+	static constexpr float SuperMMin     = 4.f;
+	static constexpr float SuperMMax     = 8.f;
+	/** m 왕복 주기(s). 페이즈(9초)보다 짧아야 한 페이즈 안에서 변태가 보인다. */
+	static constexpr float SuperMorphPeriodSec = 6.f;
+
+	//~ 곡사 3종(RoseField / AerialDome / Spirograph).
+	//  셋 다 **바닥에 그래프를 그리고** 3D 비행으로 그 위에 내려앉는다. 곡선 반경은 아레나
+	//  반경 2000 안쪽 최대인 1900 으로 맞춰 맵 전체를 덮는다.
+	//
+	//  표본 수는 곡선 길이 / 마커 지름(2×120=240) 으로 정한다 — 간격이 지름보다 크면
+	//  곡선이 끊긴 점 무더기로 보인다(LissajousStorm 에서 겪었다).
+	//
+	//  3차 베지어 정점은 H + 0.75·Rise 다. 곡사 기준 고도 400 을 넘지 않게 역산했다 —
+	//  더 높이면 탑다운 카메라(1500) 밖으로 솟아 화면에서 사라진다.
+
+	//~ **겹수(체공/발사간격)를 1로 유지하는 것이 이 두 패턴의 생명이다.**
+	//  블룸은 복사본이 반경으로 벌어져 여러 겹이 겹쳐도 읽혔지만, 여기는 복사본이 전부
+	//  같은 크기라 회전만 다른 채 직접 포개진다 — 0.4/2.5(6겹)로 뒀더니 곡선이 통째로
+	//  뭉개져 마커 덩어리가 됐다(실제로 그랬다).
+	//  겹이 하나면 회전 뭉갬 자체가 없으므로 회전은 오히려 크게 줘도 된다 — 볼리마다
+	//  곡선이 크게 돌아앉아 시간으로 맵을 덮는다.
+	static constexpr float RoseFieldPhaseSec     = 9.f;
+	static constexpr float RoseFieldFireInterval = 1.2f;
+	/** 회피 예고 시간. Artillery(1.5)와 같게 둔다 — 곡선을 읽고 움직일 시간이다. */
+	static constexpr float RoseFieldFlightTime   = 1.5f;
+	/** 곡선 위 표본 수. 장미 둘레(≈18,000uu) / 마커 지름(240) 을 넘겨야 곡선이 이어진다. */
+	static constexpr int32 RoseFieldCount        = 110;
+	static constexpr float RoseFieldRadius       = 1900.f;
+	/** 꽃잎 계수. 짝수라 꽃잎이 2×K = 4장 나온다. */
+	static constexpr int32 RoseFieldPetals       = 2;
+	/** 볼리당 48° 회전. 꽃잎 주기(360/4 = 90°)를 두 볼리에 덮는다. */
+	static constexpr float RoseFieldSpinDegPerSec = 40.f;
+	static constexpr float RoseFieldMaxHeight    = 150.f;
+	/** 감아 도는 하강. 정점 = 150 + 0.75·340 = 405. */
+	static constexpr float RoseFieldRise         = 340.f;
+	static constexpr float RoseFieldSwirl        = 600.f;
+
+	static constexpr float DomePhaseSec     = 9.f;
+	static constexpr float DomeFireInterval = 0.4f;
+	static constexpr float DomeFlightTime   = 3.f;
+	static constexpr int32 DomeCount        = 44;
+	//~ 링 반경이 톱니로 팽창한다 — 고정 링이면 가운데와 바깥이 영영 안전하다.
+	//  주기마다 안쪽에서 다시 시작해 '퍼지는 충격파'로 읽힌다.
+	static constexpr float DomeMinRadius    = 350.f;
+	static constexpr float DomeMaxRadius    = 1900.f;
+	static constexpr float DomeExpandSec    = 4.f;
+	static constexpr float DomeSpinDegPerSec = 15.f;
+	static constexpr float DomeMaxHeight    = 100.f;
+	/** 정점 = 100 + 0.75·400 = 400. */
+	static constexpr float DomeRise         = 400.f;
+
+	//~ RoseField 와 같은 이유로 겹수를 1로 맞춘다(위 주석 참조).
+	static constexpr float SpiroPhaseSec     = 9.f;
+	static constexpr float SpiroFireInterval = 1.2f;
+	static constexpr float SpiroFlightTime   = 1.5f;
+	/** 로제트는 고리가 겹쳐 곡선이 길다 — 장미보다 표본을 더 준다. */
+	static constexpr int32 SpiroCount        = 150;
+	static constexpr float SpiroRadius       = 1900.f;
+	//~ 하이포트로코이드 파라미터. 서로소(5,3)라 도형이 닫히고, D 가 크면 고리가 깊어진다.
+	static constexpr int32 SpiroBigR         = 5;
+	static constexpr int32 SpiroSmallR       = 3;
+	static constexpr float SpiroD            = 5.f;
+	/** 볼리당 66° 회전 — 로제트는 대칭 차수가 높아 조금만 돌려도 새 각을 덮는다. */
+	static constexpr float SpiroSpinDegPerSec = 55.f;
+	static constexpr float SpiroMaxHeight    = 150.f;
+	/** 정점 = 150 + 0.75·330 = 397. */
+	static constexpr float SpiroRise         = 330.f;
+	/** S자 진폭. 이웃 탄끼리 부호가 뒤집혀 이 값의 2배만큼 벌어졌다 만난다. */
+	static constexpr float SpiroSwing        = 700.f;
 
 	//~ 곡사(Artillery) 페이즈 파라미터. 헤더 상수 — 플레이 후 튜닝.
 	static constexpr float ArtilleryPhaseSec     = 4.f;    // 페이즈 길이
@@ -359,6 +494,11 @@ private:
 	//~ 패턴이 9개라 질감 축(Snow/Lava)만으로는 안 갈린다. **(질감, 이미시브 색) 쌍**이
 	//  유일하도록 배분한다 — LookForPattern 의 각 case 가 그 쌍 하나씩을 집는다.
 	static constexpr float CardioidSnowAmount    = 1.34f;
+	//~ 패턴이 16개다. 질감 3종 × 색으로도 슬슬 빠듯하다 — 새 패턴을 더 늘리면 외관 축을
+	//  하나 더 찾아야 한다(스케일·회전·발광 주기 등). 지금은 (질감, 색) 쌍 유일성으로 버틴다.
+	static constexpr float RoseFieldLavaAmount   = 2.47f;
+	static constexpr float DomeSnowAmount        = 1.34f;
+	static constexpr float SpiroLavaAmount       = 2.47f;
 	static constexpr float PhyllotaxisSnowAmount = 1.34f;
 	static constexpr float CounterLavaAmount     = 2.47f;
 	static constexpr float LissaLavaAmount       = 2.47f;

@@ -35,12 +35,14 @@ void UREArcSimProcessor::Execute(FMassEntityManager& EntityManager, FMassExecuti
 			A.Elapsed += Dt;
 			const float t = (A.FlightTime > 0.f) ? FMath::Min(A.Elapsed / A.FlightTime, 1.f) : 1.f;
 
-			// 2차 베지어. 제어점이 중점 + (0,0,2·MaxHeight) 면 XY 는 정확히 선형보간으로,
-			// Z 는 정확히 4·MaxHeight·t(1-t) 로 환원된다 — 기존 포물선의 일반화다.
-			// 제어점에 XY 성분이 실리면 탄이 직선을 벗어나 휘감아 들어간다.
+			// 3차 베지어. 스포너가 오프셋 0 일 때 2차(= 기존 포물선)와 같은 곡선이 되도록
+			// 제어점을 차수 상승시켜 넣는다 — 오프셋을 주면 2차로는 못 만드는 S자·깊은 감김이 된다.
 			// 끝점은 t=0/1 에서 Start/Target 그대로라 착지 시각·착지점은 제어점과 무관하다.
 			const float u = 1.f - t;
-			const FVector Pos = u * u * A.Start + 2.f * u * t * A.Ctrl + t * t * A.Target;
+			const FVector Pos = u * u * u * A.Start
+			                  + 3.f * u * u * t * A.Ctrl1
+			                  + 3.f * u * t * t * A.Ctrl2
+			                  + t * t * t * A.Target;
 
 			Transforms[i].GetMutableTransform().SetLocation(Pos);
 

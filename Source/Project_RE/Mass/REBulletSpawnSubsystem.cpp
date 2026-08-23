@@ -71,7 +71,7 @@ void UREBulletSpawnSubsystem::EnsureArcArchetype(FMassEntityManager& EntityManag
 
 FMassEntityHandle UREBulletSpawnSubsystem::SpawnArcBullet(FVector Start, FVector Target, float FlightTime,
                                                           float MaxHeight, float Damage, float Radius, float InElapsed,
-                                                          FVector CtrlOffset)
+                                                          FVector CtrlOffset, FVector Ctrl1Offset, FVector Ctrl2Offset)
 {
 	FMassEntityManager* EM = GetEntityManager();
 	if (!EM)
@@ -89,8 +89,12 @@ FMassEntityHandle UREBulletSpawnSubsystem::SpawnArcBullet(FVector Start, FVector
 	Arc.Start      = Start;
 	Arc.Target     = Target;
 	// 제어점을 여기서 한 번만 굳힌다 — 매 프레임 다시 만들면 Sim 이 MaxHeight 와 오프셋을
-	// 둘 다 들고 있어야 한다. CtrlOffset 이 0 이면 기존 포물선과 대수적으로 같은 궤적이다.
-	Arc.Ctrl       = (Start + Target) * 0.5f + FVector(0.f, 0.f, 2.f * MaxHeight) + CtrlOffset;
+	// 전부 들고 있어야 한다.
+	// C 는 2차 제어점이고, 아래 ⅔ 식이 그 2차 곡선을 **같은 곡선인 채로** 3차로 차수 상승시킨다.
+	// 세 오프셋이 모두 0 이면 결과가 기존 포물선과 대수적으로 같다.
+	const FVector C = (Start + Target) * 0.5f + FVector(0.f, 0.f, 2.f * MaxHeight) + CtrlOffset;
+	Arc.Ctrl1      = Start  + (C - Start)  * (2.f / 3.f) + Ctrl1Offset;
+	Arc.Ctrl2      = Target + (C - Target) * (2.f / 3.f) + Ctrl2Offset;
 	Arc.FlightTime = FlightTime;
 	Arc.Elapsed    = InElapsed;
 	Arc.Damage     = Damage;
@@ -104,6 +108,6 @@ void UREBulletSpawnSubsystem::SpawnArcBulletBatch(TConstArrayView<REBulletPatter
 	for (const REBulletPattern::FArcBulletSpawnParams& P : Params)
 	{
 		SpawnArcBullet(P.Start, P.Target, P.FlightTime, P.MaxHeight, P.Damage, P.Radius, P.Elapsed,
-		               P.CtrlOffset);
+		               P.CtrlOffset, P.Ctrl1Offset, P.Ctrl2Offset);
 	}
 }
