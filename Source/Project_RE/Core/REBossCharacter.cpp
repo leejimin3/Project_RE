@@ -335,7 +335,13 @@ void AREBossCharacter::BeginPhase()
 	// 여기(타이머 재진입 콜백)에서 매번 조회한다. 첫 페이즈 Spiral 고정이
 	// profiling 시작 오염 창을 닫는다.
 	static IConsoleVariable* KeepFiring = IConsoleManager::Get().FindConsoleVariable(TEXT("re.Profiling.KeepFiring"));
-	if (KeepFiring && KeepFiring->GetInt() != 0)
+	// **패턴을 고정했으면 이 우회를 타지 않는다.** 안 그러면 BossPattern 을 뭘로 주든 Spiral 이
+	// 측정된다 — 패턴별 p99 를 낼 수 없었던 이유가 이것이다.
+	// 고정 시에는 페이즈 구조(발사 구간 + Rest)를 그대로 돌린다: 폭풍의 스윕 인덱스처럼
+	// 페이즈 단위로 리셋되는 상태가 있어, 우회하면 그 상태가 눌어붙어 실제 플레이와 다른 것을 잰다.
+	// Rest 프레임이 섞이지만 값이 싸서 p99(상위 1%)에는 사실상 영향이 없다.
+	if (KeepFiring && KeepFiring->GetInt() != 0
+		&& CVarBossPattern.GetValueOnGameThread() < 0)
 	{
 		CurrentPhasePattern = EBulletPattern::Spiral;
 		GetWorldTimerManager().SetTimer(FireTimer, this,
@@ -423,6 +429,15 @@ void AREBossCharacter::BeginPhase()
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[RE] Boss Phase: %s %.1fs"), PhaseName, PhaseSec);
+
+	// 패턴 고정 프로파일링의 캡처 시작 신호. 정상상태에 든 뒤부터 재야 하므로 몇 페이즈
+	// 흘려보낸다 — 직선탄 수명이 ini 기본 15초라 한 페이즈(5~9초)로는 안 찬다.
+	// 기존 신호는 Spiral 클로즈드루프 안에 있어 다른 패턴에서는 발화하지 않는다.
+	if (Forced >= 0 && ++ForcedPhaseCount == ProfileWarmupPhases)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[RE] Profile capture start (forced pattern, phase %d)"), ForcedPhaseCount);
+		CSV_EVENT_GLOBAL(TEXT("REBulletsFilled"));
+	}
 
 	// 외관/애님 인트로를 페이즈 시작에 알린다 (#130). 발사 Multicast가 패턴을 싣고 있지만
 	// 그건 첫 탄이 나간 뒤에야 도착한다 — "전환이 끝난 뒤 발사"를 하려면 전환 시작을

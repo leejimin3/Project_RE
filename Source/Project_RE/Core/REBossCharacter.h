@@ -138,6 +138,12 @@ private:
 	FRandomStream PhaseRng;
 	EBulletPattern CurrentPhasePattern = EBulletPattern::Spiral;
 	bool bFirstPhase = true;    // 첫 페이즈만 no-repeat 제약 예외 (무제약 랜덤 시작)
+	/**
+	 *  패턴 고정 프로파일링에서 페이즈 진입 횟수. 캡처 시작 신호를 이 값으로 낸다 —
+	 *  기존 신호(REBulletsFilled)는 Spiral 클로즈드루프 안에서만 발화해 다른 패턴은
+	 *  캡처가 영영 시작되지 않았다.
+	 */
+	int32 ForcedPhaseCount = 0;
 	FTimerHandle FireTimer;     // 페이즈 내 발사 반복
 	FTimerHandle PhaseTimer;    // 페이즈 종료/대기 전환
 
@@ -156,6 +162,12 @@ private:
 	 *  눈에 거슬린다. 인덱스에 비례해 수명을 깎아 흩어지며 사라지게 한다.
 	 */
 	static constexpr float VolleyDeathSpreadSec = 0.8f;
+
+	/**
+	 *  패턴 고정 프로파일링에서 캡처 전에 흘려보낼 페이즈 수. 직선탄 수명이 ini 기본 15초라
+	 *  한 페이즈(5~9초)로는 정상상태에 못 든다 — 3이면 최소 15초를 확보한다.
+	 */
+	static constexpr int32 ProfileWarmupPhases = 3;
 
 	static constexpr float SpiralPhaseSec     = 5.f;
 	static constexpr float FanPhaseSec        = 3.f;
@@ -205,10 +217,14 @@ private:
 	static constexpr float LissaPhaseSec     = 9.f;
 	/**
 	 *  아레나 전체(Extent 1900)를 덮으려고 곡선이 길어져 표본이 60→150 으로 늘었고,
-	 *  착지율이 120→300/s 로 뛰어 15.17ms(게이트 16.6)가 됐다. 간격으로 되돌린다:
-	 *  150/1.0 = 150/s. 겹수는 2.5 라 곡선 가독성도 유지된다.
+	 *  착지율이 120→300/s 로 뛰어 15.17ms(게이트 16.6)가 됐다. 간격으로 되돌린다.
+	 *
+	 *  1.0(150/s)에서 패턴 15개 중 **최악**이었다: p99 14.95ms(720p) / 15.55ms(1080p).
+	 *  런 간 노이즈가 ±0.9ms 라 게이트까지 1.05ms 는 방어됐다고 말할 폭이 아니다.
+	 *  1.3(115/s)으로 낮춘다 — 겹수는 2.5/1.3 = 1.9 라 곡선 가독성은 그대로다
+	 *  (RoseField·Spirograph 가 겹수 1로도 읽힌다).
 	 */
-	static constexpr float LissaFireInterval = 1.0f;
+	static constexpr float LissaFireInterval = 1.3f;
 	static constexpr float LissaFlightTime   = 2.5f;
 	static constexpr float LissaMaxHeight    = 350.f;
 	/**
