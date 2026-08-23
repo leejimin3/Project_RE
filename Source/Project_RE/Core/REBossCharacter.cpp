@@ -35,15 +35,47 @@ static TAutoConsoleVariable<int32> CVarBulletCount(
 
 /**
  *  검증/튜닝용 패턴 고정. -1(기본) = 정상 랜덤 로테이션.
- *  인덱스는 BeginPhase 의 Pool 순서다: 0=Spiral, 1=Fan, 2=Artillery, 3=ArtilleryStorm.
+ *  인덱스는 BeginPhase 의 Pool 순서다(enum 순서가 아니다) — 전체 목록은 아래 헬프 문자열에 있다.
  *  (Homing 은 백로그 스텁이라 Pool 에 없다.)
  *  페이즈 진입 시점 조회 — 재시작 없이 다음 페이즈부터 반영된다.
  */
 static TAutoConsoleVariable<int32> CVarBossPattern(
 	TEXT("re.Debug.BossPattern"),
 	-1,
-	TEXT("검증용: -1=정상 로테이션, 0=Spiral 1=Fan 2=Artillery 3=ArtilleryStorm 고정."),
+	TEXT("검증용: -1=정상 로테이션, 0=Spiral 1=Fan 2=Artillery 3=ArtilleryStorm 4=RoseEnvelope "
+	     "5=Cardioid 6=LissajousStorm 7=BezierVortex "
+	     "8=StarBloom 9=LemniscateBloom 10=SuperformulaBloom "
+	     "11=RoseField 12=AerialDome 13=Spirograph 14=MicroMissile 고정."),
 	ECVF_Cheat);
+
+namespace REBoss
+{
+	/**
+	 *  곡사(포물선 착지 + 마커) 계열인가. 발사 라우팅과 RPC 구현 양쪽이 이걸로 갈린다 —
+	 *  두 곳에 각각 나열하면 패턴을 늘릴 때 한쪽만 고쳐 조용히 어긋난다.
+	 */
+	static bool IsArcPattern(EBulletPattern P)
+	{
+		return P == EBulletPattern::Artillery
+			|| P == EBulletPattern::ArtilleryStorm
+			|| P == EBulletPattern::LissajousStorm
+			|| P == EBulletPattern::BezierVortex
+			|| P == EBulletPattern::RoseField
+			|| P == EBulletPattern::AerialDome
+			|| P == EBulletPattern::Spirograph
+			|| P == EBulletPattern::MicroMissile;
+	}
+
+	/**
+	 *  곡선 블룸 계열인가. 발사 입력(각 미사용·발수 상수)과 클라 생성 분기가 이걸로 갈린다.
+	 */
+	static bool IsBloomPattern(EBulletPattern P)
+	{
+		return P == EBulletPattern::StarBloom
+			|| P == EBulletPattern::LemniscateBloom
+			|| P == EBulletPattern::SuperformulaBloom;
+	}
+}
 
 // #51 클로즈드루프 적분 게인. 수명 지연(수명/발사주기 ≈ 30발) 대비 크면 진동한다.
 // 튜닝 노브(리빌드 없이 -ExecCmds로 스윕). 기본값은 실측으로 확정.
@@ -151,6 +183,53 @@ AREBossCharacter::FBossLook AREBossCharacter::LookForPattern(EBulletPattern Patt
 		Look.Lava = StormLavaAmount;
 		Look.Emis = FLinearColor(1.0f, 0.85f, 0.2f, 1.0f);
 		break;
+	case EBulletPattern::RoseEnvelope:
+		// 질감 축(Snow/Lava)에는 남는 조합이 없다 — Fan 이 Snow, 곡사 둘이 Lava 를 쓴다.
+		// Spiral 과 같은 화강암에 이미시브만 보라로 가른다(빨강/청록/주황/금색과 안 겹친다).
+		Look.Emis = FLinearColor(0.70f, 0.10f, 1.0f, 1.0f);
+		break;
+	//~ 아래 다섯은 (질감, 색) 쌍이 위와 겹치지 않도록 배분했다 — 색만으로는 10개가 안 갈린다.
+	case EBulletPattern::Cardioid:
+		// 색만 주황으로 가르면 Spiral(회색 화강암 + 빨강)과 화면에서 잘 안 갈렸다 —
+		// 실제로 그랬다. 질감까지 흰 화강암으로 바꾼다(흰 화강암 + 주황은 남는 조합이다).
+		Look.Snow = CardioidSnowAmount;
+		Look.Emis = FLinearColor(1.0f, 0.45f, 0.05f, 1.0f);
+		break;
+	case EBulletPattern::LissajousStorm:
+		Look.Lava = LissaLavaAmount;                          // 용암 + 연두
+		Look.Emis = FLinearColor(0.55f, 1.0f, 0.20f, 1.0f);
+		break;
+	case EBulletPattern::BezierVortex:
+		Look.Snow = VortexSnowAmount;                         // 흰 화강암 + 진파랑
+		Look.Emis = FLinearColor(0.10f, 0.25f, 1.0f, 1.0f);
+		break;
+	//~ 블룸 3종은 질감을 안 쓴다(회색 화강암) — 색만으로 가른다. 위에서 회색 화강암을 쓰는 건
+	//  Spiral(빨강)과 Rose(보라)뿐이라 아래 셋과 안 겹친다.
+	case EBulletPattern::StarBloom:
+		Look.Emis = FLinearColor(1.0f, 0.90f, 0.40f, 1.0f);   // 회색 화강암 + 담금색
+		break;
+	case EBulletPattern::LemniscateBloom:
+		Look.Emis = FLinearColor(0.10f, 0.90f, 0.90f, 1.0f);  // 회색 화강암 + 청록
+		break;
+	case EBulletPattern::SuperformulaBloom:
+		Look.Emis = FLinearColor(0.30f, 1.0f, 0.40f, 1.0f);   // 회색 화강암 + 연녹
+		break;
+	case EBulletPattern::RoseField:
+		Look.Lava = RoseFieldLavaAmount;                      // 용암 + 진파랑
+		Look.Emis = FLinearColor(0.20f, 0.35f, 1.0f, 1.0f);
+		break;
+	case EBulletPattern::AerialDome:
+		Look.Snow = DomeSnowAmount;                           // 흰 화강암 + 자홍
+		Look.Emis = FLinearColor(1.0f, 0.20f, 0.70f, 1.0f);
+		break;
+	case EBulletPattern::MicroMissile:
+		Look.Snow = MicroSnowAmount;                          // 흰 화강암 + 경고등 빨강
+		Look.Emis = FLinearColor(1.0f, 0.15f, 0.10f, 1.0f);
+		break;
+	case EBulletPattern::Spirograph:
+		Look.Lava = SpiroLavaAmount;                          // 용암 + 청록
+		Look.Emis = FLinearColor(0.15f, 0.80f, 0.95f, 1.0f);
+		break;
 	default: break;
 	}
 	return Look;
@@ -230,7 +309,7 @@ void AREBossCharacter::Multicast_BeginPhaseLook_Implementation(EBulletPattern Pa
 	StartPatternLook(Pattern);
 
 	// 곡사 계열만 도약으로 예고한다. 발사는 이 인트로가 끝난 뒤 시작한다(BeginPhase).
-	if (Pattern == EBulletPattern::Artillery || Pattern == EBulletPattern::ArtilleryStorm)
+	if (REBoss::IsArcPattern(Pattern))
 	{
 		PlayLeap();
 	}
@@ -256,7 +335,13 @@ void AREBossCharacter::BeginPhase()
 	// 여기(타이머 재진입 콜백)에서 매번 조회한다. 첫 페이즈 Spiral 고정이
 	// profiling 시작 오염 창을 닫는다.
 	static IConsoleVariable* KeepFiring = IConsoleManager::Get().FindConsoleVariable(TEXT("re.Profiling.KeepFiring"));
-	if (KeepFiring && KeepFiring->GetInt() != 0)
+	// **패턴을 고정했으면 이 우회를 타지 않는다.** 안 그러면 BossPattern 을 뭘로 주든 Spiral 이
+	// 측정된다 — 패턴별 p99 를 낼 수 없었던 이유가 이것이다.
+	// 고정 시에는 페이즈 구조(발사 구간 + Rest)를 그대로 돌린다: 폭풍의 스윕 인덱스처럼
+	// 페이즈 단위로 리셋되는 상태가 있어, 우회하면 그 상태가 눌어붙어 실제 플레이와 다른 것을 잰다.
+	// Rest 프레임이 섞이지만 값이 싸서 p99(상위 1%)에는 사실상 영향이 없다.
+	if (KeepFiring && KeepFiring->GetInt() != 0
+		&& CVarBossPattern.GetValueOnGameThread() < 0)
 	{
 		CurrentPhasePattern = EBulletPattern::Spiral;
 		GetWorldTimerManager().SetTimer(FireTimer, this,
@@ -267,9 +352,13 @@ void AREBossCharacter::BeginPhase()
 	// 완전 랜덤 로테이션. 같은 패턴 2연속 금지, 첫 페이즈 무제약(Spiral 고정 없음).
 	// enum 순서(Spiral=0,Fan=1,Homing=2,Artillery=3)와 로테이션 인덱스가 다르므로 풀 배열로 매핑.
 	// Homing은 백로그 스텁이라 풀에서 제외.
-	static const EBulletPattern Pool[4] = {
+	static const EBulletPattern Pool[15] = {
 		EBulletPattern::Spiral, EBulletPattern::Fan, EBulletPattern::Artillery,
-		EBulletPattern::ArtilleryStorm };
+		EBulletPattern::ArtilleryStorm, EBulletPattern::RoseEnvelope, EBulletPattern::Cardioid,
+		EBulletPattern::LissajousStorm, EBulletPattern::BezierVortex,
+		EBulletPattern::StarBloom, EBulletPattern::LemniscateBloom, EBulletPattern::SuperformulaBloom,
+		EBulletPattern::RoseField, EBulletPattern::AerialDome, EBulletPattern::Spirograph,
+		EBulletPattern::MicroMissile };
 	EBulletPattern NewPattern;
 	const int32 Forced = CVarBossPattern.GetValueOnGameThread();
 	if (Forced >= 0)
@@ -296,24 +385,59 @@ void AREBossCharacter::BeginPhase()
 	{
 		// 폭풍의 착지 모양은 시간의 함수라 Shape 열거로 표현되지 않는다 — 로그 표기용으로만 고정한다.
 		CurrentArtilleryShape = EArtilleryShape::Spiral;
-		StormVolleyIdx = 0;   // 스윕은 페이즈마다 안쪽에서 다시 시작한다
+		PhaseVolleyIdx = 0;   // 스윕은 페이즈마다 안쪽에서 다시 시작한다
+	}
+	else if (CurrentPhasePattern == EBulletPattern::MicroMissile)
+	{
+		PhaseVolleyIdx = 0;   // 방향 순환도 페이즈마다 동쪽에서 다시 시작한다
 	}
 
 	float PhaseSec = SpiralPhaseSec;
-	float FireInterval = REBulletPattern::FireIntervalSec();
+	const float FireInterval = FireIntervalFor(CurrentPhasePattern);   // 단일 출처
 	const TCHAR* PhaseName = TEXT("Spiral");
 	switch (CurrentPhasePattern)
 	{
 	case EBulletPattern::Fan:
-		PhaseSec = FanPhaseSec; FireInterval = FanFireIntervalSec; PhaseName = TEXT("Fan"); break;
+		PhaseSec = FanPhaseSec; PhaseName = TEXT("Fan"); break;
 	case EBulletPattern::Artillery:
-		PhaseSec = ArtilleryPhaseSec; FireInterval = ArtilleryFireInterval; PhaseName = TEXT("Artillery"); break;
+		PhaseSec = ArtilleryPhaseSec; PhaseName = TEXT("Artillery"); break;
 	case EBulletPattern::ArtilleryStorm:
-		PhaseSec = StormPhaseSec; FireInterval = StormFireInterval; PhaseName = TEXT("ArtilleryStorm"); break;
+		PhaseSec = StormPhaseSec; PhaseName = TEXT("ArtilleryStorm"); break;
+	case EBulletPattern::RoseEnvelope:
+		PhaseSec = RosePhaseSec; PhaseName = TEXT("RoseEnvelope"); break;
+	case EBulletPattern::Cardioid:
+		PhaseSec = CardioidPhaseSec; PhaseName = TEXT("Cardioid"); break;
+	case EBulletPattern::LissajousStorm:
+		PhaseSec = LissaPhaseSec; PhaseName = TEXT("LissajousStorm"); break;
+	case EBulletPattern::BezierVortex:
+		PhaseSec = VortexPhaseSec; PhaseName = TEXT("BezierVortex"); break;
+	case EBulletPattern::StarBloom:
+		PhaseSec = StarBloomPhaseSec; PhaseName = TEXT("StarBloom"); break;
+	case EBulletPattern::LemniscateBloom:
+		PhaseSec = LemniPhaseSec; PhaseName = TEXT("LemniscateBloom"); break;
+	case EBulletPattern::SuperformulaBloom:
+		PhaseSec = SuperPhaseSec; PhaseName = TEXT("SuperformulaBloom"); break;
+	case EBulletPattern::RoseField:
+		PhaseSec = RoseFieldPhaseSec; PhaseName = TEXT("RoseField"); break;
+	case EBulletPattern::AerialDome:
+		PhaseSec = DomePhaseSec; PhaseName = TEXT("AerialDome"); break;
+	case EBulletPattern::Spirograph:
+		PhaseSec = SpiroPhaseSec; PhaseName = TEXT("Spirograph"); break;
+	case EBulletPattern::MicroMissile:
+		PhaseSec = MicroPhaseSec; PhaseName = TEXT("MicroMissile"); break;
 	default: break;   // Spiral 기본값
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[RE] Boss Phase: %s %.1fs"), PhaseName, PhaseSec);
+
+	// 패턴 고정 프로파일링의 캡처 시작 신호. 정상상태에 든 뒤부터 재야 하므로 몇 페이즈
+	// 흘려보낸다 — 직선탄 수명이 ini 기본 15초라 한 페이즈(5~9초)로는 안 찬다.
+	// 기존 신호는 Spiral 클로즈드루프 안에 있어 다른 패턴에서는 발화하지 않는다.
+	if (Forced >= 0 && ++ForcedPhaseCount == ProfileWarmupPhases)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[RE] Profile capture start (forced pattern, phase %d)"), ForcedPhaseCount);
+		CSV_EVENT_GLOBAL(TEXT("REBulletsFilled"));
+	}
 
 	// 외관/애님 인트로를 페이즈 시작에 알린다 (#130). 발사 Multicast가 패턴을 싣고 있지만
 	// 그건 첫 탄이 나간 뒤에야 도착한다 — "전환이 끝난 뒤 발사"를 하려면 전환 시작을
@@ -328,14 +452,36 @@ void AREBossCharacter::BeginPhase()
 		&AREBossCharacter::EndPhase, PhaseSec + LookIntroSec, /*bLoop=*/false);
 }
 
+float AREBossCharacter::FireIntervalFor(EBulletPattern P)
+{
+	switch (P)
+	{
+	case EBulletPattern::Fan:               return FanFireIntervalSec;
+	case EBulletPattern::Artillery:         return ArtilleryFireInterval;
+	case EBulletPattern::ArtilleryStorm:    return StormFireInterval;
+	case EBulletPattern::LissajousStorm:    return LissaFireInterval;
+	case EBulletPattern::BezierVortex:      return VortexFireInterval;
+	case EBulletPattern::RoseField:         return RoseFieldFireInterval;
+	case EBulletPattern::AerialDome:        return DomeFireInterval;
+	case EBulletPattern::Spirograph:        return SpiroFireInterval;
+	case EBulletPattern::MicroMissile:      return MicroFireInterval;
+	//~ 블룸 3종은 전용 간격을 쓴다 — 복사본 간 반경 간격이 이 값에 비례해서,
+	//  Spiral 의 0.15 를 쓰면 간격이 탄 지름보다 좁아져 도형이 뭉갠다(BloomFireInterval 주석).
+	case EBulletPattern::StarBloom:
+	case EBulletPattern::LemniscateBloom:
+	case EBulletPattern::SuperformulaBloom: return BloomFireInterval;
+	//~ Spiral / RoseEnvelope / Cardioid 는 링 지오메트리가 같아 ini 기본 주기를 공유한다.
+	default:                                return REBulletPattern::FireIntervalSec();
+	}
+}
+
 void AREBossCharacter::FireCurrentPattern()
 {
 	if (bIsDead)
 	{
 		return;
 	}
-	if (CurrentPhasePattern == EBulletPattern::Artillery
-		|| CurrentPhasePattern == EBulletPattern::ArtilleryStorm)
+	if (REBoss::IsArcPattern(CurrentPhasePattern))
 	{
 		FireArtillery();
 		return;
@@ -350,15 +496,30 @@ void AREBossCharacter::FireCurrentPattern()
 	float AngleDeg = 0.f;
 	int32 Count    = 0;
 
-	if (CurrentPhasePattern == EBulletPattern::Spiral)
+	if (CurrentPhasePattern == EBulletPattern::Spiral
+		|| CurrentPhasePattern == EBulletPattern::RoseEnvelope)
 	{
+		// 장미도 균등 링이라 서버가 정할 게 Spiral과 같다 — 링 시작각과 발사당 탄 수뿐이다.
+		// 로브 위상은 ServerTime 에서 순수 유도되므로 페이로드에 실을 값이 없다 (#84).
 		Count    = ResolveSpiralCount();
 		AngleDeg = SpiralBaseAngleDeg;
 		SpiralBaseAngleDeg += SpiralRotationStepDeg;   // 다음 발사에 회전
 	}
-	else   // Fan
+	else if (REBoss::IsBloomPattern(CurrentPhasePattern))
 	{
-		Count = REBulletPattern::FFanParams().Count;
+		// 블룸은 모양을 스폰 위치로 직접 그린다 — 서버가 정할 건 표본 수뿐이다.
+		// 회전·변태 위상은 클라가 ServerTime 에서 순수 유도하므로 각 자리는 비워 보낸다 (#84).
+		switch (CurrentPhasePattern)
+		{
+		case EBulletPattern::StarBloom:         Count = StarBloomVerts * StarBloomSegPerEdge; break;
+		case EBulletPattern::LemniscateBloom:   Count = LemniCount; break;
+		default:                                Count = SuperCount; break;   // SuperformulaBloom
+		}
+	}
+	else   // Fan / Cardioid — 둘 다 페이로드의 각을 '플레이어 조준'에 쓴다
+	{
+		Count = (CurrentPhasePattern == EBulletPattern::Cardioid)
+			? CardioidCount : REBulletPattern::FFanParams().Count;
 		// 플레이어 방향 조준. 폰 없으면 0°(기존 기본) 폴백.
 		// 클라는 이 각을 유도할 수 없다(복제 위치가 서버와 다름) → 페이로드로 보낸다.
 		// 최근접 생존자를 조준한다 (#85). 전원 사망이면 0° 폴백 — 곧 EndGame이 발사를 끊는다.
@@ -425,12 +586,19 @@ void AREBossCharacter::FireArtillery()
 	// 클라는 PhaseRng가 없으므로 이 시드로 로컬 스트림을 만들어 같은 착지점을 얻는다.
 	const int32 CallSeed = (int32)PhaseRng.GetUnsignedInt();
 
-	// 스윕 진행도의 분자. 볼리 인덱스로 낸다 — 프레임률과 무관하게 페이즈당 정확히 한 번 훑는다.
+	// 볼리 일련번호. 프레임률과 무관하게 볼리마다 정확히 1씩 는다 — 폭풍은 스윕 진행도의
+	// 분자로, 마이크로 미사일은 발사 방향 순환 인덱스로 쓴다.
 	// 서버 전용 상태이므로 클라는 유도할 수 없다 → 페이로드로 보낸다 (#84).
+	//
+	// 마이크로 미사일에서 ServerTime 파생을 안 쓰는 이유: 타이머가 ±5ms 흔들려
+	// floor(ServerTime/Interval) 이 인덱스를 건너뛰거나 반복한다(실측 간격 104/98/103/97/105ms).
+	// 그러면 동→서→북→남 순환이 깨져 연속한 두 발이 인접 방향에서 오기도 한다.
+	// 카운터는 지터와 무관하게 정확히 1씩 는다.
 	int32 SweepIdx = 0;
-	if (CurrentPhasePattern == EBulletPattern::ArtilleryStorm)
+	if (CurrentPhasePattern == EBulletPattern::ArtilleryStorm
+		|| CurrentPhasePattern == EBulletPattern::MicroMissile)
 	{
-		SweepIdx = StormVolleyIdx++;
+		SweepIdx = PhaseVolleyIdx++;
 	}
 
 	Multicast_FireArtillery(CurrentPhasePattern, CurrentArtilleryShape, BossLoc, PlayerLoc, CallSeed,
@@ -449,12 +617,49 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 		return;
 	}
 
-	// 두 곡사 페이즈가 이 경로를 공유한다 — 갈리는 것은 체공/고도/발수뿐이다.
+	// 곡사 계열 네 패턴이 이 경로를 공유한다 — 갈리는 것은 체공/고도/발수와 착지 지오메트리뿐이다.
 	// 클라는 페이즈 로직을 안 돌리므로 어느 쪽인지 페이로드로 받아야 한다 (#84).
-	const bool  bStorm     = (Pattern == EBulletPattern::ArtilleryStorm);
-	const float FlightTime = bStorm ? StormFlightTime : ArtilleryFlightTime;
-	const float MaxHeight  = bStorm ? StormMaxHeight  : ArtilleryMaxHeight;
-	const int32 Count      = bStorm ? StormCount      : ArtilleryCount;
+	const bool bStorm  = (Pattern == EBulletPattern::ArtilleryStorm);
+	const bool bLissa  = (Pattern == EBulletPattern::LissajousStorm);
+	const bool bVortex = (Pattern == EBulletPattern::BezierVortex);
+	const bool bRoseF  = (Pattern == EBulletPattern::RoseField);
+	const bool bDome   = (Pattern == EBulletPattern::AerialDome);
+	const bool bSpiro  = (Pattern == EBulletPattern::Spirograph);
+	const bool bMicro  = (Pattern == EBulletPattern::MicroMissile);
+	// 아래 셋은 바닥에 그래프를 그리고 3차 제어점으로 가는 길을 성형한다.
+	const bool bShaped = bRoseF || bDome || bSpiro;
+
+	float FlightTime = ArtilleryFlightTime;
+	float MaxHeight  = ArtilleryMaxHeight;   // 소용돌이는 탄마다 덮어쓴다(층 만들기)
+	int32 Count      = ArtilleryCount;
+	if (bStorm)
+	{
+		FlightTime = StormFlightTime;  MaxHeight = StormMaxHeight;  Count = StormCount;
+	}
+	else if (bLissa)
+	{
+		FlightTime = LissaFlightTime;  MaxHeight = LissaMaxHeight;  Count = LissaCount;
+	}
+	else if (bVortex)
+	{
+		FlightTime = VortexFlightTime; MaxHeight = VortexMaxHeight; Count = VortexCount;
+	}
+	else if (bRoseF)
+	{
+		FlightTime = RoseFieldFlightTime; MaxHeight = RoseFieldMaxHeight; Count = RoseFieldCount;
+	}
+	else if (bDome)
+	{
+		FlightTime = DomeFlightTime;      MaxHeight = DomeMaxHeight;      Count = DomeCount;
+	}
+	else if (bSpiro)
+	{
+		FlightTime = SpiroFlightTime;     MaxHeight = SpiroMaxHeight;     Count = SpiroCount;
+	}
+	else if (bMicro)
+	{
+		FlightTime = MicroFlightTime;     MaxHeight = MicroMaxHeight;     Count = MicroCount;
+	}
 
 	// 지연 보정 — 이미 착지한 탄은 스폰하지 않는다. 착지점 생성·난수 뽑기보다 먼저 검사해 헛수고를 막는다.
 	const float Elapsed = GetElapsedSince(ServerTime);
@@ -487,27 +692,71 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 		Targets = REBulletPattern::GenSweepSpiral(BossLoc, StormMinRadius, StormMaxRadius,
 		                                          StormSweepTurns, T0, T1, Count, StormArms, GroundZ);
 	}
+	else if (bLissa)
+	{
+		// 볼리 하나가 매듭 전체를 그린다. 위상을 ServerTime 에서 유도해 복제 없이 양쪽이 맞춘다.
+		Targets = REBulletPattern::GenLissajous(BossLoc, LissaExtent, LissaExtent,
+		                                        LissaFreqX, LissaFreqY,
+		                                        LissaDeltaDegPerSec * ServerTime, Count, GroundZ);
+	}
+	else if (bVortex)
+	{
+		// 착지 링을 볼리마다 돌린다 — 안 돌리면 같은 자리에 계속 떨어져 소용돌이가 안 이어진다.
+		// 반경은 톱니로 팽창한다 — 고정 링이면 그 띠 밖은 영영 안전하다. AerialDome 과 같은
+		// 수법이고 위상을 ServerTime 에서 뽑으므로 페이로드도 서버 상태도 필요 없다 (#84).
+		const float VPhase  = FMath::Frac(ServerTime / VortexExpandSec);
+		const float VRadius = FMath::Lerp(VortexMinRadius, VortexMaxRadius, VPhase);
+		Targets = REBulletPattern::GenRing(BossLoc, VRadius, Count, GroundZ,
+		                                   VortexSpinDegPerSec * ServerTime);
+	}
+	else if (bRoseF)
+	{
+		Targets = REBulletPattern::GenRoseCurve(BossLoc, RoseFieldRadius, RoseFieldPetals,
+		                                        RoseFieldSpinDegPerSec * ServerTime, Count, GroundZ);
+	}
+	else if (bDome)
+	{
+		// 링 반경이 톱니로 팽창한다 — 고정 링이면 가운데와 바깥이 영영 안전하다.
+		// 위상을 ServerTime 에서 뽑으므로 페이로드도 서버 상태도 필요 없다 (#84).
+		const float Phase  = FMath::Frac(ServerTime / DomeExpandSec);
+		const float Radius = FMath::Lerp(DomeMinRadius, DomeMaxRadius, Phase);
+		Targets = REBulletPattern::GenRing(BossLoc, Radius, Count, GroundZ,
+		                                   DomeSpinDegPerSec * ServerTime);
+	}
+	else if (bSpiro)
+	{
+		Targets = REBulletPattern::GenHypotrochoid(BossLoc, SpiroRadius, SpiroBigR, SpiroSmallR,
+		                                           SpiroD, SpiroSpinDegPerSec * ServerTime,
+		                                           Count, GroundZ);
+	}
+	else if (bMicro)
+	{
+		// 목표는 **발사 순간의** 플레이어 위치다(유도가 아니다). 그 자리를 중심으로 좁은
+		// 원판에 균등하게 뿌려 착탄이 카펫처럼 깔리게 한다.
+		// 산포는 서버가 보낸 시드로 만든 스트림을 쓴다 — 양쪽이 같은 난수열을 본다.
+		Targets = REBulletPattern::GenRandom(PlayerLoc, MicroSpread, Count, CallRng, GroundZ);
+	}
 	else
 	{
 		switch (Shape)
 		{
 		case EArtilleryShape::Ring:
-			Targets = REBulletPattern::GenRing(BossLoc, /*Radius=*/500.f, Count, GroundZ);
+			Targets = REBulletPattern::GenRing(BossLoc, /*Radius=*/ArenaRadius * 0.75f, Count, GroundZ);
 			break;
 		case EArtilleryShape::Line:
-			Targets = REBulletPattern::GenLine(BossLoc, PlayerLoc, /*WallLen=*/900.f, Count, GroundZ);
+			Targets = REBulletPattern::GenLine(BossLoc, PlayerLoc, /*WallLen=*/ArenaRadius * 2.f, Count, GroundZ);
 			break;
 		case EArtilleryShape::Grid:
-			Targets = REBulletPattern::GenGrid(BossLoc, /*ExtentX=*/600.f, /*ExtentY=*/600.f, /*Cols=*/4, /*Rows=*/3, GroundZ);
+			Targets = REBulletPattern::GenGrid(BossLoc, ArenaRadius, ArenaRadius, /*Cols=*/4, /*Rows=*/3, GroundZ);
 			break;
 		case EArtilleryShape::Spiral:
-			Targets = REBulletPattern::GenArcSpiral(BossLoc, /*MaxRadius=*/600.f, Count, GroundZ);
+			Targets = REBulletPattern::GenArcSpiral(BossLoc, /*MaxRadius=*/ArenaRadius, Count, GroundZ);
 			break;
 		case EArtilleryShape::PlayerAimed:
 			Targets = REBulletPattern::GenPlayerCluster(PlayerLoc, /*ClusterRadius=*/150.f, /*RingN=*/4, GroundZ);
 			break;
 		case EArtilleryShape::Random:
-			Targets = REBulletPattern::GenRandom(BossLoc, /*ArenaRadius=*/800.f, Count, CallRng, GroundZ);
+			Targets = REBulletPattern::GenRandom(BossLoc, ArenaRadius, Count, CallRng, GroundZ);
 			break;
 		}
 	}
@@ -521,9 +770,77 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 		P.Target     = Targets[i];
 		P.FlightTime = FlightTime;
 		P.MaxHeight  = MaxHeight;
-		P.Damage     = ArtilleryDamage;
-		P.Radius     = ArtilleryRadius;
+		// 마이크로 미사일은 발수가 10배라 발당 데미지를 낮춰야 초당 데미지가 유지된다.
+		P.Damage     = bMicro ? MicroDamage : ArtilleryDamage;
+		// 판정·마커 반경은 패턴의 지오메트리 축척을 따라간다 — 곡선을 그리는 패턴에서
+		// 반경이 크면 선 굵기가 무늬 자체를 뭉갠다.
+		P.Radius     = bLissa ? LissaRadius : (bMicro ? MicroRadius : ArtilleryRadius);
 		P.Elapsed    = Elapsed;
+		if (bMicro)
+		{
+			// 초기 접선을 원주 등분각으로 고정한다 — 목표가 어디든 먼저 그 방향으로 뻗어
+			// 볼리 하나가 부채꼴로 터진다. 볼리마다 부채꼴 전체가 MicroBaseStepDeg 씩 돈다.
+			const float MAng = FMath::DegreesToRadians(
+				SweepIdx * MicroBaseStepDeg + i * (360.f / FMath::Max(Count, 1)));
+			const FVector MDir(FMath::Cos(MAng), FMath::Sin(MAng), 0.f);
+			const REBulletPattern::FArcShapeOffsets Sh =
+				REBulletPattern::ArcCompassLob(P.Start, P.Target, MDir,
+				                               MicroOutDist, MicroRise1, MicroRise2);
+			P.Ctrl1Offset = Sh.Ctrl1;
+			P.Ctrl2Offset = Sh.Ctrl2;
+		}
+		if (bShaped)
+		{
+			// 궤적 성형. 착지점·착지 시각은 제어점과 무관하므로 회피 규칙은 일반 곡사와 같다 —
+			// 바뀌는 건 가는 길뿐이다.
+			REBulletPattern::FArcShapeOffsets Sh;
+			if (bRoseF)
+			{
+				Sh = REBulletPattern::ArcSpiralColumn(P.Start, P.Target, RoseFieldSwirl, RoseFieldRise);
+			}
+			else if (bDome)
+			{
+				Sh = REBulletPattern::ArcDomeShell(P.Start, P.Target, DomeRise);
+			}
+			else   // Spirograph
+			{
+				// 이웃끼리 부호를 뒤집어야 궤적이 엇갈린다 — 같은 부호면 전부 나란히 휜다.
+				const float Swing = ((i & 1) ? 1.f : -1.f) * SpiroSwing;
+				Sh = REBulletPattern::ArcSCurve(P.Start, P.Target, Swing, SpiroRise);
+			}
+			P.Ctrl1Offset = Sh.Ctrl1;
+			P.Ctrl2Offset = Sh.Ctrl2;
+
+			// 어긋내기는 **돔에만** 건다. 폭풍은 Interval(0.05)이 FlightTime 보다 훨씬 작아
+			// 어긋냄이 무시할 수준이지만, 장미밭·스피로그래프는 겹수를 1로 맞추려고 Interval 을
+			// 1.2 까지 올린 탓에 어긋냄이 비행의 79%(1.19/1.5)를 먹었다 — 탄이 보스에서
+			// 출발하지 않고 **착지점 근처에서 튀어나왔다.** 동시에 쏘면 전부 보스에서 뻗는다.
+			if (bDome)
+			{
+				P.Elapsed += DomeFireInterval * (float)(Count - 1 - i) / Count;
+				if (P.Elapsed >= FlightTime)
+				{
+					continue;
+				}
+			}
+		}
+		if (bVortex)
+		{
+			// 고도를 탄마다 어긋내 층을 만든다. 궤적이 정규화 보간이라 높이를 바꿔도 착지
+			// 타이밍은 안 변한다 — 층이 져도 링은 여전히 동시에 떨어진다.
+			const float f = (Targets.Num() > 1) ? ((float)i / (Targets.Num() - 1)) : 0.f;
+			P.MaxHeight  = FMath::Lerp(VortexMinHeight, VortexMaxHeight, f);
+			// 제어점을 접선으로 밀어 직선 대신 휘감아 들어가게 한다. 끝점은 그대로다.
+			P.CtrlOffset = REBulletPattern::ArcSwirlOffset(P.Start, P.Target, VortexSwirl);
+			// 폭풍과 같은 어긋내기. 안 하면 Count 발이 한 프레임에 통째로 나가 소용돌이가
+			// 이어진 리본이 아니라 덩어리로 보인다(실제로 그랬다). 마커는 Target 기반이라
+			// 어긋내기가 안 먹지만 스케일 램프가 Elapsed 를 쓰므로 링도 순차로 자란다.
+			P.Elapsed += VortexFireInterval * (float)(Count - 1 - i) / Count;
+			if (P.Elapsed >= FlightTime)
+			{
+				continue;   // 지연이 커서 이미 착지했을 발은 버린다
+			}
+		}
 		if (bStorm)
 		{
 			// 이 볼리의 슬롯들은 '지난 발사 주기 동안 한 발씩 나간' 것이다. 슬롯 0 이 가장 먼저
@@ -678,9 +995,87 @@ void AREBossCharacter::Multicast_FireDirect_Implementation(EBulletPattern Patter
 		FP.CenterAngleDeg = AngleDeg;
 		Params = REBulletPattern::GenerateFan(Origin, FP);
 	}
+	else if (Pattern == EBulletPattern::RoseEnvelope)
+	{
+		REBulletPattern::FRoseParams RP;
+		RP.Count        = Count;
+		RP.BaseAngleDeg = AngleDeg;
+		RP.Lobes        = RoseLobes;
+		RP.Amp          = RoseAmp;
+		// 로브 위상을 ServerTime 에서 뽑는다 — ShotParity 와 같은 이유다 (#97):
+		// 이 함수는 서버와 클라가 **같은 ServerTime** 으로 실행하므로 복제 없이 무늬가 일치한다.
+		// 로컬 시계나 자체 카운터를 쓰면 멀티캐스트 유실 시 클라마다 로브가 어긋난다.
+		RP.PhaseDeg     = RoseSpinDegPerSec * ServerTime;
+		Params = REBulletPattern::GenerateRose(Origin, RP);
+	}
+	else if (Pattern == EBulletPattern::Cardioid)
+	{
+		REBulletPattern::FCardioidParams CdP;
+		CdP.Count       = Count;
+		CdP.AimAngleDeg = AngleDeg;
+		CdP.Amp         = CardioidAmp;
+		// 링 회전은 ServerTime 에서 유도한다 — 페이로드의 각 자리는 조준이 쓰고 있다 (#84).
+		CdP.RingBaseDeg = CardioidRingSpinDegPerSec * ServerTime;
+		Params = REBulletPattern::GenerateCardioid(Origin, CdP);
+	}
+	else if (REBoss::IsBloomPattern(Pattern))
+	{
+		// 모양을 곡선으로 그린 뒤 한 수법으로 부풀린다 — 곡선만 갈린다.
+		// 회전·변태 위상은 상수와 ServerTime 에서 순수 유도한다(복제 불필요, #84/#97).
+		TArray<FVector2D> Curve;
+		if (Pattern == EBulletPattern::StarBloom)
+		{
+			Curve = REBulletPattern::GenStarPolygon(StarBloomVerts, StarBloomSkip, StarBloomRadius,
+			                                        StarBloomSpinDegPerSec * ServerTime, StarBloomSegPerEdge);
+		}
+		else if (Pattern == EBulletPattern::LemniscateBloom)
+		{
+			Curve = REBulletPattern::GenLemniscate(Count, LemniA, LemniSpinDegPerSec * ServerTime);
+		}
+		else   // SuperformulaBloom
+		{
+			// m 을 삼각함수로 왕복시킨다 — 톱니로 감으면 주기마다 모양이 튄다.
+			const float Cycle = FMath::Sin(2.f * PI * ServerTime / SuperMorphPeriodSec) * 0.5f + 0.5f;
+			const float M     = FMath::Lerp(SuperMMin, SuperMMax, Cycle);
+			Curve = REBulletPattern::GenSuperformula(Count, M, SuperN1, SuperN2, SuperN3,
+			                                         SuperRadius, SuperSpinDegPerSec * ServerTime);
+		}
+		REBulletPattern::FCurveBloomParams BP;
+		BP.ScaleRate = BloomScaleRate;
+		// ini 기본 수명(15초)을 쓰면 도형이 맵 밖까지 부풀어 화면에는 이미 가장자리를 지나간
+		// 잔해만 남는다 — 아레나 가장자리에 닿는 순간 소멸하도록 잘라낸다.
+		BP.Lifetime  = BloomLifetime;
+		Params = REBulletPattern::GenerateCurveBloom(Origin, Curve, BP);
+	}
 	else
 	{
 		return;
+	}
+
+	// 볼리 안에서 한 발씩 나가게 어긋낸다. 안 하면 N발이 같은 프레임에 생기고 **같은
+	// 프레임에 죽는다** — 속력이 제각각인 패턴에서 파면 한 줄이 통째로 증발해 눈에 거슬린다.
+	//
+	// 위치까지 미리 보내면(등속 직선이라 Location += Velocity·Dt 로 정확하다) 볼리가 시간축으로
+	// 번져 발사가 이어져 보인다. 다만 **블룸은 그 번짐이 곧 도형의 축척 차이**라 모양이
+	// 뭉갠다(복사본 간 반경 간격 = R₀·ScaleRate·간격) — 블룸은 위치를 안 건드리고 수명만 흩뜨린다.
+	{
+		const bool  bBloomHere = REBoss::IsBloomPattern(Pattern);
+		const float Interval   = FireIntervalFor(Pattern);
+		const int32 N          = Params.Num();
+		for (int32 i = 0; i < N; ++i)
+		{
+			const float Frac = (N > 1) ? ((float)i / (N - 1)) : 0.f;
+			if (!bBloomHere)
+			{
+				const float Dt = Interval * Frac;
+				Params[i].Location += Params[i].Velocity * Dt;
+				Params[i].Lifetime -= Dt;
+			}
+			// 소멸 시각을 벌린다. 위치 어긋냄만으로는 폭이 발사 주기(0.15s ≈ 9프레임)뿐이라
+			// 여전히 한꺼번에 사라지는 것처럼 보인다.
+			// 하한을 둔다 — 폭이 수명을 넘으면 0수명 탄이 조용히 스폰된다.
+			Params[i].Lifetime = FMath::Max(Params[i].Lifetime - VolleyDeathSpreadSec * Frac, 0.1f);
+		}
 	}
 
 	// 지연 보정. 서버는 발사 시각이 곧 현재라 Elapsed≈0 → 같은 코드가 무보정으로 동작한다.

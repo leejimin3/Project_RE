@@ -20,6 +20,10 @@
 #include "Abilities/GameplayAbility.h"
 #include "Abilities/REGA_Dash.h"
 #include "Mass/REBulletRenderSubsystem.h"
+#include "Mass/REBulletPattern.h"
+#include "Core/REBossCharacter.h"
+#include "HAL/IConsoleManager.h"
+#include "EngineUtils.h"                                    // TActorIterator
 
 namespace
 {
@@ -30,6 +34,13 @@ namespace
 		TEXT("HUD 의 화면상 투사체 수 표시 (0=끔)."),
 		ECVF_Cheat);
 
+	/** 패턴 이름 표시 on/off. 투사체 수와 같은 이유로 따로 끈다(계측·검증용). */
+	static TAutoConsoleVariable<int32> CVarHudPattern(
+		TEXT("re.Debug.HudPattern"),
+		1,
+		TEXT("HUD 의 현재 보스 패턴 이름 표시 (0=끔)."),
+		ECVF_Cheat);
+
 	/** 대쉬 쿨다운 길이. REGE_DashCooldown 의 DurationMagnitude 와 같아야 한다. */
 	constexpr float DashCooldownSec = 2.0f;
 
@@ -37,6 +48,19 @@ namespace
 	const FLinearColor ColorDashReady(0.35f, 0.75f, 1.00f, 1.f);
 	const FLinearColor ColorDashCharging(0.30f, 0.35f, 0.45f, 1.f);
 	const FLinearColor ColorLabel(0.85f, 0.87f, 0.92f, 1.f);
+	/** 치트 줄은 평상시 상태가 아니라는 걸 색으로 먼저 알린다. */
+	const FLinearColor ColorCheat(1.00f, 0.55f, 0.15f, 1.f);
+
+	/**
+	 *  다른 번역 단위에 정의된 CVar 를 이름으로 조회한다. 보스의 KeepFiring 조회와 같은 방식이다 —
+	 *  static TAutoConsoleVariable 은 그 파일 밖에서 심볼로 참조할 수 없다.
+	 *  못 찾으면(등록 전) 꺼진 것으로 본다.
+	 */
+	bool IsCVarOn(const TCHAR* Name)
+	{
+		const IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(Name);
+		return CVar && CVar->GetInt() != 0;
+	}
 
 	UTextBlock* MakeLabel(UWidgetTree* Tree, const TCHAR* Name, int32 Size)
 	{
@@ -125,7 +149,20 @@ bool UREPlayerHudWidget::Initialize()
 	BulletBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("BulletBox"));
 	BulletText = MakeLabel(WidgetTree, TEXT("BulletText"), 20);
 	BulletBox->AddChild(BulletText);
-	AddRow(BulletBox, 0.f);
+	AddRow(BulletBox, 4.f);
+
+	// 패턴 이름도 CVar 로 이 줄만 접는다 — 투사체 수와 같은 구성.
+	PatternBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("PatternBox"));
+	PatternText = MakeLabel(WidgetTree, TEXT("PatternText"), 16);
+	PatternBox->AddChild(PatternText);
+	AddRow(PatternBox, 4.f);
+
+	// 치트 줄은 CVar 토글이 없다 — 켜진 치트가 없으면 스스로 접힌다.
+	CheatBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("CheatBox"));
+	CheatText = MakeLabel(WidgetTree, TEXT("CheatText"), 14);
+	CheatText->SetColorAndOpacity(FSlateColor(ColorCheat));
+	CheatBox->AddChild(CheatText);
+	AddRow(CheatBox, 0.f);
 
 	WidgetTree->RootWidget = Screen;
 	return true;
@@ -138,6 +175,8 @@ void UREPlayerHudWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTi
 	RefreshHealth();
 	RefreshDash();
 	RefreshBulletCount();
+	RefreshPattern();
+	RefreshCheats();
 }
 
 void UREPlayerHudWidget::RefreshHealth()
@@ -244,4 +283,77 @@ void UREPlayerHudWidget::RefreshBulletCount()
 
 	BulletText->SetText(FText::FromString(
 		FString::Printf(TEXT("PROJECTILES  %s"), *FString::FormatAsNumber(Count))));
+}
+
+void UREPlayerHudWidget::RefreshPattern()
+{
+	if (!PatternText || !PatternBox)
+	{
+		return;
+	}
+
+	if (CVarHudPattern.GetValueOnGameThread() == 0)
+	{
+		PatternBox->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
+	// 보스는 하나뿐이고 게임 중 교체되지 않는다 — 캐시가 살아 있으면 훑지 않는다.
+	if (!CachedBoss.IsValid())
+	{
+		if (UWorld* World = GetWorld())
+		{
+			for (TActorIterator<AREBossCharacter> It(World); It; ++It)
+			{
+				CachedBoss = *It;
+				break;
+			}
+		}
+	}
+
+	const AREBossCharacter* Boss = CachedBoss.Get();
+	if (!Boss)
+	{
+		// 보스 스폰 전이거나 사망 후. 줄을 지우면 무슨 일인지 안 보이므로 자리는 남긴다.
+		PatternBox->SetVisibility(ESlateVisibility::HitTestInvisible);
+		PatternText->SetText(FText::FromString(TEXT("PATTERN  -")));
+		return;
+	}
+
+	// enum 이름을 반영으로 뽑는다 — 이름표를 따로 두면 패턴을 늘릴 때 조용히 어긋난다.
+	FString Name = StaticEnum<EBulletPattern>()->GetNameStringByValue((int64)Boss->GetDisplayPattern());
+	PatternBox->SetVisibility(ESlateVisibility::HitTestInvisible);
+	PatternText->SetText(FText::FromString(FString::Printf(TEXT("PATTERN  %s"), *Name)));
+}
+
+void UREPlayerHudWidget::RefreshCheats()
+{
+	if (!CheatText || !CheatBox)
+	{
+		return;
+	}
+
+	TArray<FString> On;
+	// 플레이어 무적. CVar 가 클라 로컬이라 PIE·단독 실행에서만 유효하고 데디에서는 치트
+	// 자체가 안 먹는다(RECharacterBase::TakeDamage 주석) — 여기서 로컬 값을 읽는 것은
+	// 치트의 유효 범위와 정확히 같다.
+	if (IsCVarOn(TEXT("re.Cheat.PlayerInvincible")))
+	{
+		On.Add(TEXT("INVINCIBLE"));
+	}
+	// 측정 하네스용. 보스 TakeDamage 를 0 으로 만들어 보스도 같이 무적이 된다 (#46) —
+	// 안 띄우면 "보스가 왜 안 죽지"로 시간을 버린다.
+	if (IsCVarOn(TEXT("re.Profiling.KeepFiring")))
+	{
+		On.Add(TEXT("BOSS INVULN"));
+	}
+
+	if (On.Num() == 0)
+	{
+		CheatBox->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+	CheatBox->SetVisibility(ESlateVisibility::HitTestInvisible);
+	CheatText->SetText(FText::FromString(
+		FString::Printf(TEXT("CHEAT  %s"), *FString::Join(On, TEXT("  |  ")))));
 }
