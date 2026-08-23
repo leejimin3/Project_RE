@@ -67,18 +67,6 @@ namespace REBoss
 	}
 
 	/**
-	 *  나침반 축 방향(동/서/북/남). 마이크로 미사일의 발사 방향이자 착지점 분산 방향이다 —
-	 *  두 곳이 같은 순서를 봐야 i번째 탄이 i번째 착지점으로 간다.
-	 */
-	static FVector CompassDir(int32 Index)
-	{
-		static const FVector Dirs[4] = {
-			FVector( 1.f,  0.f, 0.f), FVector(-1.f,  0.f, 0.f),
-			FVector( 0.f,  1.f, 0.f), FVector( 0.f, -1.f, 0.f) };
-		return Dirs[Index & 3];
-	}
-
-	/**
 	 *  곡선 블룸 계열인가. 발사 입력(각 미사용·발수 상수)과 클라 생성 분기가 이걸로 갈린다.
 	 */
 	static bool IsBloomPattern(EBulletPattern P)
@@ -728,12 +716,10 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 	}
 	else if (bMicro)
 	{
-		// 목표는 **발사 순간의** 플레이어 위치다(유도가 아니다). 착지점을 그 발의 발사
-		// 방향으로 조금 벌려 연사가 한 점에 뭉치지 않게 한다.
-		// 볼리 일련번호로 방향을 돌린다 — 타이머 지터와 무관하게 동→서→북→남이 정확히 순환한다.
-		const FVector Dir = REBoss::CompassDir(SweepIdx % MicroDirCount);
-		Targets.Add(FVector(PlayerLoc.X + Dir.X * MicroSpread,
-		                    PlayerLoc.Y + Dir.Y * MicroSpread, GroundZ));
+		// 목표는 **발사 순간의** 플레이어 위치다(유도가 아니다). 그 자리를 중심으로 좁은
+		// 원판에 균등하게 뿌려 착탄이 카펫처럼 깔리게 한다.
+		// 산포는 서버가 보낸 시드로 만든 스트림을 쓴다 — 양쪽이 같은 난수열을 본다.
+		Targets = REBulletPattern::GenRandom(PlayerLoc, MicroSpread, Count, CallRng, GroundZ);
 	}
 	else
 	{
@@ -769,16 +755,19 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 		P.Target     = Targets[i];
 		P.FlightTime = FlightTime;
 		P.MaxHeight  = MaxHeight;
-		P.Damage     = ArtilleryDamage;
+		// 마이크로 미사일은 발수가 10배라 발당 데미지를 낮춰야 초당 데미지가 유지된다.
+		P.Damage     = bMicro ? MicroDamage : ArtilleryDamage;
 		// 판정·마커 반경은 패턴의 지오메트리 축척을 따라간다 — 곡선을 그리는 패턴에서
 		// 반경이 크면 선 굵기가 무늬 자체를 뭉갠다.
 		P.Radius     = bLissa ? LissaRadius : (bMicro ? MicroRadius : ArtilleryRadius);
 		P.Elapsed    = Elapsed;
 		if (bMicro)
 		{
-			// 초기 접선을 나침반 축으로 고정한다 — 목표가 어디든 먼저 그 방향으로 뻗는다.
-			// 착지점을 벌릴 때와 **같은 인덱스**를 써야 뻗는 방향과 착탄 쪽이 맞는다.
-			const FVector MDir = REBoss::CompassDir(SweepIdx % MicroDirCount);
+			// 초기 접선을 원주 등분각으로 고정한다 — 목표가 어디든 먼저 그 방향으로 뻗어
+			// 볼리 하나가 부채꼴로 터진다. 볼리마다 부채꼴 전체가 MicroBaseStepDeg 씩 돈다.
+			const float MAng = FMath::DegreesToRadians(
+				SweepIdx * MicroBaseStepDeg + i * (360.f / FMath::Max(Count, 1)));
+			const FVector MDir(FMath::Cos(MAng), FMath::Sin(MAng), 0.f);
 			const REBulletPattern::FArcShapeOffsets Sh =
 				REBulletPattern::ArcCompassLob(P.Start, P.Target, MDir,
 				                               MicroOutDist, MicroRise1, MicroRise2);

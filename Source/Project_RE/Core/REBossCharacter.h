@@ -401,21 +401,24 @@ private:
 	static constexpr float SpiroSwing        = 700.f;
 
 	//~ 마이크로 미사일(MicroMissile) 파라미터.
-	//  곡사 베지어 **한 발씩** 빠르게 연사한다(머신건). **유도가 아니다** — 발사 순간의
-	//  플레이어 위치를 목표로 잡고 궤적이 그 자리에서 완전히 결정된다. 목표점은 곡사 RPC 가
-	//  이미 싣고 다니는 AimLoc 이라 새 페이로드가 필요 없다 (#84).
-	//  발사 방향은 동→서→북→남으로 순환한다. 연속한 두 발이 정반대에서 오므로 한쪽으로만
-	//  도망치면 다음 발에 걸린다 — 위협은 밀도가 아니라 **연사 속도와 방향 교대**에서 나온다.
-	//  순환 인덱스는 서버의 볼리 일련번호(PhaseVolleyIdx)를 페이로드의 SweepIdx 자리에 실어
-	//  보낸다 — 그 자리는 폭풍만 쓰고 있어 비어 있었다. ServerTime 에서 파생하면 타이머
-	//  지터(실측 ±5ms)에 인덱스가 건너뛰어 순환이 깨진다. 클라 로컬 카운터는 멀티캐스트
-	//  유실 시 방향이 어긋나므로 쓸 수 없다 (#97 과 같은 이유).
+	//  볼리 하나가 **방사형 일제 발사**다: 미사일 N발이 보스에서 원주 전 방향으로 동시에
+	//  뻗어 나갔다가 꺾여 한 자리에 쏟아진다. **유도가 아니다** — 발사 순간의 플레이어
+	//  위치를 목표로 잡고 궤적이 그 자리에서 완전히 결정된다. 목표점은 곡사 RPC 가 이미
+	//  싣고 다니는 AimLoc 이라 새 페이로드가 필요 없다 (#84).
+	//
+	//  **여기서 지켜야 할 불변량이 둘 있다.** 이 패턴은 회피 난이도가 아니라 화면 밀도를
+	//  올리는 것이 목적이므로:
+	//    · 치명 영역(산포 + 판정 반경)이 커지면 회피 난이도가 같이 오른다.
+	//    · 발수만 올리면 초당 데미지가 발수에 비례해 뛴다 — 12배로 올리면 스쳐도 즉사한다.
+	//  그래서 발수를 올릴 때 **반경과 발당 데미지를 같이 내린다.**
+	//
+	//  볼리마다 부채꼴 전체가 MicroBaseStepDeg 씩 돌아간다. 회전 인덱스는 서버의 볼리
+	//  일련번호(PhaseVolleyIdx)를 페이로드의 SweepIdx 자리에 실어 보낸다 — 그 자리는 폭풍만
+	//  쓰고 있어 비어 있었다. ServerTime 에서 파생하면 타이머 지터(실측 ±5ms)에 인덱스가
+	//  건너뛴다. 클라 로컬 카운터는 멀티캐스트 유실 시 어긋난다 (#97 과 같은 이유).
 	static constexpr float MicroPhaseSec     = 7.f;
-	/**
-	 *  발사 간격(s) = 머신건의 연사 속도. 초당 10발이고 RPC 도 10/s 다 —
-	 *  ArtilleryStorm 이 20/s 를 쓰므로 대역폭 여유가 있다.
-	 */
-	static constexpr float MicroFireInterval = 0.1f;
+	/** 볼리 주기(s). MicroCount 와 곱해 초당 발수를 낸다: 10/0.08 = 125발/s. RPC 는 12.5/s. */
+	static constexpr float MicroFireInterval = 0.08f;
 	/**
 	 *  체공(s). **이 값이 회피 가능성을 혼자 정한다.**
 	 *  목표는 발사 순간의 플레이어 위치이므로 착지 시점까지 플레이어가 움직인 거리가
@@ -425,14 +428,14 @@ private:
 	 */
 	static constexpr float MicroFlightTime   = 0.6f;
 	/**
-	 *  볼리당 발수. **1이라야 머신건이 된다.**
-	 *  4발을 한 RPC 에 담고 Elapsed 로 어긋내는 방법도 있지만, 그러면 마커는 같은 프레임에
-	 *  전부 뜨고 탄만 비행 중간에서 튀어나온다 — RoseField 에서 고친 바로 그 버그다.
-	 *  한 발씩 실제로 쏘는 쪽이 정직하고, 발사 방향은 아래 순환으로 갈린다.
+	 *  볼리당 발수 = 부채꼴을 나누는 각 수. 원주를 이 수로 등분해 동시에 뻗어 나간다.
+	 *  동시 체공 = Count/Interval × FlightTime = 10/0.08 × 0.6 = 75발.
+	 *  어긋내기(Elapsed)는 쓰지 않는다 — 그러면 마커는 같은 프레임에 전부 뜨고 탄만 비행
+	 *  중간에서 튀어나온다(RoseField 에서 고친 그 버그). 볼리는 진짜 동시 발사다.
 	 */
-	static constexpr int32 MicroCount        = 1;
-	/** 발사 방향 축 수(동/서/북/남). REBoss::CompassDir 의 축 수와 같아야 한다. */
-	static constexpr int32 MicroDirCount     = 4;
+	static constexpr int32 MicroCount        = 10;
+	/** 볼리마다 부채꼴 전체가 도는 각(deg). 90 이면 동→서→북→남 사분면 교대가 유지된다. */
+	static constexpr float MicroBaseStepDeg  = 90.f;
 	static constexpr float MicroMaxHeight    = 100.f;
 	/** 꺾이기 전 나침반 방향으로 뻗는 거리(uu). 작으면 그냥 포물선처럼 보인다. */
 	static constexpr float MicroOutDist      = 900.f;
@@ -440,12 +443,22 @@ private:
 	static constexpr float MicroRise1        = 550.f;  // 출발 쪽 — 윗대각선을 만드는 값
 	static constexpr float MicroRise2        = 250.f;  // 착지 쪽 — 급강하 각을 쥔다
 	/**
-	 *  착지점을 플레이어 기준으로 그 발의 발사 방향만큼 벌리는 거리(uu).
-	 *  0 이면 연사가 전부 같은 점을 때려 착탄이 한 자리에 뭉친다 — 방향이 도는 게 안 읽힌다.
+	 *  착지 산포 반경(uu). 플레이어 위치를 중심으로 이 반경 원판에 균등하게 뿌린다 —
+	 *  착탄이 카펫처럼 깔린다. 치명 영역은 이 값 + MicroRadius 의 합집합이다.
 	 */
-	static constexpr float MicroSpread       = 80.f;
-	/** 폭발·마커 반경. "마이크로"라 Artillery(120)보다 작게 잡는다. */
-	static constexpr float MicroRadius       = 90.f;
+	static constexpr float MicroSpread       = 70.f;
+	/**
+	 *  폭발·마커 반경. 발수를 1→10 으로 올리면서 90→45 로 내렸다:
+	 *  치명 영역 = 산포 70 + 반경 45 = **115** 로 종전 단발 90 과 사실상 같아
+	 *  회피 난이도가 유지된다. 안 내리면 밀도만 올리려다 난이도가 같이 오른다.
+	 */
+	static constexpr float MicroRadius       = 45.f;
+	/**
+	 *  발당 데미지. Artillery(15)를 그대로 쓰면 발수가 12.5배라 초당 데미지도 12.5배가 되어
+	 *  스쳐도 즉사한다. 산포 원판(70) 위 한 점이 중앙의 플레이어를 맞힐 확률이 (45/70)² = 41%
+	 *  이므로 명중은 초당 125 × 0.41 ≈ 51발. 51 × 3 ≈ 153 dps 로 종전(10 × 15 = 150)과 같다.
+	 */
+	static constexpr float MicroDamage       = 3.f;
 
 	//~ 곡사(Artillery) 페이즈 파라미터. 헤더 상수 — 플레이 후 튜닝.
 	static constexpr float ArtilleryPhaseSec     = 4.f;    // 페이즈 길이
