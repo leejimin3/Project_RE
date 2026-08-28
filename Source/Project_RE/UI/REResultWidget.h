@@ -26,7 +26,10 @@ protected:
 	virtual bool Initialize() override;
 
 private:
-	/** WidgetTree 소유 결과 텍스트. */
-	UPROPERTY()
+	/**
+	 *  결과 텍스트. WBP_Result 디자이너에 같은 이름의 TextBlock 이 있으면 그것이 바인딩되고,
+	 *  없으면 C++ 가 WidgetTree 로 만든다(폴백) — #121, HUD 와 같은 규약이다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UTextBlock> ResultText;
 };

@@ -103,7 +103,12 @@ bool UREPlayerHudWidget::Initialize()
 	}
 
 	// CDO 는 WidgetTree 구성 대상이 아니다 — 인스턴스에서만 만든다 (#29/#40 동일).
-	if (!WidgetTree || HealthBar)
+	// 바인딩된 위젯이 하나라도 있으면 폴백을 돌리지 않는다 — RootWidget 을 덮어쓰면
+	// 디자이너가 만들던 트리가 통째로 사라진다(일부만 만든 작업 도중 상태 포함).
+	if (!WidgetTree
+		|| HealthBar || HealthText || DashBar || DashText
+		|| BulletText || BulletBox || PatternText || PatternBox
+		|| CheatText || CheatBox)
 	{
 		return true;
 	}
