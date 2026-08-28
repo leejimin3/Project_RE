@@ -35,12 +35,16 @@ void UREArcSimProcessor::Execute(FMassEntityManager& EntityManager, FMassExecuti
 			A.Elapsed += Dt;
 			const float t = (A.FlightTime > 0.f) ? FMath::Min(A.Elapsed / A.FlightTime, 1.f) : 1.f;
 
-			const float X = FMath::Lerp(A.Start.X, A.Target.X, t);
-			const float Y = FMath::Lerp(A.Start.Y, A.Target.Y, t);
-			const float BaseZ = FMath::Lerp(A.Start.Z, A.Target.Z, t);
-			const float Z = BaseZ + 4.f * A.MaxHeight * t * (1.f - t);   // 포물선 높이
+			// 3차 베지어. 스포너가 오프셋 0 일 때 2차(= 기존 포물선)와 같은 곡선이 되도록
+			// 제어점을 차수 상승시켜 넣는다 — 오프셋을 주면 2차로는 못 만드는 S자·깊은 감김이 된다.
+			// 끝점은 t=0/1 에서 Start/Target 그대로라 착지 시각·착지점은 제어점과 무관하다.
+			const float u = 1.f - t;
+			const FVector Pos = u * u * u * A.Start
+			                  + 3.f * u * u * t * A.Ctrl1
+			                  + 3.f * u * t * t * A.Ctrl2
+			                  + t * t * t * A.Target;
 
-			Transforms[i].GetMutableTransform().SetLocation(FVector(X, Y, Z));
+			Transforms[i].GetMutableTransform().SetLocation(Pos);
 
 			if (A.Elapsed >= A.FlightTime)
 			{

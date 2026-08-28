@@ -24,6 +24,10 @@ WBP_PlayerHud (부모 UREPlayerHudWidget)
   | DashText     | TextBlock     | "DASH" / 남은 초                       |
   | BulletText   | TextBlock     | 화면상 투사체 수                       |
   | BulletBox    | VerticalBox   | 투사체 표시 묶음 — HudBulletCount 0 이 통째로 숨긴다 |
+  | PatternText  | TextBlock     | 현재 보스 패턴 이름                    |
+  | PatternBox   | VerticalBox   | 패턴 표시 묶음 — HudPattern 0 이 통째로 숨긴다 |
+  | CheatText    | TextBlock     | 켜진 데브 치트 나열                    |
+  | CheatBox     | VerticalBox   | 치트 표시 묶음 — 켜진 치트가 없으면 스스로 접힌다 |
 
 WBP_Result (부모 UREResultWidget)
 

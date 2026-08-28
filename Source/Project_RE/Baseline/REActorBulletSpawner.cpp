@@ -22,7 +22,7 @@ namespace
 	constexpr float ActorFireIntervalSec = 0.1f;
 
 	/** Mass 스폰 원점 = Boss 스폰 위치 (REGameMode.cpp BeginPlay). Boss는 움직이지 않는다. */
-	const FVector SpawnOrigin(600.f, 0.f, 90.f);
+	const FVector SpawnOrigin(0.f, 0.f, 90.f);
 
 	/** Boss의 SpiralRotationStepDeg (REBossCharacter.h:58). */
 	constexpr float RotationStepDeg = 15.f;
