@@ -52,12 +52,4 @@ namespace REBulletGeometry
 	 *  BulletScale 을 바꾸면 여기가 **자동으로** 따라간다. 이게 이 헤더의 목적 전부다.
 	 */
 	inline constexpr float HitRadius = BulletVisualRadius + PlayerCapsuleAllowance;
-
-	/**
-	 *  이행 검증 (#141 R-07, **한 커밋 동안만**).
-	 *  유도식이 현행 하드코딩 값과 같음을 컴파일 타임에 증명한다. 판정 반경이 1이라도
-	 *  바뀌면 회귀다. 다음 커밋에서 이 줄을 제거한다.
-	 */
-	static_assert(HitRadius == 60.f, "히트 반경이 바뀌었다 — 게임플레이 회귀");
-	static_assert(BulletScale == 0.5f, "탄환 스케일이 바뀌었다 — 시각/판정 동시 회귀");
 }
