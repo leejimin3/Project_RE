@@ -1,3 +1,3 @@
-[RE] Boss FireArtillery: Pattern=4 Shape=3 N=8 Flight=3.00
+[RE] Boss FireArtillery: Pattern=4 N=8 Flight=3.00
 [RE] Boss Phase: ArtilleryStorm 10.0s
 [RE] Boss Phase: Rest 1.0s

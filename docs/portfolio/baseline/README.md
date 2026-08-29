@@ -70,11 +70,21 @@ scripts/extract-pattern-signature.sh <패턴이름> <run.log>
 (`REGameMode.cpp:267`). 추출기가 고정 패턴의 첫 페이즈부터 잘라 쓰는 이유가 이것이다.
 `Angle`/`Elapsed`/볼리 횟수도 시간·위치 함수라 제외한다.
 
-**`p2_Artillery` 의 `Shape=` 열은 비교에서 제외한다.** `CurrentArtilleryShape` 를
-`PhaseRng.RandRange` 로 뽑는데(`REBossCharacter.cpp:381`) 그 `PhaseRng` 시드가
-`FMath::Rand()` 라, 어느 Shape 가 나오는지가 실행마다 다르다. Artillery 는
-`Pattern=3 … N=12 Flight=1.50` 만 본다 — Shape 6종 전량의 결정론 비교는
-게이트 7(`arc-shots-before.txt`)이 이미 덮는다.
+**`Shape=` 열은 전 패턴에서 비교에서 제외한다.** `CurrentArtilleryShape` 는 페이즈 패턴이
+`Artillery`(`PhaseRng.RandRange`) 또는 `ArtilleryStorm`(`Spiral` 고정)일 때**만** 대입되고
+(`REBossCharacter.cpp:304,310`), 나머지 곡사 6종은 **직전 페이즈가 남긴 값을 그대로
+페이로드에 싣는다.** 첫 페이즈가 랜덤이라 그 잔류값이 실행마다 달라진다 — 실측:
+
+| 런 | 첫(랜덤) 페이즈 | 찍힌 Shape |
+|---|---|--:|
+| baseline p7 BezierVortex | BezierVortex | 0 |
+| R-04 p7 BezierVortex | **Artillery** | 4 |
+| baseline p12 AerialDome | SuperformulaBloom | 0 |
+| R-04 p12 AerialDome | **ArtilleryStorm** | 3 |
+
+그 값은 `Pattern == Artillery` 분기에서만 읽히므로 다른 패턴에서는 **로그 표기일 뿐**이다
+(N·Flight 는 세 건 다 동일했다). Shape 6종의 결정론 비교는 게이트 7
+(`arc-shots-before.txt`)이 고정 입력으로 전량 덮는다.
 
 
 ## 게이트 4 재현 — 로그 문자열 diff

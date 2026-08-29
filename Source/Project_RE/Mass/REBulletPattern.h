@@ -29,7 +29,15 @@ enum class EBulletPattern : uint8
 	RoseField,       // 바닥에 장미 r=A·cos(kθ). 탄은 감아 돌며 꽃잎 위로 내려온다.
 	AerialDome,      // 바닥에 팽창하는 링. 급상승·고공 수평·급강하 — 궤적이 반구 껍질의 자오선.
 	Spirograph,      // 바닥에 하이포트로코이드 로제트. 탄은 S자로 엇갈리며 내려온다.
-	MicroMissile     // 동/서/남/북 윗대각선으로 뻗었다가 꺾여 플레이어 위치로 내리꽂는 4발.
+	MicroMissile,    // 동/서/남/북 윗대각선으로 뻗었다가 꺾여 플레이어 위치로 내리꽂는 4발.
+
+	/**
+	 *  테이블 크기 검증 전용 센티널 (#141). REBossPatternTable 의 static_assert 가
+	 *  "테이블 행 수 == 이 값" 을 강제해, 패턴을 추가하고 테이블을 안 고치면 빌드가 깨진다.
+	 *  **기존 값이 하나도 안 바뀌므로 네트워크 페이로드 호환이 유지된다.**
+	 *  UMETA(Hidden) 이라 블루프린트 드롭다운에도 안 뜬다.
+	 */
+	Count UMETA(Hidden)
 };
 
 /** 곡사 착지점 모양. Artillery 페이즈에서 랜덤 선택. */

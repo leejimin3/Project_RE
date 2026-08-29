@@ -57,34 +57,6 @@ static TAutoConsoleVariable<int32> CVarBossPattern(
  */
 static bool GREArcDumpActive = false;
 
-namespace REBoss
-{
-	/**
-	 *  곡사(포물선 착지 + 마커) 계열인가. 발사 라우팅과 RPC 구현 양쪽이 이걸로 갈린다 —
-	 *  두 곳에 각각 나열하면 패턴을 늘릴 때 한쪽만 고쳐 조용히 어긋난다.
-	 */
-	static bool IsArcPattern(EBulletPattern P)
-	{
-		return P == EBulletPattern::Artillery
-			|| P == EBulletPattern::ArtilleryStorm
-			|| P == EBulletPattern::LissajousStorm
-			|| P == EBulletPattern::BezierVortex
-			|| P == EBulletPattern::RoseField
-			|| P == EBulletPattern::AerialDome
-			|| P == EBulletPattern::Spirograph
-			|| P == EBulletPattern::MicroMissile;
-	}
-
-	/**
-	 *  곡선 블룸 계열인가. 발사 입력(각 미사용·발수 상수)과 클라 생성 분기가 이걸로 갈린다.
-	 */
-	static bool IsBloomPattern(EBulletPattern P)
-	{
-		return P == EBulletPattern::StarBloom
-			|| P == EBulletPattern::LemniscateBloom
-			|| P == EBulletPattern::SuperformulaBloom;
-	}
-}
 
 // #51 클로즈드루프 적분 게인. 수명 지연(수명/발사주기 ≈ 30발) 대비 크면 진동한다.
 // 튜닝 노브(리빌드 없이 -ExecCmds로 스윕). 기본값은 실측으로 확정.
@@ -173,75 +145,9 @@ void AREBossCharacter::BeginPlay()
 
 AREBossCharacter::FBossLook AREBossCharacter::LookForPattern(EBulletPattern Pattern)
 {
-	FBossLook Look;   // 기본값 = Spiral(회색 화강암 + 팩 기본 빨강 이미시브)
-	switch (Pattern)
-	{
-	case EBulletPattern::Fan:
-		// Snow 스칼라만으로는 하얘지지 않는다 — 그 값은 균열 이미시브를 증폭할 뿐이고
-		// 색은 Color Emis 가 쥔다. 안 덮으면 적열이 되어 빨강+흰색 탄막에 섞이고
-		// 주황 용암(Artillery)과도 계열이 겹친다. 청록으로 가른다.
-		Look.Snow = FanSnowAmount;
-		Look.Emis = FLinearColor(0.15f, 0.70f, 1.0f, 1.0f);
-		break;
-	case EBulletPattern::Artillery:
-		Look.Lava = ArtilleryLavaAmount;
-		break;
-	case EBulletPattern::ArtilleryStorm:
-		// 용암은 Artillery 와 같은 값이라 그것만으론 두 곡사 페이즈가 구분되지 않는다.
-		// 이미시브를 금색으로 올려 가른다 — Fan(청록)/Spiral(빨강)과도 안 겹친다.
-		Look.Lava = StormLavaAmount;
-		Look.Emis = FLinearColor(1.0f, 0.85f, 0.2f, 1.0f);
-		break;
-	case EBulletPattern::RoseEnvelope:
-		// 질감 축(Snow/Lava)에는 남는 조합이 없다 — Fan 이 Snow, 곡사 둘이 Lava 를 쓴다.
-		// Spiral 과 같은 화강암에 이미시브만 보라로 가른다(빨강/청록/주황/금색과 안 겹친다).
-		Look.Emis = FLinearColor(0.70f, 0.10f, 1.0f, 1.0f);
-		break;
-	//~ 아래 다섯은 (질감, 색) 쌍이 위와 겹치지 않도록 배분했다 — 색만으로는 10개가 안 갈린다.
-	case EBulletPattern::Cardioid:
-		// 색만 주황으로 가르면 Spiral(회색 화강암 + 빨강)과 화면에서 잘 안 갈렸다 —
-		// 실제로 그랬다. 질감까지 흰 화강암으로 바꾼다(흰 화강암 + 주황은 남는 조합이다).
-		Look.Snow = CardioidSnowAmount;
-		Look.Emis = FLinearColor(1.0f, 0.45f, 0.05f, 1.0f);
-		break;
-	case EBulletPattern::LissajousStorm:
-		Look.Lava = LissaLavaAmount;                          // 용암 + 연두
-		Look.Emis = FLinearColor(0.55f, 1.0f, 0.20f, 1.0f);
-		break;
-	case EBulletPattern::BezierVortex:
-		Look.Snow = VortexSnowAmount;                         // 흰 화강암 + 진파랑
-		Look.Emis = FLinearColor(0.10f, 0.25f, 1.0f, 1.0f);
-		break;
-	//~ 블룸 3종은 질감을 안 쓴다(회색 화강암) — 색만으로 가른다. 위에서 회색 화강암을 쓰는 건
-	//  Spiral(빨강)과 Rose(보라)뿐이라 아래 셋과 안 겹친다.
-	case EBulletPattern::StarBloom:
-		Look.Emis = FLinearColor(1.0f, 0.90f, 0.40f, 1.0f);   // 회색 화강암 + 담금색
-		break;
-	case EBulletPattern::LemniscateBloom:
-		Look.Emis = FLinearColor(0.10f, 0.90f, 0.90f, 1.0f);  // 회색 화강암 + 청록
-		break;
-	case EBulletPattern::SuperformulaBloom:
-		Look.Emis = FLinearColor(0.30f, 1.0f, 0.40f, 1.0f);   // 회색 화강암 + 연녹
-		break;
-	case EBulletPattern::RoseField:
-		Look.Lava = RoseFieldLavaAmount;                      // 용암 + 진파랑
-		Look.Emis = FLinearColor(0.20f, 0.35f, 1.0f, 1.0f);
-		break;
-	case EBulletPattern::AerialDome:
-		Look.Snow = DomeSnowAmount;                           // 흰 화강암 + 자홍
-		Look.Emis = FLinearColor(1.0f, 0.20f, 0.70f, 1.0f);
-		break;
-	case EBulletPattern::MicroMissile:
-		Look.Snow = MicroSnowAmount;                          // 흰 화강암 + 경고등 빨강
-		Look.Emis = FLinearColor(1.0f, 0.15f, 0.10f, 1.0f);
-		break;
-	case EBulletPattern::Spirograph:
-		Look.Lava = SpiroLavaAmount;                          // 용암 + 청록
-		Look.Emis = FLinearColor(0.15f, 0.80f, 0.95f, 1.0f);
-		break;
-	default: break;
-	}
-	return Look;
+	// 패턴별 (질감, 이미시브 색) 쌍은 테이블이 쥔다 — 14 case switch 가 사라진다 (#141).
+	// 각 색을 왜 그 색으로 골랐는지는 테이블 행 위 주석에 그대로 옮겼다.
+	return REBoss::GetPatternDef(Pattern).Look;
 }
 
 void AREBossCharacter::ApplyLook(const FBossLook& Look)
@@ -361,26 +267,34 @@ void AREBossCharacter::BeginPhase()
 	// 완전 랜덤 로테이션. 같은 패턴 2연속 금지, 첫 페이즈 무제약(Spiral 고정 없음).
 	// enum 순서(Spiral=0,Fan=1,Homing=2,Artillery=3)와 로테이션 인덱스가 다르므로 풀 배열로 매핑.
 	// Homing은 백로그 스텁이라 풀에서 제외.
-	static const EBulletPattern Pool[15] = {
-		EBulletPattern::Spiral, EBulletPattern::Fan, EBulletPattern::Artillery,
-		EBulletPattern::ArtilleryStorm, EBulletPattern::RoseEnvelope, EBulletPattern::Cardioid,
-		EBulletPattern::LissajousStorm, EBulletPattern::BezierVortex,
-		EBulletPattern::StarBloom, EBulletPattern::LemniscateBloom, EBulletPattern::SuperformulaBloom,
-		EBulletPattern::RoseField, EBulletPattern::AerialDome, EBulletPattern::Spirograph,
-		EBulletPattern::MicroMissile };
+	// 로테이션 풀은 테이블에서 파생한다 — 손으로 나열하지 않는다 (#141).
+	// static 지역: 첫 호출에 1회 구성. 테이블이 constexpr 이라 결과가 불변이다.
+	// 순서는 테이블 순서(= enum 순서)이고, 이것이 re.Debug.BossPattern 의 인덱스다.
+	static const TArray<EBulletPattern> Pool = []()
+	{
+		TArray<EBulletPattern> P;
+		for (int32 i = 0; i < REBoss::PatternTableNum; ++i)
+		{
+			if (REBoss::PatternTable[i].bInRotation)
+			{
+				P.Add(REBoss::PatternTable[i].Pattern);
+			}
+		}
+		return P;
+	}();
 	EBulletPattern NewPattern;
 	const int32 Forced = CVarBossPattern.GetValueOnGameThread();
 	if (Forced >= 0)
 	{
 		// 검증/튜닝 경로 — 로테이션도 no-repeat도 건너뛴다. PhaseRng는 뽑지 않는다
 		// (Artillery의 CallSeed가 같은 스트림을 쓰므로 여기서 뽑으면 고정 모드마다 수열이 달라진다).
-		NewPattern = Pool[FMath::Clamp(Forced, 0, UE_ARRAY_COUNT(Pool) - 1)];
+		NewPattern = Pool[FMath::Clamp(Forced, 0, Pool.Num() - 1)];
 	}
 	else
 	{
 		do
 		{
-			NewPattern = Pool[PhaseRng.RandRange(0, UE_ARRAY_COUNT(Pool) - 1)];
+			NewPattern = Pool[PhaseRng.RandRange(0, Pool.Num() - 1)];
 		} while (!bFirstPhase && NewPattern == CurrentPhasePattern);
 	}
 	bFirstPhase = false;
@@ -401,41 +315,11 @@ void AREBossCharacter::BeginPhase()
 		PhaseVolleyIdx = 0;   // 방향 순환도 페이즈마다 동쪽에서 다시 시작한다
 	}
 
-	float PhaseSec = SpiralPhaseSec;
-	const float FireInterval = FireIntervalFor(CurrentPhasePattern);   // 단일 출처
-	const TCHAR* PhaseName = TEXT("Spiral");
-	switch (CurrentPhasePattern)
-	{
-	case EBulletPattern::Fan:
-		PhaseSec = FanPhaseSec; PhaseName = TEXT("Fan"); break;
-	case EBulletPattern::Artillery:
-		PhaseSec = ArtilleryPhaseSec; PhaseName = TEXT("Artillery"); break;
-	case EBulletPattern::ArtilleryStorm:
-		PhaseSec = StormPhaseSec; PhaseName = TEXT("ArtilleryStorm"); break;
-	case EBulletPattern::RoseEnvelope:
-		PhaseSec = RosePhaseSec; PhaseName = TEXT("RoseEnvelope"); break;
-	case EBulletPattern::Cardioid:
-		PhaseSec = CardioidPhaseSec; PhaseName = TEXT("Cardioid"); break;
-	case EBulletPattern::LissajousStorm:
-		PhaseSec = LissaPhaseSec; PhaseName = TEXT("LissajousStorm"); break;
-	case EBulletPattern::BezierVortex:
-		PhaseSec = VortexPhaseSec; PhaseName = TEXT("BezierVortex"); break;
-	case EBulletPattern::StarBloom:
-		PhaseSec = StarBloomPhaseSec; PhaseName = TEXT("StarBloom"); break;
-	case EBulletPattern::LemniscateBloom:
-		PhaseSec = LemniPhaseSec; PhaseName = TEXT("LemniscateBloom"); break;
-	case EBulletPattern::SuperformulaBloom:
-		PhaseSec = SuperPhaseSec; PhaseName = TEXT("SuperformulaBloom"); break;
-	case EBulletPattern::RoseField:
-		PhaseSec = RoseFieldPhaseSec; PhaseName = TEXT("RoseField"); break;
-	case EBulletPattern::AerialDome:
-		PhaseSec = DomePhaseSec; PhaseName = TEXT("AerialDome"); break;
-	case EBulletPattern::Spirograph:
-		PhaseSec = SpiroPhaseSec; PhaseName = TEXT("Spirograph"); break;
-	case EBulletPattern::MicroMissile:
-		PhaseSec = MicroPhaseSec; PhaseName = TEXT("MicroMissile"); break;
-	default: break;   // Spiral 기본값
-	}
+	// 페이즈 길이와 로그 이름은 테이블이 쥔다 — 14 case switch 가 사라진다 (#141).
+	const REBoss::FPatternDef& Def = REBoss::GetPatternDef(CurrentPhasePattern);
+	const float        PhaseSec  = Def.PhaseSec;
+	const float        FireInterval = FireIntervalFor(CurrentPhasePattern);   // 단일 출처
+	const TCHAR* const PhaseName = Def.Name;
 
 	UE_LOG(LogRE, Log, TEXT("[RE] Boss Phase: %s %.1fs"), PhaseName, PhaseSec);
 
@@ -463,25 +347,10 @@ void AREBossCharacter::BeginPhase()
 
 float AREBossCharacter::FireIntervalFor(EBulletPattern P)
 {
-	switch (P)
-	{
-	case EBulletPattern::Fan:               return FanFireIntervalSec;
-	case EBulletPattern::Artillery:         return ArtilleryFireInterval;
-	case EBulletPattern::ArtilleryStorm:    return StormFireInterval;
-	case EBulletPattern::LissajousStorm:    return LissaFireInterval;
-	case EBulletPattern::BezierVortex:      return VortexFireInterval;
-	case EBulletPattern::RoseField:         return RoseFieldFireInterval;
-	case EBulletPattern::AerialDome:        return DomeFireInterval;
-	case EBulletPattern::Spirograph:        return SpiroFireInterval;
-	case EBulletPattern::MicroMissile:      return MicroFireInterval;
-	//~ 블룸 3종은 전용 간격을 쓴다 — 복사본 간 반경 간격이 이 값에 비례해서,
-	//  Spiral 의 0.15 를 쓰면 간격이 탄 지름보다 좁아져 도형이 뭉갠다(BloomFireInterval 주석).
-	case EBulletPattern::StarBloom:
-	case EBulletPattern::LemniscateBloom:
-	case EBulletPattern::SuperformulaBloom: return BloomFireInterval;
-	//~ Spiral / RoseEnvelope / Cardioid 는 링 지오메트리가 같아 ini 기본 주기를 공유한다.
-	default:                                return REBulletPattern::FireIntervalSec();
-	}
+	const float Interval = REBoss::GetPatternDef(P).FireInterval;
+	// 음수 = "ini 기본을 쓴다". Spiral / RoseEnvelope / Cardioid 는 링 지오메트리가 같아 공유한다
+	// (전에는 switch 의 default 가 그 역할을 했다).
+	return (Interval >= 0.f) ? Interval : REBulletPattern::FireIntervalSec();
 }
 
 void AREBossCharacter::FireCurrentPattern()

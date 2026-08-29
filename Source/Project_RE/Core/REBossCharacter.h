@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "REBulletPattern.h"
+#include "REBossPatternTable.h"
 #include "REBossCharacter.generated.h"
 
 class UREHealthBarComponent;
@@ -579,13 +580,12 @@ private:
 	UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> BodyMID = nullptr;
 	FTimerHandle LeapTimer;   // 도약 원샷 종료 → idle 복귀
 
-	/** 바디 머티리얼의 한 상태. 팩 마스터가 노출한 파라미터가 그대로 필드다. */
-	struct FBossLook
-	{
-		float Snow = 0.f;
-		float Lava = 0.f;
-		FLinearColor Emis = FLinearColor(1.f, 0.f, 0.f, 1.f);   // 팩 기본 MI 값
-	};
+	/**
+	 *  바디 머티리얼의 한 상태. 정의는 REBossPatternTable.h 로 옮겼다 (#141) —
+	 *  패턴별 외관이 테이블 필드가 되면서 테이블 쪽이 이 타입의 주인이 됐다.
+	 *  별칭을 남겨 기존 AREBossCharacter::FBossLook 표기를 그대로 쓴다.
+	 */
+	using FBossLook = REBoss::FBossLook;
 
 	/** 패턴별 목표 외관. */
 	static FBossLook LookForPattern(EBulletPattern Pattern);
@@ -627,4 +627,89 @@ private:
 	 *  도약 애님(0.47s)보다 길어 애님도 이 안에서 끝난다.
 	 */
 	static constexpr float LookIntroSec = 0.8f;
+
+	//========================================================================================
+	//  이행 검증 (#141 R-04, **한 커밋 동안만**).
+	//
+	//  패턴 파라미터를 REBossPatternTable.h 로 옮기며 값을 하나라도 잘못 베끼면 게임플레이가
+	//  조용히 바뀐다. 원본 constexpr 를 아직 지우지 않고, 테이블이 원본과 같은 값을 쥐고
+	//  있음을 **컴파일 타임에 증명**한다. 다음 커밋에서 원본과 이 블록을 함께 제거한다.
+	//========================================================================================
+#define RE_ASSERT_PHASE(P, C)    static_assert(REBoss::PatternTable[(int32)EBulletPattern::P].PhaseSec     == C, "PhaseSec 불일치: " #P)
+#define RE_ASSERT_INTERVAL(P, C) static_assert(REBoss::PatternTable[(int32)EBulletPattern::P].FireInterval == C, "FireInterval 불일치: " #P)
+#define RE_ASSERT_ARC(P, F, H, N) 	static_assert(REBoss::PatternTable[(int32)EBulletPattern::P].Arc.FlightTime == F, "Arc.FlightTime 불일치: " #P); 	static_assert(REBoss::PatternTable[(int32)EBulletPattern::P].Arc.MaxHeight  == H, "Arc.MaxHeight 불일치: " #P);  	static_assert(REBoss::PatternTable[(int32)EBulletPattern::P].Arc.Count      == N, "Arc.Count 불일치: " #P)
+#define RE_ASSERT_LOOK(P, S, L)  	static_assert(REBoss::PatternTable[(int32)EBulletPattern::P].Look.Snow == S, "Look.Snow 불일치: " #P); 	static_assert(REBoss::PatternTable[(int32)EBulletPattern::P].Look.Lava == L, "Look.Lava 불일치: " #P)
+
+	RE_ASSERT_PHASE(Spiral,            SpiralPhaseSec);
+	RE_ASSERT_PHASE(Fan,               FanPhaseSec);
+	RE_ASSERT_PHASE(Homing,            SpiralPhaseSec);   // 현행 default: 통과분
+	RE_ASSERT_PHASE(Artillery,         ArtilleryPhaseSec);
+	RE_ASSERT_PHASE(ArtilleryStorm,    StormPhaseSec);
+	RE_ASSERT_PHASE(RoseEnvelope,      RosePhaseSec);
+	RE_ASSERT_PHASE(Cardioid,          CardioidPhaseSec);
+	RE_ASSERT_PHASE(LissajousStorm,    LissaPhaseSec);
+	RE_ASSERT_PHASE(BezierVortex,      VortexPhaseSec);
+	RE_ASSERT_PHASE(StarBloom,         StarBloomPhaseSec);
+	RE_ASSERT_PHASE(LemniscateBloom,   LemniPhaseSec);
+	RE_ASSERT_PHASE(SuperformulaBloom, SuperPhaseSec);
+	RE_ASSERT_PHASE(RoseField,         RoseFieldPhaseSec);
+	RE_ASSERT_PHASE(AerialDome,        DomePhaseSec);
+	RE_ASSERT_PHASE(Spirograph,        SpiroPhaseSec);
+	RE_ASSERT_PHASE(MicroMissile,      MicroPhaseSec);
+
+	RE_ASSERT_INTERVAL(Fan,               FanFireIntervalSec);
+	RE_ASSERT_INTERVAL(Artillery,         ArtilleryFireInterval);
+	RE_ASSERT_INTERVAL(ArtilleryStorm,    StormFireInterval);
+	RE_ASSERT_INTERVAL(LissajousStorm,    LissaFireInterval);
+	RE_ASSERT_INTERVAL(BezierVortex,      VortexFireInterval);
+	RE_ASSERT_INTERVAL(StarBloom,         BloomFireInterval);
+	RE_ASSERT_INTERVAL(LemniscateBloom,   BloomFireInterval);
+	RE_ASSERT_INTERVAL(SuperformulaBloom, BloomFireInterval);
+	RE_ASSERT_INTERVAL(RoseField,         RoseFieldFireInterval);
+	RE_ASSERT_INTERVAL(AerialDome,        DomeFireInterval);
+	RE_ASSERT_INTERVAL(Spirograph,        SpiroFireInterval);
+	RE_ASSERT_INTERVAL(MicroMissile,      MicroFireInterval);
+	//~ 음수 = "ini 기본(REBulletPattern::FireIntervalSec())을 쓴다". 전에는 switch 의
+	//  default 가 그 역할을 했다 — Spiral / Homing / RoseEnvelope / Cardioid.
+	static_assert(REBoss::PatternTable[(int32)EBulletPattern::Spiral].FireInterval       < 0.f, "");
+	static_assert(REBoss::PatternTable[(int32)EBulletPattern::Homing].FireInterval       < 0.f, "");
+	static_assert(REBoss::PatternTable[(int32)EBulletPattern::RoseEnvelope].FireInterval < 0.f, "");
+	static_assert(REBoss::PatternTable[(int32)EBulletPattern::Cardioid].FireInterval     < 0.f, "");
+
+	RE_ASSERT_ARC(Artillery,      ArtilleryFlightTime, ArtilleryMaxHeight, ArtilleryCount);
+	RE_ASSERT_ARC(ArtilleryStorm, StormFlightTime,     StormMaxHeight,     StormCount);
+	RE_ASSERT_ARC(LissajousStorm, LissaFlightTime,     LissaMaxHeight,     LissaCount);
+	RE_ASSERT_ARC(BezierVortex,   VortexFlightTime,    VortexMaxHeight,    VortexCount);
+	RE_ASSERT_ARC(RoseField,      RoseFieldFlightTime, RoseFieldMaxHeight, RoseFieldCount);
+	RE_ASSERT_ARC(AerialDome,     DomeFlightTime,      DomeMaxHeight,      DomeCount);
+	RE_ASSERT_ARC(Spirograph,     SpiroFlightTime,     SpiroMaxHeight,     SpiroCount);
+	RE_ASSERT_ARC(MicroMissile,   MicroFlightTime,     MicroMaxHeight,     MicroCount);
+
+	RE_ASSERT_LOOK(Spiral,            0.f,                0.f);
+	RE_ASSERT_LOOK(Fan,               FanSnowAmount,      0.f);
+	RE_ASSERT_LOOK(Homing,            0.f,                0.f);
+	RE_ASSERT_LOOK(Artillery,         0.f,                ArtilleryLavaAmount);
+	RE_ASSERT_LOOK(ArtilleryStorm,    0.f,                StormLavaAmount);
+	RE_ASSERT_LOOK(RoseEnvelope,      0.f,                0.f);
+	RE_ASSERT_LOOK(Cardioid,          CardioidSnowAmount, 0.f);
+	RE_ASSERT_LOOK(LissajousStorm,    0.f,                LissaLavaAmount);
+	RE_ASSERT_LOOK(BezierVortex,      VortexSnowAmount,   0.f);
+	RE_ASSERT_LOOK(StarBloom,         0.f,                0.f);
+	RE_ASSERT_LOOK(LemniscateBloom,   0.f,                0.f);
+	RE_ASSERT_LOOK(SuperformulaBloom, 0.f,                0.f);
+	RE_ASSERT_LOOK(RoseField,         0.f,                RoseFieldLavaAmount);
+	RE_ASSERT_LOOK(AerialDome,        DomeSnowAmount,     0.f);
+	RE_ASSERT_LOOK(Spirograph,        0.f,                SpiroLavaAmount);
+	RE_ASSERT_LOOK(MicroMissile,      MicroSnowAmount,    0.f);
+
+	//~ 이미시브는 switch 에서 리터럴로 쓰던 값이라 대조할 원본 상수가 없다. 기본값(=Spiral의
+	//  팩 기본 빨강)만 확인한다 — 나머지 15개 색은 테이블 행의 주석이 근거다.
+	static_assert(REBoss::FBossLook{}.Emis.R == 1.f && REBoss::FBossLook{}.Emis.G == 0.f
+	           && REBoss::FBossLook{}.Emis.B == 0.f && REBoss::FBossLook{}.Emis.A == 1.f,
+	              "FBossLook 기본 이미시브가 팩 기본 MI 값과 달라졌다");
+
+#undef RE_ASSERT_PHASE
+#undef RE_ASSERT_INTERVAL
+#undef RE_ASSERT_ARC
+#undef RE_ASSERT_LOOK
 };
