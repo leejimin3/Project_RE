@@ -87,12 +87,11 @@ diff docs/portfolio/baseline/probe-strings-before/server.txt after.txt
 추출기가 카테고리 접두어(`LogTemp:` 등)와 수치를 지우고 **메시지 본문 골격만** 남긴다 —
 R-02 가 바꾸는 것이 카테고리뿐임을 이 diff 가 증명한다.
 
-**왼쪽 건수 열은 비교 대상이 아니다.** `[RE] BulletHit: Applied=…` 같은 줄은 프로브가
-도는 동안 몇 발 맞았는지에 따라 실행마다 흔들린다. 비교하는 것은 **문자열 종류의 집합**이다:
-
-```bash
-diff <(cut -d' ' -f2- before.txt) <(cut -d' ' -f2- after.txt)
-```
+**프로브 로그(`[Move]`/`[Attack]`/`[Dash]`)만 본다.** `[RE]` 게임루프 로그를 넣으면
+diff 가 성립하지 않는다 — 보스 패턴 로테이션 시드가 `FMath::Rand()`(`REGameMode.cpp:267`)
+라 실행마다 다른 패턴이 돌고, 플레이어 사망 타이밍에 따라 `[RE] Player died` /
+`[RE] EndGame: DEFEAT` 이 있기도 없기도 하다. 프로브는 고정 타이머 시퀀스라 결정론이고,
+게이트 4 가 지키려는 계약이 바로 그 문자열이다.
 
 ## 쿡 기준선
 

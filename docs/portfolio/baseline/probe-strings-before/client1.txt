@@ -1,38 +1,18 @@
-3 [Attack] beam start=V(X=#, Y=#, Z=#) end=V(X=#, Y=#, Z=#) len=#
-3 [Attack] fire montage len=#
-1 [Attack] hit boss, applied=#
-1 [Attack] probe fire dir=VEC
-1 [Attack] rate-limited (dt=#)
-1 [Dash] activate ok dir=VEC
-1 [Dash] activate ok=# State.Dashing=#
-1 [Dash] anim len=# (role=ROLE_Authority)
-2 [Dash] anim len=# (role=ROLE_AutonomousProxy)
-2 [Dash] anim len=# (role=ROLE_SimulatedProxy)
-1 [Dash] dist=# (기대 ~#)
-1 [Dash] immediate retry activated=# (#=blocked by cooldown, 기대 #)
-1 [GAS] ASC ActorInfo set (role=ROLE_Authority)
-1 [GAS] ASC ActorInfo set (role=ROLE_AutonomousProxy)
-1 [GAS] ASC ActorInfo set (role=ROLE_SimulatedProxy)
-1 [Move] fire lock probe: 이동 요청 (거절 기대)
-5 [Move] probe dist=# loc=VEC
-1 [Move] probe start: pawn=VEC target=VEC
-1 [Move] rejected: fire lock (#s 남음)
-1 [Move] rejected: off-navmesh VEC
-1 [Move] Server_RequestMove recv target=VEC
-192 [RE] ArcRenderProbe: live=# marker=#
-3 [RE] Boss FireArtillery: Pattern=# Shape=# N=# Flight=# Sweep=# Elapsed=# role=ROLE_Authority
-6 [RE] Boss FireDirect: Pattern=# Angle=# N=# Elapsed=# role=ROLE_SimulatedProxy
-1 [RE] Boss firing started (#/# ready)
-1 [RE] Boss Phase: Spirograph #s
-1 [RE] Client_NotifyDeath: input disabled (spectating)
-2 [RE] ExplosionFx: 선로드 완료 (##)
-4 [RE] ExplosionProbe: 스폰=# / #s (#/s)
-1 [RE] FanProbe: N=# ang_first=# ang_last=#
-1 [RE] Mass entity created: Index=# Serial=#
-1 [RE] Player ready #/#
-208 [RE] RenderProbe: live=# ISM.Count=#
-2 [RE] RenderSubsystem: ISM ready (mesh=#) material=M_REBullet
-1 [RE] SimProcessor flags=#  RenderProcessor flags=#
-1 [RE] Spawn player idx=# offsetY=# loc=VEC
-1 [RE] SpiralProbe: N=# |V0|=# ang0=# ang1=#
-1 [Stats] Dmg=# AtkInt=# Range=# PHP=# BHP=# BSpd=# BLife=# BInt=# PerShot=#
+[Attack] beam start=V(X=#, Y=#, Z=#) end=V(X=#, Y=#, Z=#) len=#
+[Attack] fire montage len=#
+[Attack] hit boss, applied=#
+[Attack] probe fire dir=VEC
+[Attack] rate-limited (dt=#)
+[Dash] activate ok dir=VEC
+[Dash] activate ok=# State.Dashing=#
+[Dash] anim len=# (role=ROLE_Authority)
+[Dash] anim len=# (role=ROLE_AutonomousProxy)
+[Dash] anim len=# (role=ROLE_SimulatedProxy)
+[Dash] dist=# (기대 ~#)
+[Dash] immediate retry activated=# (#=blocked by cooldown, 기대 #)
+[Move] fire lock probe: 이동 요청 (거절 기대)
+[Move] probe dist=# loc=VEC
+[Move] probe start: pawn=VEC target=VEC
+[Move] rejected: fire lock (#s 남음)
+[Move] rejected: off-navmesh VEC
+[Move] Server_RequestMove recv target=VEC
