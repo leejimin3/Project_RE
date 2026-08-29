@@ -21,6 +21,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/GameStateBase.h"
 #include "EngineUtils.h"                                  // [TEMP #141 STEP0] TActorIterator
+#include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 /**
  *  측정용 클로즈드루프 오버라이드. 발사 시점 조회 — 재시작 없이 다음 발사부터 반영.
@@ -436,14 +437,14 @@ void AREBossCharacter::BeginPhase()
 	default: break;   // Spiral 기본값
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[RE] Boss Phase: %s %.1fs"), PhaseName, PhaseSec);
+	UE_LOG(LogRE, Log, TEXT("[RE] Boss Phase: %s %.1fs"), PhaseName, PhaseSec);
 
 	// 패턴 고정 프로파일링의 캡처 시작 신호. 정상상태에 든 뒤부터 재야 하므로 몇 페이즈
 	// 흘려보낸다 — 직선탄 수명이 ini 기본 15초라 한 페이즈(5~9초)로는 안 찬다.
 	// 기존 신호는 Spiral 클로즈드루프 안에 있어 다른 패턴에서는 발화하지 않는다.
 	if (Forced >= 0 && ++ForcedPhaseCount == ProfileWarmupPhases)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[RE] Profile capture start (forced pattern, phase %d)"), ForcedPhaseCount);
+		UE_LOG(LogRE, Log, TEXT("[RE] Profile capture start (forced pattern, phase %d)"), ForcedPhaseCount);
 		CSV_EVENT_GLOBAL(TEXT("REBulletsFilled"));
 	}
 
@@ -496,7 +497,7 @@ void AREBossCharacter::FireCurrentPattern()
 	}
 	if (CurrentPhasePattern == EBulletPattern::Homing)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[RE] Boss: Homing 미구현 (#67)"));
+		UE_LOG(LogRE, Warning, TEXT("[RE] Boss: Homing 미구현 (#67)"));
 		return;
 	}
 
@@ -621,7 +622,7 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 	UREBulletSpawnSubsystem* Spawner = GetWorld() ? GetWorld()->GetSubsystem<UREBulletSpawnSubsystem>() : nullptr;
 	if (!Spawner)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[RE] Boss::FireArtillery: Spawner NULL"));
+		UE_LOG(LogRENet, Warning, TEXT("[RE] Boss::FireArtillery: Spawner NULL"));
 		return;
 	}
 
@@ -673,7 +674,7 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 	const float Elapsed = GetElapsedSince(ServerTime);
 	if (Elapsed >= FlightTime)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[RE] Boss FireArtillery: skipped (Elapsed=%.3f >= FlightTime=%.2f)"),
+		UE_LOG(LogRENet, Log, TEXT("[RE] Boss FireArtillery: skipped (Elapsed=%.3f >= FlightTime=%.2f)"),
 			Elapsed, FlightTime);
 		return;
 	}
@@ -872,7 +873,7 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 		for (int32 Si = 0; Si < Shots.Num(); ++Si)
 		{
 			const REBulletPattern::FArcBulletSpawnParams& S = Shots[Si];
-			UE_LOG(LogTemp, Log,
+			UE_LOG(LogRENet, Log,
 				TEXT("[RE] ArcDump P=%d Sh=%d Sw=%d i=%d ")
 				TEXT("St=%.17g,%.17g,%.17g Tg=%.17g,%.17g,%.17g ")
 				TEXT("Ft=%.17g Mh=%.17g Dm=%.17g Rd=%.17g El=%.17g ")
@@ -888,7 +889,7 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 
 	Spawner->SpawnArcBulletBatch(Shots);
 
-	UE_LOG(LogTemp, Log, TEXT("[RE] Boss FireArtillery: Pattern=%d Shape=%d N=%d Flight=%.2f Sweep=%d Elapsed=%.3f role=%s"),
+	UE_LOG(LogRENet, Log, TEXT("[RE] Boss FireArtillery: Pattern=%d Shape=%d N=%d Flight=%.2f Sweep=%d Elapsed=%.3f role=%s"),
 		(int32)Pattern, (int32)Shape, Shots.Num(), FlightTime, SweepIdx, Elapsed,
 		*UEnum::GetValueAsString(GetLocalRole()));
 }
@@ -920,7 +921,7 @@ void AREBossCharacter::DebugDumpArcShots()
 		EBulletPattern::Spirograph,     EBulletPattern::MicroMissile };
 
 	GREArcDumpActive = true;
-	UE_LOG(LogTemp, Log, TEXT("[RE] ArcDump BEGIN"));
+	UE_LOG(LogRE, Log, TEXT("[RE] ArcDump BEGIN"));
 	for (EBulletPattern P : ArcPatterns)
 	{
 		// Artillery 만 Shape 축이 살아 있다. 나머지는 Shape 를 안 읽지만 로그 열을 맞춰 Ring 으로 고정.
@@ -935,7 +936,7 @@ void AREBossCharacter::DebugDumpArcShots()
 			}
 		}
 	}
-	UE_LOG(LogTemp, Log, TEXT("[RE] ArcDump END"));
+	UE_LOG(LogRE, Log, TEXT("[RE] ArcDump END"));
 	GREArcDumpActive = false;
 }
 
@@ -947,7 +948,7 @@ static FAutoConsoleCommandWithWorld GCmdDumpArcTargets(
 	{
 		if (!World)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[RE] ArcDump: World NULL"));
+			UE_LOG(LogRE, Warning, TEXT("[RE] ArcDump: World NULL"));
 			return;
 		}
 		// -ExecCmds 가 보스 스폰보다 먼저 도착할 수 있다. 조용히 무판정이 되면 기준선이
@@ -961,7 +962,7 @@ static FAutoConsoleCommandWithWorld GCmdDumpArcTargets(
 			UWorld* W = WeakWorld.Get();
 			if (!W)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("[RE] ArcDump: World 소멸 — 중단"));
+				UE_LOG(LogRE, Warning, TEXT("[RE] ArcDump: World 소멸 — 중단"));
 				return;
 			}
 			int32 N = 0;
@@ -978,10 +979,10 @@ static FAutoConsoleCommandWithWorld GCmdDumpArcTargets(
 			if (++Tries >= 10)
 			{
 				W->GetTimerManager().ClearTimer(RetryTimer);
-				UE_LOG(LogTemp, Error, TEXT("[RE] ArcDump: 보스 액터 없음 — 10회 재시도 후 포기"));
+				UE_LOG(LogRE, Error, TEXT("[RE] ArcDump: 보스 액터 없음 — 10회 재시도 후 포기"));
 				return;
 			}
-			UE_LOG(LogTemp, Warning, TEXT("[RE] ArcDump: 보스 액터 없음 — 재시도 %d/10"), Tries);
+			UE_LOG(LogRE, Warning, TEXT("[RE] ArcDump: 보스 액터 없음 — 재시도 %d/10"), Tries);
 		};
 		World->GetTimerManager().SetTimer(RetryTimer, FTimerDelegate::CreateLambda(TryDump),
 		                                  1.f, /*bLoop=*/true, /*InFirstDelay=*/0.f);
@@ -990,7 +991,7 @@ static FAutoConsoleCommandWithWorld GCmdDumpArcTargets(
 void AREBossCharacter::EndPhase()
 {
 	GetWorldTimerManager().ClearTimer(FireTimer);
-	UE_LOG(LogTemp, Log, TEXT("[RE] Boss Phase: Rest %.1fs"), RestSec);
+	UE_LOG(LogRE, Log, TEXT("[RE] Boss Phase: Rest %.1fs"), RestSec);
 	GetWorldTimerManager().SetTimer(PhaseTimer, this,
 		&AREBossCharacter::BeginPhase, RestSec, /*bLoop=*/false);
 }
@@ -1079,7 +1080,7 @@ int32 AREBossCharacter::ResolveSpiralCount()
 		}
 		++SpiralShotCount;
 
-		UE_LOG(LogTemp, Log, TEXT("[RE] Boss Spiral: Target=%d Live=%d Rate=%.1f"),
+		UE_LOG(LogRE, Log, TEXT("[RE] Boss Spiral: Target=%d Live=%d Rate=%.1f"),
 			TargetLive, CurrentLive, SpiralSpawnRate);
 	}
 	return Count;
@@ -1095,7 +1096,7 @@ void AREBossCharacter::Multicast_FireDirect_Implementation(EBulletPattern Patter
 	UREBulletSpawnSubsystem* Spawner = GetWorld() ? GetWorld()->GetSubsystem<UREBulletSpawnSubsystem>() : nullptr;
 	if (!Spawner)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[RE] Boss::FireDirect: UREBulletSpawnSubsystem NULL"));
+		UE_LOG(LogRENet, Warning, TEXT("[RE] Boss::FireDirect: UREBulletSpawnSubsystem NULL"));
 		return;
 	}
 
@@ -1220,7 +1221,7 @@ void AREBossCharacter::Multicast_FireDirect_Implementation(EBulletPattern Patter
 	Spawner->SpawnBulletBatch(Params);
 
 	// role이 판정의 핵심 신호다 — 서버=ROLE_Authority, 클라=ROLE_SimulatedProxy 양쪽에 찍혀야 한다.
-	UE_LOG(LogTemp, Log, TEXT("[RE] Boss FireDirect: Pattern=%d Angle=%.1f N=%d Elapsed=%.3f role=%s"),
+	UE_LOG(LogRENet, Log, TEXT("[RE] Boss FireDirect: Pattern=%d Angle=%.1f N=%d Elapsed=%.3f role=%s"),
 		(int32)Pattern, AngleDeg, Params.Num(), Elapsed, *UEnum::GetValueAsString(GetLocalRole()));
 }
 
@@ -1248,7 +1249,7 @@ float AREBossCharacter::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 	if (Health <= 0.f && !bIsDead)
 	{
 		bIsDead = true;
-		UE_LOG(LogTemp, Log, TEXT("[RE] Boss died (Health<=0)"));
+		UE_LOG(LogRE, Log, TEXT("[RE] Boss died (Health<=0)"));
 		if (AREGameMode* GM = GetWorld()->GetAuthGameMode<AREGameMode>())
 		{
 			GM->EndGame(/*bVictory=*/true);

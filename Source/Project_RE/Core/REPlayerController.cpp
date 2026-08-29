@@ -30,6 +30,7 @@
 #include "Core/REGameMode.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "EngineUtils.h"
+#include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 namespace
 {
@@ -45,7 +46,7 @@ namespace
 		UClass* Loaded = LoadClass<UUserWidget>(nullptr, WbpPath);
 		if (!Loaded)
 		{
-			UE_LOG(LogTemp, Log, TEXT("[UI] WBP 없음 - C++ 폴백 사용: %s"), WbpPath);
+			UE_LOG(LogRE, Log, TEXT("[UI] WBP 없음 - C++ 폴백 사용: %s"), WbpPath);
 			return Fallback;
 		}
 		return Loaded;
@@ -279,7 +280,7 @@ void AREPlayerController::PlayerTick(float DeltaTime)
 		const FRotator Cur = Char->GetActorRotation();
 		if (FMath::Abs(FRotator::NormalizeAxis(Cur.Yaw - FacingLockYaw)) > 2.f)
 		{
-			UE_LOG(LogTemp, Verbose, TEXT("[Facing] reverted: cur=%.1f expected=%.1f"), Cur.Yaw, FacingLockYaw);
+			UE_LOG(LogRE, Verbose, TEXT("[Facing] reverted: cur=%.1f expected=%.1f"), Cur.Yaw, FacingLockYaw);
 		}
 		Char->SetActorRotation(FRotator(0.f, FacingLockYaw, 0.f));
 		return;
@@ -336,7 +337,7 @@ void AREPlayerController::OnDash(const FInputActionValue& Value)
 	if (!Dir.IsNearlyZero())
 	{
 		// 입력 시각 기준점 — 서버 [Dash] activate ok / 클라 [Dash] anim 로그와의 타임스탬프 차가 곧 입력→대쉬 지연(#75 측정).
-		UE_LOG(LogTemp, Log, TEXT("[Dash] input sent (local)"));
+		UE_LOG(LogRE, Log, TEXT("[Dash] input sent (local)"));
 		Server_Dash(Dir);
 	}
 }
@@ -430,7 +431,7 @@ void AREPlayerController::Client_ShowResult_Implementation(bool bVictory)
 	// 이동/대쉬 입력 차단 — 입력은 클라 소유물이라 여기가 제자리.
 	DisableInput(this);
 
-	UE_LOG(LogTemp, Log, TEXT("[RE] Client_ShowResult: %s"), bVictory ? TEXT("VICTORY") : TEXT("DEFEAT"));
+	UE_LOG(LogRENet, Log, TEXT("[RE] Client_ShowResult: %s"), bVictory ? TEXT("VICTORY") : TEXT("DEFEAT"));
 }
 
 void AREPlayerController::Client_NotifyDeath_Implementation()
@@ -438,7 +439,7 @@ void AREPlayerController::Client_NotifyDeath_Implementation()
 	// 입력만 끊는다. 결과 화면은 게임이 끝날 때 Client_ShowResult가 따로 띄운다.
 	DisableInput(this);
 
-	UE_LOG(LogTemp, Log, TEXT("[RE] Client_NotifyDeath: input disabled (spectating)"));
+	UE_LOG(LogRENet, Log, TEXT("[RE] Client_NotifyDeath: input disabled (spectating)"));
 }
 
 void AREPlayerController::OnToggleCheatPanel()
@@ -475,7 +476,7 @@ void AREPlayerController::Server_RequestMove_Implementation(FVector Target)
 	// 서버 권위 — 죽은 폰의 이동 요청 무시 (#85). 클라 DisableInput은 지연·조작에 뚫린다.
 	if (!IsPawnAlive())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[Move] rejected: pawn dead"));
+		UE_LOG(LogRENet, Warning, TEXT("[Move] rejected: pawn dead"));
 		return;
 	}
 
@@ -483,7 +484,7 @@ void AREPlayerController::Server_RequestMove_Implementation(FVector Target)
 	// 끊을 뿐이라, 바로 다음 클릭이 모션 중간에 걸어나가게 만든다.
 	if (MoveLockUntil >= 0.0 && GetWorld()->GetTimeSeconds() < MoveLockUntil)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[Move] rejected: fire lock (%.2fs 남음)"),
+		UE_LOG(LogRENet, Log, TEXT("[Move] rejected: fire lock (%.2fs 남음)"),
 			MoveLockUntil - GetWorld()->GetTimeSeconds());
 		return;
 	}
@@ -493,11 +494,11 @@ void AREPlayerController::Server_RequestMove_Implementation(FVector Target)
 	FNavLocation NavLoc;
 	if (!NavSys || !NavSys->ProjectPointToNavigation(Target, NavLoc))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[Move] rejected: off-navmesh %s"), *Target.ToString());
+		UE_LOG(LogRENet, Warning, TEXT("[Move] rejected: off-navmesh %s"), *Target.ToString());
 		return;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[Move] Server_RequestMove recv target=%s"), *NavLoc.Location.ToString());
+	UE_LOG(LogRENet, Log, TEXT("[Move] Server_RequestMove recv target=%s"), *NavLoc.Location.ToString());
 	UAIBlueprintHelperLibrary::SimpleMoveToLocation(this, NavLoc.Location);
 
 	// 오너 클라에 목표를 알려 클라도 같은 방향으로 입력을 넣게 한다 (#112).
@@ -549,7 +550,7 @@ void AREPlayerController::Server_RequestFire_Implementation(FVector Dir)
 		{
 			if (ASC->HasMatchingGameplayTag(RETag_State_Dashing))
 			{
-				UE_LOG(LogTemp, Log, TEXT("[Attack] blocked: dashing"));
+				UE_LOG(LogRENet, Log, TEXT("[Attack] blocked: dashing"));
 				return;
 			}
 		}
@@ -584,7 +585,7 @@ void AREPlayerController::RunHeadlessMoveProbe()
 		APawn* P = GetPawn();
 		if (!P)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[Move] probe: no pawn"));
+			UE_LOG(LogRENet, Warning, TEXT("[Move] probe: no pawn"));
 			return;
 		}
 		// 시작점에서 +Y 500 만큼 떨어진 목표(nav 위 예상).
@@ -592,7 +593,7 @@ void AREPlayerController::RunHeadlessMoveProbe()
 		// 대쉬 프로브(+X)도 보스 캡슐에 막혀 거리 게이트가 무효화됨. 이동을 +Y로 빼면
 		// 대쉬(+X)가 Y≈450에서 발사돼 보스와 안 겹침.
 		ProbeTarget = P->GetActorLocation() + FVector(0.f, 500.f, 0.f);
-		UE_LOG(LogTemp, Log, TEXT("[Move] probe start: pawn=%s target=%s"),
+		UE_LOG(LogRENet, Log, TEXT("[Move] probe start: pawn=%s target=%s"),
 			*P->GetActorLocation().ToString(), *ProbeTarget.ToString());
 
 		// 정상 이동 요청.
@@ -607,7 +608,7 @@ void AREPlayerController::RunHeadlessMoveProbe()
 			if (APawn* Pn = GetPawn())
 			{
 				const float Dist = FVector::Dist2D(Pn->GetActorLocation(), ProbeTarget);
-				UE_LOG(LogTemp, Log, TEXT("[Move] probe dist=%.1f loc=%s"),
+				UE_LOG(LogRENet, Log, TEXT("[Move] probe dist=%.1f loc=%s"),
 					Dist, *Pn->GetActorLocation().ToString());
 			}
 		});
@@ -626,7 +627,7 @@ void AREPlayerController::RunHeadlessFireProbe()
 		APawn* P = GetPawn();
 		if (!P)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[Attack] probe: no pawn"));
+			UE_LOG(LogRENet, Warning, TEXT("[Attack] probe: no pawn"));
 			return;
 		}
 		AREBossCharacter* Boss = nullptr;
@@ -637,11 +638,11 @@ void AREPlayerController::RunHeadlessFireProbe()
 		}
 		if (!Boss)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[Attack] probe: no boss"));
+			UE_LOG(LogRENet, Warning, TEXT("[Attack] probe: no boss"));
 			return;
 		}
 		const FVector Dir = (Boss->GetActorLocation() - P->GetActorLocation()).GetSafeNormal2D();
-		UE_LOG(LogTemp, Log, TEXT("[Attack] probe fire dir=%s"), *Dir.ToString());
+		UE_LOG(LogRENet, Log, TEXT("[Attack] probe fire dir=%s"), *Dir.ToString());
 		Server_RequestFire(Dir);   // 1발 — hit boss 기대
 		Server_RequestFire(Dir);   // 즉시 재발사 — rate-limited 기대
 
@@ -649,7 +650,7 @@ void AREPlayerController::RunHeadlessFireProbe()
 		// 막히면 `[Move] rejected: fire lock` 이 찍히고, 막히지 않으면 폰이 +Y로 걸어가
 		// 이어지는 `[Move] probe dist` 가 흔들려 그것으로도 드러난다.
 		const FVector LockProbeTarget = P->GetActorLocation() + FVector(0.f, 200.f, 0.f);
-		UE_LOG(LogTemp, Log, TEXT("[Move] fire lock probe: 이동 요청 (거절 기대)"));
+		UE_LOG(LogRENet, Log, TEXT("[Move] fire lock probe: 이동 요청 (거절 기대)"));
 		Server_RequestMove(LockProbeTarget);
 	});
 	GetWorld()->GetTimerManager().SetTimer(ProbeFireTimer, FireDel, 1.5f, false);
@@ -663,7 +664,7 @@ void AREPlayerController::RunHeadlessDashProbe()
 		ARECharacterBase* Char = Cast<ARECharacterBase>(GetPawn());
 		if (!Char)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[Dash] probe: no pawn"));
+			UE_LOG(LogRENet, Warning, TEXT("[Dash] probe: no pawn"));
 			return;
 		}
 		UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Char);
@@ -672,11 +673,11 @@ void AREPlayerController::RunHeadlessDashProbe()
 		// 1) 정상 대쉬(+X 방향).
 		const bool bFirst = Char->TryDash(FVector::ForwardVector);
 		const bool bDashingTag = ASC && ASC->HasMatchingGameplayTag(RETag_State_Dashing);
-		UE_LOG(LogTemp, Log, TEXT("[Dash] activate ok=%d State.Dashing=%d"), bFirst, bDashingTag);
+		UE_LOG(LogRENet, Log, TEXT("[Dash] activate ok=%d State.Dashing=%d"), bFirst, bDashingTag);
 
 		// 2) 즉시 재시도 → 쿨다운 차단 기대.
 		const bool bBlocked = Char->TryDash(FVector::ForwardVector);
-		UE_LOG(LogTemp, Log, TEXT("[Dash] immediate retry activated=%d (0=blocked by cooldown, 기대 0)"), bBlocked);
+		UE_LOG(LogRENet, Log, TEXT("[Dash] immediate retry activated=%d (0=blocked by cooldown, 기대 0)"), bBlocked);
 
 		// 3) 0.3s 후 이동거리 측정(RootMotion 완료 뒤).
 		FTimerHandle DistTimer;
@@ -685,7 +686,7 @@ void AREPlayerController::RunHeadlessDashProbe()
 			if (APawn* Pn = GetPawn())
 			{
 				const float Dist = FVector::Dist2D(Pn->GetActorLocation(), ProbeDashStart);
-				UE_LOG(LogTemp, Log, TEXT("[Dash] dist=%.1f (기대 ~600)"), Dist);
+				UE_LOG(LogRENet, Log, TEXT("[Dash] dist=%.1f (기대 ~600)"), Dist);
 			}
 		});
 		GetWorld()->GetTimerManager().SetTimer(DistTimer, DistDel, 0.3f, false);
@@ -699,8 +700,8 @@ void AREPlayerController::RunHeadlessDashProbe()
 			{
 				bReactivated = Pn->TryDash(FVector::ForwardVector);
 			}
-			UE_LOG(LogTemp, Log, TEXT("[Dash] re-activate ok=%d (기대 1, 쿨다운 만료)"), bReactivated);
-			UE_LOG(LogTemp, Log, TEXT("[Dash] probe done"));
+			UE_LOG(LogRENet, Log, TEXT("[Dash] re-activate ok=%d (기대 1, 쿨다운 만료)"), bReactivated);
+			UE_LOG(LogRENet, Log, TEXT("[Dash] probe done"));
 			// 종료 결정은 GameMode가 한다 (#87). 이 PC는 자기 프로브만 알아서,
 			// 먼저 끝난 하나가 서버를 내리면 뒤 클라의 프로브가 시작조차 못 한다.
 			if (AREGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<AREGameMode>() : nullptr)

@@ -8,6 +8,7 @@
 #include "Engine/DamageEvents.h"
 #include "Engine/World.h"
 #include "REHitTargets.h"
+#include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 UREArcHitProcessor::UREArcHitProcessor()
 	: EntityQuery(*this)
@@ -60,7 +61,7 @@ void UREArcHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExecuti
 				if (FVector::DistSquaredXY(A.Target, T.Location) <= A.Radius * A.Radius)
 				{
 					const float Applied = T.Player->TakeDamage(A.Damage, FDamageEvent(), nullptr, nullptr);
-					UE_LOG(LogTemp, Log, TEXT("[RE] ArcHit: Applied=%.0f R=%.0f"), Applied, A.Radius);
+					UE_LOG(LogREBullet, Log, TEXT("[RE] ArcHit: Applied=%.0f R=%.0f"), Applied, A.Radius);
 				}
 			}
 		}

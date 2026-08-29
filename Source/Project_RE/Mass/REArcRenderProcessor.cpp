@@ -7,6 +7,7 @@
 #include "Mass/EntityFragments.h"  // FTransformFragment
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/World.h"
+#include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 namespace
 {
@@ -133,6 +134,6 @@ void UREArcRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 	static int32 ArcProbeTick = 0;
 	if (((ArcProbeTick++) % 30) == 0)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[RE] ArcRenderProbe: live=%d marker=%d"), BulletXf.Num(), MarkerXf.Num());
+		UE_LOG(LogREBullet, Log, TEXT("[RE] ArcRenderProbe: live=%d marker=%d"), BulletXf.Num(), MarkerXf.Num());
 	}
 }

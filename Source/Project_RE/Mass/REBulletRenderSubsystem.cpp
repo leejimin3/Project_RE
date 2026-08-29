@@ -7,6 +7,7 @@
 #include "GameFramework/Actor.h"
 #include "Engine/World.h"
 #include "REExplosionFx.h"
+#include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
@@ -27,7 +28,7 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	Holder = InWorld.SpawnActor<AActor>();
 	if (!Holder)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[RE] RenderSubsystem: Holder spawn failed"));
+		UE_LOG(LogREBullet, Warning, TEXT("[RE] RenderSubsystem: Holder spawn failed"));
 		return;
 	}
 
@@ -63,7 +64,7 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	else
 	{
 		// 조용한 폴백 금지 — 머티리얼 없이 렌더되면 림이 사라진 것을 눈치채기 어렵다.
-		UE_LOG(LogTemp, Error, TEXT("[RE] M_REBullet 로드 실패 — 탄환 머티리얼 없이 렌더된다 (#97)"));
+		UE_LOG(LogREBullet, Error, TEXT("[RE] M_REBullet 로드 실패 — 탄환 머티리얼 없이 렌더된다 (#97)"));
 	}
 
 	// 곡사탄 ISM — 주황 구체(직선탄 빨강과 구분). Z 살아있어 궤적 높이가 보인다.
@@ -91,7 +92,7 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	}
 	else
 	{
-		UE_LOG(LogTemp, Error, TEXT("[RE] M_REBullet 로드 실패 — 곡사탄 머티리얼 없이 렌더된다 (#97)"));
+		UE_LOG(LogREBullet, Error, TEXT("[RE] M_REBullet 로드 실패 — 곡사탄 머티리얼 없이 렌더된다 (#97)"));
 	}
 
 	// 착지 마커 ISM — 게임 경고 표시처럼 아주 얇은 반투명 링.
@@ -122,14 +123,14 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	}
 	else
 	{
-		UE_LOG(LogTemp, Error, TEXT("[RE] M_ArenaMarker 로드 실패 — 마커가 기본 머티리얼로 렌더된다 (#122)"));
+		UE_LOG(LogREBullet, Error, TEXT("[RE] M_ArenaMarker 로드 실패 — 마커가 기본 머티리얼로 렌더된다 (#122)"));
 	}
 
 	// 실제 적용된 머티리얼 이름을 찍는다 — CreateDynamicMaterialInstance 가 실패하면
 	// 로드는 성공했는데도 조용히 기본 머티리얼로 렌더된다(라이팅 음영이 생겨 언릿 의도가 깨진다). (#97)
 	{
 		const UMaterialInterface* Applied = ISM->GetMaterial(0);
-		UE_LOG(LogTemp, Log, TEXT("[RE] RenderSubsystem: ISM ready (mesh=%d) material=%s"),
+		UE_LOG(LogREBullet, Log, TEXT("[RE] RenderSubsystem: ISM ready (mesh=%d) material=%s"),
 			ISM->GetStaticMesh() != nullptr,
 			Applied ? *Applied->GetName() : TEXT("NULL"));
 	}

@@ -14,6 +14,7 @@
 #include "HAL/PlatformMisc.h"
 #include "REStatsSettings.h"
 #include "GameFramework/PawnMovementComponent.h"
+#include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 namespace
 {
@@ -49,7 +50,7 @@ void AREGameMode::BeginPlay()
 	// M3.5 ③: 스탯 로드 확인 — ini 반영 검증 프로브 (재시작 반영 원칙의 관측점).
 	{
 		const UREStatsSettings* Stats = GetDefault<UREStatsSettings>();
-		UE_LOG(LogTemp, Log, TEXT("[Stats] Dmg=%.1f AtkInt=%.2f Range=%.0f PHP=%.0f BHP=%.0f BSpd=%.0f BLife=%.1f BInt=%.2f PerShot=%d"),
+		UE_LOG(LogRE, Log, TEXT("[Stats] Dmg=%.1f AtkInt=%.2f Range=%.0f PHP=%.0f BHP=%.0f BSpd=%.0f BLife=%.1f BInt=%.2f PerShot=%d"),
 			Stats->AttackDamage, Stats->AttackInterval, Stats->AttackRange, Stats->PlayerMaxHealth,
 			Stats->BossMaxHealth, Stats->BulletSpeed, Stats->BulletLifetime, Stats->BossFireInterval, Stats->BulletsPerShot);
 	}
@@ -61,17 +62,17 @@ void AREGameMode::BeginPlay()
 		FMassEntityManager& EM = Mass->GetMutableEntityManager();
 		FMassArchetypeHandle Arch = EM.CreateArchetype({ FRETestFragment::StaticStruct() });
 		FMassEntityHandle E = EM.CreateEntity(Arch);
-		UE_LOG(LogTemp, Log, TEXT("[RE] Mass entity created: Index=%d Serial=%d"), E.Index, E.SerialNumber);
+		UE_LOG(LogRE, Log, TEXT("[RE] Mass entity created: Index=%d Serial=%d"), E.Index, E.SerialNumber);
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[RE] UMassEntitySubsystem NULL"));
+		UE_LOG(LogRE, Warning, TEXT("[RE] UMassEntitySubsystem NULL"));
 	}
 
 	// #4 검증: 두 Processor CDO의 ExecutionFlags 확인. Sim=7(AllNetModes), Render=5(Standalone|Client).
 	const uint8 SimFlags    = (uint8)GetDefault<UREBulletSimProcessor>()->GetExecutionFlags();
 	const uint8 RenderFlags = (uint8)GetDefault<UREBulletRenderProcessor>()->GetExecutionFlags();
-	UE_LOG(LogTemp, Log, TEXT("[RE] SimProcessor flags=%d  RenderProcessor flags=%d"), SimFlags, RenderFlags);
+	UE_LOG(LogRE, Log, TEXT("[RE] SimProcessor flags=%d  RenderProcessor flags=%d"), SimFlags, RenderFlags);
 
 	// #5 검증: 보스 스폰 후 탄막 트리거 → 싱글 경로 스폰 카운트 실증.
 	// AlwaysSpawn: 캡슐 충돌로 스폰 실패하는 것 방지.
@@ -97,13 +98,13 @@ void AREGameMode::BeginPlay()
 		const TArray<FBulletSpawnParams> Sp = GenerateSpiral(FVector::ZeroVector, FSpiralParams{});
 		const float SA0 = FMath::RadiansToDegrees(FMath::Atan2(Sp[0].Velocity.Y, Sp[0].Velocity.X));
 		const float SA1 = FMath::RadiansToDegrees(FMath::Atan2(Sp[1].Velocity.Y, Sp[1].Velocity.X));
-		UE_LOG(LogTemp, Log, TEXT("[RE] SpiralProbe: N=%d |V0|=%.1f ang0=%.1f ang1=%.1f"),
+		UE_LOG(LogRE, Log, TEXT("[RE] SpiralProbe: N=%d |V0|=%.1f ang0=%.1f ang1=%.1f"),
 			Sp.Num(), Sp[0].Velocity.Size(), SA0, SA1);
 
 		const TArray<FBulletSpawnParams> Fn = GenerateFan(FVector::ZeroVector, FFanParams{});
 		const float FA0 = FMath::RadiansToDegrees(FMath::Atan2(Fn[0].Velocity.Y, Fn[0].Velocity.X));
 		const float FAL = FMath::RadiansToDegrees(FMath::Atan2(Fn.Last().Velocity.Y, Fn.Last().Velocity.X));
-		UE_LOG(LogTemp, Log, TEXT("[RE] FanProbe: N=%d ang_first=%.1f ang_last=%.1f"), Fn.Num(), FA0, FAL);
+		UE_LOG(LogRE, Log, TEXT("[RE] FanProbe: N=%d ang_first=%.1f ang_last=%.1f"), Fn.Num(), FA0, FAL);
 	}
 
 	// 준비 신호가 이미 와 있었다면 여기서 켜진다 — PC BeginPlay와 GameMode BeginPlay는 순서가 보장되지 않는다.
@@ -124,7 +125,7 @@ void AREGameMode::EndGame(bool bVictory)
 	}
 	bGameOver = true;
 
-	UE_LOG(LogTemp, Log, TEXT("[RE] EndGame: %s"), bVictory ? TEXT("VICTORY") : TEXT("DEFEAT"));
+	UE_LOG(LogRE, Log, TEXT("[RE] EndGame: %s"), bVictory ? TEXT("VICTORY") : TEXT("DEFEAT"));
 
 	// 1) 탄막 발사 중지. 이미 뜬 탄환은 Lifetime 다할 때까지 계속 난다 (설계 합의 — 일괄 소멸 안 함).
 	if (DemoBoss)
@@ -160,7 +161,7 @@ void AREGameMode::NotifyPlayerReady(APlayerController* PC)
 	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
 	if (PC && !bAlreadyInSet)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[RE] Player ready %d/%d"), ReadyPlayers.Num(), Expected);
+		UE_LOG(LogRE, Log, TEXT("[RE] Player ready %d/%d"), ReadyPlayers.Num(), Expected);
 	}
 	TryStartBossFiring();
 }
@@ -189,13 +190,13 @@ void AREGameMode::NotifyPlayerDied(APlayerController* PC)
 		Move->StopMovementImmediately();                       // 잔여 속도 제거
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[RE] Player died %d/%d"), DeadPlayers.Num(), ReadyPlayers.Num());
+	UE_LOG(LogRE, Log, TEXT("[RE] Player died %d/%d"), DeadPlayers.Num(), ReadyPlayers.Num());
 
 	// 분모는 ExpectedPlayers가 아니라 실제 접속자 수다 — 중간에 나간 사람이 있으면
 	// 고정 분모로는 남은 사람이 다 죽어도 게임이 끝나지 않는다.
 	if (DeadPlayers.Num() >= ReadyPlayers.Num())
 	{
-		UE_LOG(LogTemp, Log, TEXT("[RE] All %d players dead"), ReadyPlayers.Num());
+		UE_LOG(LogRE, Log, TEXT("[RE] All %d players dead"), ReadyPlayers.Num());
 		EndGame(/*bVictory=*/false);
 	}
 }
@@ -207,7 +208,7 @@ void AREGameMode::Logout(AController* Exiting)
 		ReadyPlayers.Remove(PC);
 		DeadPlayers.Remove(PC);
 
-		UE_LOG(LogTemp, Log, TEXT("[RE] Player left — ready=%d dead=%d"),
+		UE_LOG(LogRE, Log, TEXT("[RE] Player left — ready=%d dead=%d"),
 			ReadyPlayers.Num(), DeadPlayers.Num());
 
 		// 분모가 줄었으니 지금이 종료 시점일 수 있다. 남은 사람이 이미 다 죽어 있던 경우다.
@@ -225,11 +226,11 @@ void AREGameMode::NotifyProbeComplete()
 {
 	++CompletedProbes;
 	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
-	UE_LOG(LogTemp, Log, TEXT("[RE] Probe complete %d/%d"), CompletedProbes, Expected);
+	UE_LOG(LogRE, Log, TEXT("[RE] Probe complete %d/%d"), CompletedProbes, Expected);
 
 	if (CompletedProbes >= Expected)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[RE] All probes done — exiting"));
+		UE_LOG(LogRE, Log, TEXT("[RE] All probes done — exiting"));
 		// 헤드리스 프로세스 자체 종료(결정적 실행). 전원 완주 후에만 부른다.
 		FPlatformMisc::RequestExit(false);
 	}
@@ -249,7 +250,7 @@ APawn* AREGameMode::SpawnDefaultPawnAtTransform_Implementation(AController* NewP
 	FTransform Adjusted = SpawnTransform;
 	Adjusted.AddToTranslation(Offset);
 
-	UE_LOG(LogTemp, Log, TEXT("[RE] Spawn player idx=%d offsetY=%.0f loc=%s"),
+	UE_LOG(LogRE, Log, TEXT("[RE] Spawn player idx=%d offsetY=%.0f loc=%s"),
 		SpawnedPawnCount - 1, Offset.Y, *Adjusted.GetLocation().ToString());
 
 	return Super::SpawnDefaultPawnAtTransform_Implementation(NewPlayer, Adjusted);
@@ -265,5 +266,5 @@ void AREGameMode::TryStartBossFiring()
 	bFiringStarted = true;
 	// 시드는 서버 전용 PhaseRng 초기화용 — 네트워크에 나가지 않는다 (#84).
 	DemoBoss->StartFiring(/*Seed=*/FMath::Rand());
-	UE_LOG(LogTemp, Log, TEXT("[RE] Boss firing started (%d/%d ready)"), ReadyPlayers.Num(), Expected);
+	UE_LOG(LogRE, Log, TEXT("[RE] Boss firing started (%d/%d ready)"), ReadyPlayers.Num(), Expected);
 }

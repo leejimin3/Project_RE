@@ -11,6 +11,7 @@
 #include "ProfilingDebugging/CsvProfiler.h"
 #include "REHitTargets.h"
 #include "REExplosionFx.h"   // 피격 폭발 (#98)
+#include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 CSV_DECLARE_CATEGORY_EXTERN(REBullet);  // 정의는 REBulletSimProcessor.cpp
 
@@ -82,14 +83,14 @@ void UREBulletHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 						// 이 경로는 로그가 없으면 관측 불가다 — 데미지를 안 주므로 아래 Applied 로그가
 						// 안 찍히고, "탄이 그냥 사라진 것"과 구별되지 않는다. 대쉬 한 번에 다수라 Verbose
 						// (검증 시 -LogCmds="LogTemp Verbose").
-						UE_LOG(LogTemp, Verbose, TEXT("[RE] BulletHit: dash-destroy (무적, 데미지 없음)"));
+						UE_LOG(LogREBullet, Verbose, TEXT("[RE] BulletHit: dash-destroy (무적, 데미지 없음)"));
 					}
 					else if (T.Player->HasAuthority())
 					{
 						const float Applied = T.Player->TakeDamage(BulletDamage, FDamageEvent(), nullptr, nullptr);
 						// netmode 를 함께 찍는다 — 클라 프로세스는 접속 전 로컬 월드를 잠깐 돌리므로
 						// 로그에 데미지가 보인다고 곧 "클라가 데미지를 줬다"가 아니다. 판정에 필요하다 (#98).
-						UE_LOG(LogTemp, Log, TEXT("[RE] BulletHit: Applied=%.0f netmode=%d"),
+						UE_LOG(LogREBullet, Log, TEXT("[RE] BulletHit: Applied=%.0f netmode=%d"),
 							Applied, (int32)World->GetNetMode());
 					}
 					REExplosionFx::SpawnBulletExplosion(World, BulletLoc);

@@ -9,6 +9,7 @@
 #include "Animation/AnimSequence.h"
 #include "UObject/ConstructorHelpers.h"
 #include "REStatsSettings.h"
+#include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 UREAttackComponent::UREAttackComponent()
 {
@@ -54,7 +55,7 @@ bool UREAttackComponent::FireInDirection(const FVector& Dir)
 	const double Now = GetWorld()->GetTimeSeconds();
 	if (LastFireTime >= 0.0 && Now - LastFireTime < AttackInterval * 0.9)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[Attack] rate-limited (dt=%.2f)"), Now - LastFireTime);
+		UE_LOG(LogRE, Log, TEXT("[Attack] rate-limited (dt=%.2f)"), Now - LastFireTime);
 		return false;
 	}
 	LastFireTime = Now;
@@ -86,12 +87,12 @@ bool UREAttackComponent::FireInDirection(const FVector& Dir)
 		APawn* OwnerPawn = Cast<APawn>(GetOwner());
 		AController* InstigatorController = OwnerPawn ? OwnerPawn->GetController() : nullptr;
 		const float Applied = Boss->TakeDamage(Damage, FDamageEvent(), InstigatorController, GetOwner());
-		UE_LOG(LogTemp, Log, TEXT("[Attack] hit boss, applied=%.1f"), Applied);
+		UE_LOG(LogRE, Log, TEXT("[Attack] hit boss, applied=%.1f"), Applied);
 	}
 	else
 	{
 		// 방향이 빗나감(0) 또는 다른 것에 막힘(1) — 유저 조준 실패는 정상 케이스.
-		UE_LOG(LogTemp, Log, TEXT("[Attack] miss (blocked=%d)"), bBlockingHit ? 1 : 0);
+		UE_LOG(LogRE, Log, TEXT("[Attack] miss (blocked=%d)"), bBlockingHit ? 1 : 0);
 	}
 
 #if ENABLE_DRAW_DEBUG

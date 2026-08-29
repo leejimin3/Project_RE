@@ -10,6 +10,7 @@
 #include "Engine/World.h"
 #include "UnrealClient.h"   // FScreenshotRequest — 시각 검증 (#97)
 #include "ProfilingDebugging/CsvProfiler.h"
+#include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 CSV_DECLARE_CATEGORY_EXTERN(REBullet);  // 정의는 REBulletSimProcessor.cpp
 
@@ -143,7 +144,7 @@ void UREBulletRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassE
 			// 직접 요청이 확실하다 — 산출물은 Saved/Screenshots/ 아래.
 			const bool bShowUI = CVarDebugShotUI.GetValueOnGameThread() != 0;
 			FScreenshotRequest::RequestScreenshot(bShowUI);
-			UE_LOG(LogTemp, Log, TEXT("[RE] DebugScreenshot: 요청 (tick=%d live=%d ui=%d)"),
+			UE_LOG(LogREBullet, Log, TEXT("[RE] DebugScreenshot: 요청 (tick=%d live=%d ui=%d)"),
 				ShotTick, M, bShowUI ? 1 : 0);
 		}
 	}
@@ -152,6 +153,6 @@ void UREBulletRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassE
 	static int32 ProbeTick = 0;
 	if (((ProbeTick++) % 30) == 0)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[RE] RenderProbe: live=%d ISM.Count=%d"), M, ISM->GetInstanceCount());
+		UE_LOG(LogREBullet, Log, TEXT("[RE] RenderProbe: live=%d ISM.Count=%d"), M, ISM->GetInstanceCount());
 	}
 }

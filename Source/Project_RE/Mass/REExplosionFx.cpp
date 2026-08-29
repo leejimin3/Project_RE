@@ -6,6 +6,7 @@
 #include "NiagaraComponentPoolMethodEnum.h"
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
+#include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 namespace
 {
@@ -59,7 +60,7 @@ namespace
 		else
 		{
 			// 조용한 무동작 금지 — 폭발이 안 나오는 것을 눈치채기 어렵다.
-			UE_LOG(LogTemp, Error, TEXT("[RE] NS_REBulletExplosion 로드 실패 — 폭발이 표시되지 않는다 (#98)"));
+			UE_LOG(LogREBullet, Error, TEXT("[RE] NS_REBulletExplosion 로드 실패 — 폭발이 표시되지 않는다 (#98)"));
 		}
 	}
 }
@@ -71,7 +72,7 @@ void REExplosionFx::Preload(const UWorld* World)
 		return;
 	}
 	EnsureLoaded();
-	UE_LOG(LogTemp, Log, TEXT("[RE] ExplosionFx: 선로드 %s (#107)"),
+	UE_LOG(LogREBullet, Log, TEXT("[RE] ExplosionFx: 선로드 %s (#107)"),
 		GCachedSystem ? TEXT("완료") : TEXT("실패"));
 }
 
@@ -116,7 +117,7 @@ void REExplosionFx::SpawnBulletExplosion(const UWorld* World, const FVector& Loc
 		const double Window = Now - LastLog;
 		if (Window >= 1.0)
 		{
-			UE_LOG(LogTemp, Log, TEXT("[RE] ExplosionProbe: 스폰=%d / %.2fs (%.1f/s)"),
+			UE_LOG(LogREBullet, Log, TEXT("[RE] ExplosionProbe: 스폰=%d / %.2fs (%.1f/s)"),
 				Count, Window, Count / Window);
 			Count = 0;
 			LastLog = Now;

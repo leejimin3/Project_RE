@@ -8,6 +8,7 @@
 #include "EngineUtils.h"                // TActorIterator
 #include "TimerManager.h"
 #include "ProfilingDebugging/CsvProfiler.h"   // 채움 완료 시점에 캡처 시작 신호 (#88)
+#include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 namespace
 {
@@ -50,7 +51,7 @@ void UREActorBulletSpawner::OnWorldBeginPlay(UWorld& InWorld)
 	}
 	if (!SharedMID)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[RE] ActorBulletSpawner: SharedMID 생성 실패 (탄환 기본색으로 진행)"));
+		UE_LOG(LogREBullet, Warning, TEXT("[RE] ActorBulletSpawner: SharedMID 생성 실패 (탄환 기본색으로 진행)"));
 	}
 
 	// 자립 구동 — GameMode 무관. CVar가 0이면 Fire()가 즉시 return이라 비용 무시 가능.
@@ -110,7 +111,7 @@ void UREActorBulletSpawner::Fire()
 		{
 			++Live;
 		}
-		UE_LOG(LogTemp, Log, TEXT("[RE] ActorBulletProbe: live=%d target=%d perShot=%d"), Live, Target, N);
+		UE_LOG(LogREBullet, Log, TEXT("[RE] ActorBulletProbe: live=%d target=%d perShot=%d"), Live, Target, N);
 	}
 
 	// 채움 완료 = 정상상태 진입. 프로파일 캡처가 이 이벤트에서 시작한다 (-csvStartOnEvent, #88).
