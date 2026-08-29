@@ -483,83 +483,23 @@ void AREBossCharacter::FireArtillery()
 	                        SweepIdx, GetServerNow());
 }
 
-void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pattern, EArtilleryShape Shape,
-                                                              FVector_NetQuantize Origin,
-                                                              FVector_NetQuantize AimLoc, int32 CallSeed,
-                                                              int32 SweepIdx, float ServerTime)
+/**
+ *  착지점 생성. 실패 시 false + 로그.
+ *
+ *  **결정론 계약:** CallRng 를 소비하는 경로(GenRandom)의 호출 위치와 횟수를 바꾸면 안 된다.
+ *  서버와 클라가 같은 시드로 같은 순서로 뽑아야 착지점이 일치한다. 지금 이 함수에서
+ *  난수를 쓰는 것은 MicroMissile 의 산포와 Artillery 의 Random 모양 둘뿐이다.
+ */
+bool AREBossCharacter::BuildArcTargets(EBulletPattern Pattern, EArtilleryShape Shape,
+                                       const FVector& BossLoc, const FVector& PlayerLoc,
+                                       int32 SweepIdx, float ServerTime, int32 Count,
+                                       FRandomStream& CallRng, TArray<FVector>& Out) const
 {
-	UREBulletSpawnSubsystem* Spawner = GetWorld() ? GetWorld()->GetSubsystem<UREBulletSpawnSubsystem>() : nullptr;
-	if (!Spawner)
-	{
-		UE_LOG(LogRENet, Warning, TEXT("[RE] Boss::FireArtillery: Spawner NULL"));
-		return;
-	}
+	const float GroundZ = BossLoc.Z + MarkerGroundOffset;   // 착지 평면(보스 캡슐 바닥 근사)
 
-	// 곡사 계열 네 패턴이 이 경로를 공유한다 — 갈리는 것은 체공/고도/발수와 착지 지오메트리뿐이다.
-	// 클라는 페이즈 로직을 안 돌리므로 어느 쪽인지 페이로드로 받아야 한다 (#84).
-	const bool bStorm  = (Pattern == EBulletPattern::ArtilleryStorm);
-	const bool bLissa  = (Pattern == EBulletPattern::LissajousStorm);
-	const bool bVortex = (Pattern == EBulletPattern::BezierVortex);
-	const bool bRoseF  = (Pattern == EBulletPattern::RoseField);
-	const bool bDome   = (Pattern == EBulletPattern::AerialDome);
-	const bool bSpiro  = (Pattern == EBulletPattern::Spirograph);
-	const bool bMicro  = (Pattern == EBulletPattern::MicroMissile);
-	// 아래 셋은 바닥에 그래프를 그리고 3차 제어점으로 가는 길을 성형한다.
-	const bool bShaped = bRoseF || bDome || bSpiro;
-
-	float FlightTime = REBoss::ArtilleryFlightTime;
-	float MaxHeight  = REBoss::ArtilleryMaxHeight;   // 소용돌이는 탄마다 덮어쓴다(층 만들기)
-	int32 Count      = REBoss::ArtilleryCount;
-	if (bStorm)
+	switch (Pattern)
 	{
-		FlightTime = REBoss::StormFlightTime;  MaxHeight = REBoss::StormMaxHeight;  Count = REBoss::StormCount;
-	}
-	else if (bLissa)
-	{
-		FlightTime = REBoss::LissaFlightTime;  MaxHeight = REBoss::LissaMaxHeight;  Count = REBoss::LissaCount;
-	}
-	else if (bVortex)
-	{
-		FlightTime = REBoss::VortexFlightTime; MaxHeight = REBoss::VortexMaxHeight; Count = REBoss::VortexCount;
-	}
-	else if (bRoseF)
-	{
-		FlightTime = REBoss::RoseFieldFlightTime; MaxHeight = REBoss::RoseFieldMaxHeight; Count = REBoss::RoseFieldCount;
-	}
-	else if (bDome)
-	{
-		FlightTime = REBoss::DomeFlightTime;      MaxHeight = REBoss::DomeMaxHeight;      Count = REBoss::DomeCount;
-	}
-	else if (bSpiro)
-	{
-		FlightTime = REBoss::SpiroFlightTime;     MaxHeight = REBoss::SpiroMaxHeight;     Count = REBoss::SpiroCount;
-	}
-	else if (bMicro)
-	{
-		FlightTime = REBoss::MicroFlightTime;     MaxHeight = REBoss::MicroMaxHeight;     Count = REBoss::MicroCount;
-	}
-
-	// 지연 보정 — 이미 착지한 탄은 스폰하지 않는다. 착지점 생성·난수 뽑기보다 먼저 검사해 헛수고를 막는다.
-	const float Elapsed = GetElapsedSince(ServerTime);
-	if (Elapsed >= FlightTime)
-	{
-		UE_LOG(LogRENet, Log, TEXT("[RE] Boss FireArtillery: skipped (Elapsed=%.3f >= FlightTime=%.2f)"),
-			Elapsed, FlightTime);
-		return;
-	}
-
-	// 외관 보정 — 페이즈 도중 접속한 클라 따라잡기용. 도약은 페이즈 시작에서만 재생한다.
-	StartPatternLook(Pattern);
-
-	const FVector BossLoc  = Origin;
-	const FVector PlayerLoc = AimLoc;
-	const float   GroundZ  = BossLoc.Z + MarkerGroundOffset;   // 착지 평면(보스 캡슐 바닥 근사)
-
-	// 서버가 넘긴 시드로 만든 로컬 스트림 — 양쪽이 같은 난수열을 본다.
-	FRandomStream CallRng(CallSeed);
-
-	TArray<FVector> Targets;
-	if (bStorm)
+	case EBulletPattern::ArtilleryStorm:
 	{
 		// 폭풍: 단일 나선을 한 발씩 이어 그린다. 이 볼리가 맡은 구간은 전체 발수 중
 		// [SweepIdx*Count, SweepIdx*Count + Count-1] 번째 발이다. Clamp 는 타이머가
@@ -567,99 +507,154 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 		const float Denom = (float)FMath::Max(StormShotsPerSweep - 1, 1);
 		const float T0 = FMath::Clamp((SweepIdx * Count)             / Denom, 0.f, 1.f);
 		const float T1 = FMath::Clamp((SweepIdx * Count + Count - 1) / Denom, 0.f, 1.f);
-		Targets = REBulletPattern::GenSweepSpiral(BossLoc, StormMinRadius, StormMaxRadius,
-		                                          StormSweepTurns, T0, T1, Count, StormArms, GroundZ);
+		Out = REBulletPattern::GenSweepSpiral(BossLoc, StormMinRadius, StormMaxRadius,
+		                                      StormSweepTurns, T0, T1, Count, StormArms, GroundZ);
+		break;
 	}
-	else if (bLissa)
-	{
+	case EBulletPattern::LissajousStorm:
 		// 볼리 하나가 매듭 전체를 그린다. 위상을 ServerTime 에서 유도해 복제 없이 양쪽이 맞춘다.
-		Targets = REBulletPattern::GenLissajous(BossLoc, LissaExtent, LissaExtent,
-		                                        LissaFreqX, LissaFreqY,
-		                                        LissaDeltaDegPerSec * ServerTime, Count, GroundZ);
-	}
-	else if (bVortex)
+		Out = REBulletPattern::GenLissajous(BossLoc, LissaExtent, LissaExtent,
+		                                    LissaFreqX, LissaFreqY,
+		                                    LissaDeltaDegPerSec * ServerTime, Count, GroundZ);
+		break;
+
+	case EBulletPattern::BezierVortex:
 	{
 		// 착지 링을 볼리마다 돌린다 — 안 돌리면 같은 자리에 계속 떨어져 소용돌이가 안 이어진다.
 		// 반경은 톱니로 팽창한다 — 고정 링이면 그 띠 밖은 영영 안전하다. AerialDome 과 같은
 		// 수법이고 위상을 ServerTime 에서 뽑으므로 페이로드도 서버 상태도 필요 없다 (#84).
 		const float VPhase  = FMath::Frac(ServerTime / VortexExpandSec);
 		const float VRadius = FMath::Lerp(VortexMinRadius, VortexMaxRadius, VPhase);
-		Targets = REBulletPattern::GenRing(BossLoc, VRadius, Count, GroundZ,
-		                                   VortexSpinDegPerSec * ServerTime);
+		Out = REBulletPattern::GenRing(BossLoc, VRadius, Count, GroundZ,
+		                               VortexSpinDegPerSec * ServerTime);
+		break;
 	}
-	else if (bRoseF)
-	{
-		Targets = REBulletPattern::GenRoseCurve(BossLoc, RoseFieldRadius, RoseFieldPetals,
-		                                        RoseFieldSpinDegPerSec * ServerTime, Count, GroundZ);
-	}
-	else if (bDome)
+	case EBulletPattern::RoseField:
+		Out = REBulletPattern::GenRoseCurve(BossLoc, RoseFieldRadius, RoseFieldPetals,
+		                                    RoseFieldSpinDegPerSec * ServerTime, Count, GroundZ);
+		break;
+
+	case EBulletPattern::AerialDome:
 	{
 		// 링 반경이 톱니로 팽창한다 — 고정 링이면 가운데와 바깥이 영영 안전하다.
 		// 위상을 ServerTime 에서 뽑으므로 페이로드도 서버 상태도 필요 없다 (#84).
 		const float Phase  = FMath::Frac(ServerTime / DomeExpandSec);
 		const float Radius = FMath::Lerp(DomeMinRadius, DomeMaxRadius, Phase);
-		Targets = REBulletPattern::GenRing(BossLoc, Radius, Count, GroundZ,
-		                                   DomeSpinDegPerSec * ServerTime);
+		Out = REBulletPattern::GenRing(BossLoc, Radius, Count, GroundZ,
+		                               DomeSpinDegPerSec * ServerTime);
+		break;
 	}
-	else if (bSpiro)
-	{
-		Targets = REBulletPattern::GenHypotrochoid(BossLoc, SpiroRadius, SpiroBigR, SpiroSmallR,
-		                                           SpiroD, SpiroSpinDegPerSec * ServerTime,
-		                                           Count, GroundZ);
-	}
-	else if (bMicro)
-	{
+	case EBulletPattern::Spirograph:
+		Out = REBulletPattern::GenHypotrochoid(BossLoc, SpiroRadius, SpiroBigR, SpiroSmallR,
+		                                       SpiroD, SpiroSpinDegPerSec * ServerTime,
+		                                       Count, GroundZ);
+		break;
+
+	case EBulletPattern::MicroMissile:
 		// 목표는 **발사 순간의** 플레이어 위치다(유도가 아니다). 그 자리를 중심으로 좁은
 		// 원판에 균등하게 뿌려 착탄이 카펫처럼 깔리게 한다.
 		// 산포는 서버가 보낸 시드로 만든 스트림을 쓴다 — 양쪽이 같은 난수열을 본다.
-		Targets = REBulletPattern::GenRandom(PlayerLoc, MicroSpread, Count, CallRng, GroundZ);
-	}
-	else
-	{
-		switch (Shape)
-		{
-		case EArtilleryShape::Ring:
-			Targets = REBulletPattern::GenRing(BossLoc, /*Radius=*/ArenaRadius * 0.75f, Count, GroundZ);
-			break;
-		case EArtilleryShape::Line:
-			Targets = REBulletPattern::GenLine(BossLoc, PlayerLoc, /*WallLen=*/ArenaRadius * 2.f, Count, GroundZ);
-			break;
-		case EArtilleryShape::Grid:
-			Targets = REBulletPattern::GenGrid(BossLoc, ArenaRadius, ArenaRadius, /*Cols=*/4, /*Rows=*/3, GroundZ);
-			break;
-		case EArtilleryShape::Spiral:
-			Targets = REBulletPattern::GenArcSpiral(BossLoc, /*MaxRadius=*/ArenaRadius, Count, GroundZ);
-			break;
-		case EArtilleryShape::PlayerAimed:
-			Targets = REBulletPattern::GenPlayerCluster(PlayerLoc, /*ClusterRadius=*/150.f, /*RingN=*/4, GroundZ);
-			break;
-		case EArtilleryShape::Random:
-			Targets = REBulletPattern::GenRandom(BossLoc, ArenaRadius, Count, CallRng, GroundZ);
-			break;
-		}
-	}
+		Out = REBulletPattern::GenRandom(PlayerLoc, MicroSpread, Count, CallRng, GroundZ);
+		break;
 
-	TArray<REBulletPattern::FArcBulletSpawnParams> Shots;
+	case EBulletPattern::Artillery:
+		return BuildArtilleryShapeTargets(Shape, BossLoc, PlayerLoc, Count, GroundZ, CallRng, Out);
+
+	default:
+		// 곡사가 아닌 패턴이 이 경로에 오면 라우팅이 깨진 것이다 — 테이블의 Family 와
+		// 발사 분기가 어긋났다는 뜻이다(R-04). 전에는 이 경우 Artillery 의 Shape switch 로
+		// 흘러들어가 엉뚱한 착지점을 만들었다.
+		UE_LOG(LogRENet, Error, TEXT("[RE] BuildArcTargets: 곡사 아닌 패턴 %d 가 곡사 경로에 진입"),
+			(int32)Pattern);
+		return false;
+	}
+	return true;
+}
+
+/** Artillery 페이즈 전용 착지 모양. Random 케이스만 CallRng 를 소비한다. */
+bool AREBossCharacter::BuildArtilleryShapeTargets(EArtilleryShape Shape, const FVector& BossLoc,
+                                                  const FVector& PlayerLoc, int32 Count, float GroundZ,
+                                                  FRandomStream& CallRng, TArray<FVector>& Out) const
+{
+	switch (Shape)
+	{
+	case EArtilleryShape::Ring:
+		Out = REBulletPattern::GenRing(BossLoc, /*Radius=*/ArenaRadius * 0.75f, Count, GroundZ);
+		break;
+	case EArtilleryShape::Line:
+		Out = REBulletPattern::GenLine(BossLoc, PlayerLoc, /*WallLen=*/ArenaRadius * 2.f, Count, GroundZ);
+		break;
+	case EArtilleryShape::Grid:
+		Out = REBulletPattern::GenGrid(BossLoc, ArenaRadius, ArenaRadius, /*Cols=*/4, /*Rows=*/3, GroundZ);
+		break;
+	case EArtilleryShape::Spiral:
+		Out = REBulletPattern::GenArcSpiral(BossLoc, /*MaxRadius=*/ArenaRadius, Count, GroundZ);
+		break;
+	case EArtilleryShape::PlayerAimed:
+		Out = REBulletPattern::GenPlayerCluster(PlayerLoc, /*ClusterRadius=*/150.f, /*RingN=*/4, GroundZ);
+		break;
+	case EArtilleryShape::Random:
+		Out = REBulletPattern::GenRandom(BossLoc, ArenaRadius, Count, CallRng, GroundZ);
+		break;
+
+	default:
+		// 전에는 이 경로가 없었다. Shape 를 늘리면 Targets 가 빈 채로 진행해 "발사했는데
+		// 아무것도 안 떨어지는" 조용한 실패가 됐고, 그건 아무 일도 안 일어난 것과 구별되지
+		// 않았다. 스폰 0 이라는 결과는 그대로고 **관측 가능하게 만드는 것**이 전부다.
+		// Random 케이스만 CallRng 를 소비하므로 이 분기가 늘어도 난수 소비 순서는 안 변한다.
+		ensureMsgf(false, TEXT("[RE] EArtilleryShape %d 가 BuildArtilleryShapeTargets 에 없다"), (int32)Shape);
+		UE_LOG(LogRENet, Error, TEXT("[RE] BuildArtilleryShapeTargets: 미처리 Shape %d"), (int32)Shape);
+		return false;
+	}
+	return true;
+}
+
+/**
+ *  착지점 배열을 실제 스폰 파라미터로 성형한다 — 제어점(가는 길)과 어긋내기(출발 시각).
+ *
+ *  **인덱스 계약:** Shots 는 Targets 보다 짧을 수 있다(어긋내기가 이미 착지한 발을 버린다).
+ *  루프 인덱스 i 는 끝까지 **Targets 기준**이며 Shots.Num() 이 아니다 —
+ *  MicroMissile 의 접선 각과 Spirograph 의 부호 뒤집기(i & 1)가 이 인덱스에 의존한다.
+ */
+void AREBossCharacter::ShapeArcShots(EBulletPattern Pattern, const FVector& BossLoc,
+                                     const TArray<FVector>& Targets, const REBoss::FArcDef& Arc,
+                                     float Elapsed, int32 SweepIdx,
+                                     TArray<REBulletPattern::FArcBulletSpawnParams>& Shots) const
+{
+	const bool bStorm  = (Pattern == EBulletPattern::ArtilleryStorm);
+	const bool bVortex = (Pattern == EBulletPattern::BezierVortex);
+	const bool bMicro  = (Pattern == EBulletPattern::MicroMissile);
+	// 아래 셋은 바닥에 그래프를 그리고 3차 제어점으로 가는 길을 성형한다.
+	const bool bRoseF  = (Pattern == EBulletPattern::RoseField);
+	const bool bDome   = (Pattern == EBulletPattern::AerialDome);
+	const bool bShaped = bRoseF || bDome || (Pattern == EBulletPattern::Spirograph);
+
+	// 패턴별로 한 번만 결정한다 — 전에는 같은 조건을 루프 안에서 발마다 다시 봤다.
+	// 마이크로 미사일은 발수가 10배라 발당 데미지를 낮춰야 초당 데미지가 유지된다.
+	const float ShotDamage = bMicro ? MicroDamage : ArtilleryDamage;
+	// 판정·마커 반경은 패턴의 지오메트리 축척을 따라간다 — 곡선을 그리는 패턴에서
+	// 반경이 크면 선 굵기가 무늬 자체를 뭉갠다.
+	const float ShotRadius = (Pattern == EBulletPattern::LissajousStorm) ? LissaRadius
+	                       : bMicro                                      ? MicroRadius
+	                       :                                               ArtilleryRadius;
+
 	Shots.Reserve(Targets.Num());
 	for (int32 i = 0; i < Targets.Num(); ++i)
 	{
 		REBulletPattern::FArcBulletSpawnParams P;
 		P.Start      = BossLoc;
 		P.Target     = Targets[i];
-		P.FlightTime = FlightTime;
-		P.MaxHeight  = MaxHeight;
-		// 마이크로 미사일은 발수가 10배라 발당 데미지를 낮춰야 초당 데미지가 유지된다.
-		P.Damage     = bMicro ? MicroDamage : ArtilleryDamage;
-		// 판정·마커 반경은 패턴의 지오메트리 축척을 따라간다 — 곡선을 그리는 패턴에서
-		// 반경이 크면 선 굵기가 무늬 자체를 뭉갠다.
-		P.Radius     = bLissa ? LissaRadius : (bMicro ? MicroRadius : ArtilleryRadius);
+		P.FlightTime = Arc.FlightTime;
+		P.MaxHeight  = Arc.MaxHeight;
+		P.Damage     = ShotDamage;
+		P.Radius     = ShotRadius;
 		P.Elapsed    = Elapsed;
 		if (bMicro)
 		{
 			// 초기 접선을 원주 등분각으로 고정한다 — 목표가 어디든 먼저 그 방향으로 뻗어
 			// 볼리 하나가 부채꼴로 터진다. 볼리마다 부채꼴 전체가 MicroBaseStepDeg 씩 돈다.
 			const float MAng = FMath::DegreesToRadians(
-				SweepIdx * MicroBaseStepDeg + i * (360.f / FMath::Max(Count, 1)));
+				SweepIdx * MicroBaseStepDeg + i * (360.f / FMath::Max(Arc.Count, 1)));
 			const FVector MDir(FMath::Cos(MAng), FMath::Sin(MAng), 0.f);
 			const REBulletPattern::FArcShapeOffsets Sh =
 				REBulletPattern::ArcCompassLob(P.Start, P.Target, MDir,
@@ -695,8 +690,8 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 			// 출발하지 않고 **착지점 근처에서 튀어나왔다.** 동시에 쏘면 전부 보스에서 뻗는다.
 			if (bDome)
 			{
-				P.Elapsed += REBoss::DomeFireInterval * (float)(Count - 1 - i) / Count;
-				if (P.Elapsed >= FlightTime)
+				P.Elapsed += REBoss::DomeFireInterval * (float)(Arc.Count - 1 - i) / Arc.Count;
+				if (P.Elapsed >= Arc.FlightTime)
 				{
 					continue;
 				}
@@ -713,8 +708,8 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 			// 폭풍과 같은 어긋내기. 안 하면 Count 발이 한 프레임에 통째로 나가 소용돌이가
 			// 이어진 리본이 아니라 덩어리로 보인다(실제로 그랬다). 마커는 Target 기반이라
 			// 어긋내기가 안 먹지만 스케일 램프가 Elapsed 를 쓰므로 링도 순차로 자란다.
-			P.Elapsed += REBoss::VortexFireInterval * (float)(Count - 1 - i) / Count;
-			if (P.Elapsed >= FlightTime)
+			P.Elapsed += REBoss::VortexFireInterval * (float)(Arc.Count - 1 - i) / Arc.Count;
+			if (P.Elapsed >= Arc.FlightTime)
 			{
 				continue;   // 지연이 커서 이미 착지했을 발은 버린다
 			}
@@ -727,14 +722,59 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 			// 나누는 단위는 발이 아니라 **슬롯**이다: 같은 슬롯의 팔들은 동시 발사다
 			// (GenSweepSpiral 이 슬롯 우선으로 채우므로 i/StormArms 가 슬롯 인덱스다).
 			const int32 Slot = i / StormArms;
-			P.Elapsed += REBoss::StormFireInterval * (float)(Count - 1 - Slot) / Count;
-			if (P.Elapsed >= FlightTime)
+			P.Elapsed += REBoss::StormFireInterval * (float)(Arc.Count - 1 - Slot) / Arc.Count;
+			if (P.Elapsed >= Arc.FlightTime)
 			{
 				continue;   // 지연이 커서 이미 착지했을 서브샷은 버린다
 			}
 		}
 		Shots.Add(P);
 	}
+}
+
+void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pattern, EArtilleryShape Shape,
+                                                              FVector_NetQuantize Origin,
+                                                              FVector_NetQuantize AimLoc, int32 CallSeed,
+                                                              int32 SweepIdx, float ServerTime)
+{
+	UWorld* World = GetWorld();
+	UREBulletSpawnSubsystem* Spawner = World ? World->GetSubsystem<UREBulletSpawnSubsystem>() : nullptr;
+	if (!Spawner)
+	{
+		UE_LOG(LogRENet, Warning, TEXT("[RE] Boss::FireArtillery: Spawner NULL"));
+		return;
+	}
+
+	// 체공/고도/발수는 테이블이 쥔다 — 7단 if-else 사슬이 사라진다 (R-04).
+	const REBoss::FArcDef& Arc = REBoss::GetPatternDef(Pattern).Arc;
+
+	// 지연 보정 — 이미 착지한 탄은 스폰하지 않는다. 착지점 생성·난수 뽑기보다 먼저 검사해 헛수고를 막는다.
+	// **순서를 바꾸면 CallRng 소비 횟수가 달라져 서버/클라가 갈린다.**
+	const float Elapsed = GetElapsedSince(ServerTime);
+	if (Elapsed >= Arc.FlightTime)
+	{
+		UE_LOG(LogRENet, Log, TEXT("[RE] Boss FireArtillery: skipped (Elapsed=%.3f >= FlightTime=%.2f)"),
+			Elapsed, Arc.FlightTime);
+		return;
+	}
+
+	// 외관 보정 — 페이즈 도중 접속한 클라 따라잡기용. 도약은 페이즈 시작에서만 재생한다.
+	StartPatternLook(Pattern);
+
+	// 서버가 넘긴 시드로 만든 로컬 스트림 — 양쪽이 같은 난수열을 본다.
+	FRandomStream CallRng(CallSeed);
+
+	// 1) 착지 지오메트리
+	TArray<FVector> Targets;
+	if (!BuildArcTargets(Pattern, Shape, Origin, AimLoc, SweepIdx, ServerTime, Arc.Count, CallRng, Targets))
+	{
+		return;   // 실패는 BuildArcTargets 가 로그한다
+	}
+
+	// 2) 궤적 성형 + 어긋내기
+	TArray<REBulletPattern::FArcBulletSpawnParams> Shots;
+	ShapeArcShots(Pattern, Origin, Targets, Arc, Elapsed, SweepIdx, Shots);
+
 	// [TEMP #141 STEP0] 게이트 7 기준선. %.17g 는 double 을 왕복 손실 없이 찍는 자릿수다
 	// (FVector 성분이 UE5 에서 double 이다).
 	if (GREArcDumpActive)
@@ -756,10 +796,11 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 		}
 	}
 
+	// 3) 스폰
 	Spawner->SpawnArcBulletBatch(Shots);
 
 	UE_LOG(LogRENet, Log, TEXT("[RE] Boss FireArtillery: Pattern=%d Shape=%d N=%d Flight=%.2f Sweep=%d Elapsed=%.3f role=%s"),
-		(int32)Pattern, (int32)Shape, Shots.Num(), FlightTime, SweepIdx, Elapsed,
+		(int32)Pattern, (int32)Shape, Shots.Num(), Arc.FlightTime, SweepIdx, Elapsed,
 		*UEnum::GetValueAsString(GetLocalRole()));
 }
 

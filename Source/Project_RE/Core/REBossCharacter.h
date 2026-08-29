@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "REBulletPattern.h"
 #include "REBossPatternTable.h"
+#include "REBulletPatternGenerator.h"   // FArcBulletSpawnParams — ShapeArcShots 시그니처 (#141)
 #include "REBossCharacter.generated.h"
 
 class UREHealthBarComponent;
@@ -466,6 +467,29 @@ private:
 
 	/** 현재 페이즈 Artillery/ArtilleryStorm 1회 일제사(FireCurrentPattern에서 분기). */
 	void FireArtillery();
+
+	//~ Multicast_FireArtillery_Implementation 3단 분해 (#141 R-05).
+	//  전에는 한 함수 259줄 안에서 **같은 7개 조건을 세 번 다시 분기**했다 —
+	//  파라미터 결정 / 착지점 생성 / 샷 성형. 한 곳만 고치면 어긋나는 구조였고,
+	//  이 함수는 서버와 클라가 같이 실행하는 결정론 경로라 어긋나면 탄막이 갈린다.
+	//  파라미터는 R-04 테이블이 가져갔고, 남은 두 단계를 아래로 나눈다.
+
+	/** 착지 지오메트리. 실패 시 false + 로그. CallRng 소비 순서가 서버/클라 일치의 계약이다. */
+	bool BuildArcTargets(EBulletPattern Pattern, EArtilleryShape Shape,
+	                     const FVector& BossLoc, const FVector& PlayerLoc,
+	                     int32 SweepIdx, float ServerTime, int32 Count,
+	                     FRandomStream& CallRng, TArray<FVector>& Out) const;
+
+	/** Artillery 페이즈 전용 착지 모양(EArtilleryShape). Random 케이스만 CallRng 를 소비한다. */
+	bool BuildArtilleryShapeTargets(EArtilleryShape Shape, const FVector& BossLoc,
+	                                const FVector& PlayerLoc, int32 Count, float GroundZ,
+	                                FRandomStream& CallRng, TArray<FVector>& Out) const;
+
+	/** 착지점 → 스폰 파라미터. 제어점 성형과 출발 시각 어긋내기. */
+	void ShapeArcShots(EBulletPattern Pattern, const FVector& BossLoc,
+	                   const TArray<FVector>& Targets, const REBoss::FArcDef& Arc,
+	                   float Elapsed, int32 SweepIdx,
+	                   TArray<REBulletPattern::FArcBulletSpawnParams>& Shots) const;
 
 	//~ 페이즈별 외관 (#118). 보스는 고정형이라 애님BP 없이 single-node로 재생한다 —
 	//  Stone Golem은 자체 스켈레톤이라 ABP_Unarmed(플레이어 공유)가 붙지 않고,
