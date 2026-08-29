@@ -1,7 +1,7 @@
 # GOAL — 포트폴리오 하드닝 리팩터링 (R-01 ~ R-08)
 
 > 이 문서는 **제로컨텍스트 세션에 그대로 붙여넣는 목표**다.
-> 원본: `C:/Users/leeji/OneDrive/바탕 화면/Portfolio_Refactor_Plan.md` (왜) + `C:/Users/leeji/OneDrive/바탕 화면/Portfolio_Refactor_BeforeAfter.md` (코드 전후)
+> 원본: `docs/portfolio/refactor-plan.md` (왜) + `docs/portfolio/refactor-before-after.md` (코드 전후)
 
 ---
 
@@ -12,8 +12,8 @@
 
 **정본 문서 두 개를 먼저 끝까지 읽어라. 이 goal 은 요약이고, 그 둘이 사양이다.**
 
-1. `C:/Users/leeji/OneDrive/바탕 화면/Portfolio_Refactor_Plan.md` — 항목별 근거·위험·게이트·실행 순서
-2. `C:/Users/leeji/OneDrive/바탕 화면/Portfolio_Refactor_BeforeAfter.md` — 항목별 Before(현행 실물) / After(제안 코드)
+1. `docs/portfolio/refactor-plan.md` — 항목별 근거·위험·게이트·실행 순서
+2. `docs/portfolio/refactor-before-after.md` — 항목별 Before(현행 실물) / After(제안 코드)
 
 ---
 
@@ -130,9 +130,9 @@ R-08  헤드리스 프로브 분리      파일 이동이라 충돌 위험이 �
 
 ## 완료 후 해야 할 일
 
-1. `C:/Users/leeji/OneDrive/바탕 화면/Portfolio_Refactor_BeforeAfter.md` 의 각 항목 `After` 블록을
+1. `docs/portfolio/refactor-before-after.md` 의 각 항목 `After` 블록을
    **실제 적용된 코드로 교체**하고, 각 항목 끝 게이트 체크박스를 결과로 채운다.
-2. R-06 의 성능이 개선됐으면 그 수치를 `C:/Users/leeji/OneDrive/바탕 화면/Portfolio_Source.md` 소재 ① 에 추가한다.
+2. R-06 의 성능이 개선됐으면 그 수치를 `docs/portfolio/portfolio-source.md` 소재 ① 에 추가한다.
 3. 규모 표(Before/After 줄 수, 수정 지점 수)를 실측값으로 갱신한다.
 4. PR 을 열고(base `dev`) 게이트 10개 결과를 본문에 싣는다.
 
@@ -142,9 +142,9 @@ R-08  헤드리스 프로브 분리      파일 이동이라 충돌 위험이 �
 
 | 무엇 | 어디 |
 |---|---|
-| 리팩터링 근거·위험·게이트 | `C:/Users/leeji/OneDrive/바탕 화면/Portfolio_Refactor_Plan.md` |
-| 코드 전후 | `C:/Users/leeji/OneDrive/바탕 화면/Portfolio_Refactor_BeforeAfter.md` |
-| 포트폴리오 소재 (왜 이 리팩터가 필요한지의 맥락) | `C:/Users/leeji/OneDrive/바탕 화면/Portfolio_Source.md` |
+| 리팩터링 근거·위험·게이트 | `docs/portfolio/refactor-plan.md` |
+| 코드 전후 | `docs/portfolio/refactor-before-after.md` |
+| 포트폴리오 소재 (왜 이 리팩터가 필요한지의 맥락) | `docs/portfolio/portfolio-source.md` |
 | 프로파일링 조건 고정 | `docs/guides/profiling.md` |
 | 데디 서버 운용 | `docs/guides/dedicated-server.md` |
 | 정본 성능 리포트 | `docs/profiling/M6-gpu-breakdown.md` |
