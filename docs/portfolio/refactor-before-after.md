@@ -445,7 +445,7 @@ else
 ### 게이트 — 전부 통과
 
 - [x] Development 빌드 통과, 신규 경고 0
-- [ ] **Shipping 빌드** — 실행 중 (`ensure` 컴파일 아웃 후에도 조기 반환이 남는 것이 판정 대상)
+- [x] **Shipping 빌드 통과** — `ensure` 컴파일 아웃 후에도 조기 반환이 남는다
 - [x] 헤드리스 프로브 3종 완주 — 새 `ensure` 발화 0건
 - [x] `dedi-verify.ps1 -Clients 2` PASS (21/21)
 - [x] **게이트 10 PASS**: 워커 스레드 프로세서(`REBulletSimProcessor`, `REArcSimProcessor` —
@@ -1556,7 +1556,7 @@ R-03 정책도 여기 적용했다: 소유자 캐스트 실패는 부류 2(이 �
 
 - [x] `dedi-verify.ps1 -Clients 2` PASS (21/21) — 프로브 3종 완주 로그 전부 동일
 - [x] 프로브 로그 문자열 diff: **없음** (server 15종 / client 18종 × 2)
-- [ ] Shipping 구성 빌드 — 실행 중
+- [x] Shipping 구성 빌드 통과 — 프로브 본문이 컴파일 아웃된다
 - [x] `AREGameMode::NotifyProbeComplete` 호출 횟수·순서 동일 — `dedi-verify` 의
       "프로브 완주 (2건)" 판정이 그것이다
 
@@ -1569,7 +1569,7 @@ R-03 정책도 여기 적용했다: 소유자 캐스트 실패는 부류 2(이 �
 | 0 | 기준선 캡처가 리팩터 시작 전에 존재 | ☑ | `baseline/` — STEP 0 커밋 `9cead85` |
 | 1 | Development Editor 빌드 (신규 경고 0) | ☑ | 전 항목 커밋마다 확인 |
 | 2 | **풀 유니티 빌드** | ☑ | `Module.Project_RE.cpp` 단일 blob, Adaptive 제외 0건, C4459 0건 |
-| 3 | Shipping 빌드 | ⏳ | 실행 중 |
+| 3 | Shipping 빌드 | ☑ | Succeeded, 경고 0 → `Project_RE-Win64-Shipping.exe` |
 | 4 | 헤드리스 프로브 3종 완주, 로그 문자열 동일 | ☑ | server 15종 / client 18종 × 2, diff 0 |
 | 5 | `dedi-verify.ps1 -Clients 2` PASS | ☑ | **21/21** |
 | 6 | 패턴 15종 스폰 수·페이즈 로그 동일 | ☑ | **15/15** |
