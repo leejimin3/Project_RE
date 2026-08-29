@@ -1,0 +1,33 @@
+2 [Attack] hit boss, applied=#
+2 [Attack] probe fire dir=VEC
+2 [Attack] rate-limited (dt=#)
+4 [Dash] activate ok dir=VEC
+2 [Dash] activate ok=# State.Dashing=#
+2 [Dash] dist=# (기대 ~#)
+2 [Dash] immediate retry activated=# (#=blocked by cooldown, 기대 #)
+2 [Dash] probe done
+2 [Dash] re-activate ok=# (기대 #, 쿨다운 만료)
+2 [GAS] ASC ActorInfo set (role=ROLE_Authority)
+2 [Move] fire lock probe: 이동 요청 (거절 기대)
+12 [Move] probe dist=# loc=VEC
+2 [Move] probe start: pawn=VEC target=VEC
+2 [Move] rejected: fire lock (#s 남음)
+2 [Move] rejected: off-navmesh VEC
+2 [Move] Server_RequestMove recv target=VEC
+1 [RE] All probes done — exiting
+6 [RE] Boss FireDirect: Pattern=# Angle=# N=# Elapsed=# role=ROLE_Authority
+1 [RE] Boss firing started (#/# ready)
+1 [RE] Boss Phase: Fan #s
+1 [RE] Boss Phase: Rest #s
+12 [RE] BulletHit: Applied=# netmode=#
+1 [RE] FanProbe: N=# ang_first=# ang_last=#
+1 [RE] Mass entity created: Index=# Serial=#
+1 [RE] Player died #/#
+1 [RE] Player died (Health<=#)
+2 [RE] Player ready #/#
+2 [RE] Probe complete #/#
+1 [RE] SimProcessor flags=#  RenderProcessor flags=#
+1 [RE] Spawn player idx=# offsetY=# loc=VEC
+1 [RE] Spawn player idx=# offsetY=-# loc=VEC
+1 [RE] SpiralProbe: N=# |V0|=# ang0=# ang1=#
+1 [Stats] Dmg=# AtkInt=# Range=# PHP=# BHP=# BSpd=# BLife=# BInt=# PerShot=#

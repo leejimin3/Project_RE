@@ -49,6 +49,14 @@ public:
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_BeginPhaseLook(EBulletPattern Pattern);
 
+	/**
+	 *  [TEMP #141 STEP0] 게이트 7 기준선용 결정론 덤프. 고정 Origin/AimLoc/CallSeed/SweepIdx/
+	 *  ServerTime 으로 곡사 전 조합을 실제 RPC 구현에 통과시키고 생성된 샷을 전부 로그한다.
+	 *  R-05 분해 전후의 출력이 바이트 단위로 같은지 판정하는 유일한 근거다.
+	 *  **PR 직전 마지막 커밋에서 이 함수와 콘솔 커맨드를 되돌린다.**
+	 */
+	void DebugDumpArcShots();
+
 	/** 페이즈 로테이션 발사 시작. Seed는 서버 전용 PhaseRng 초기화용 — 네트워크 미전송 (#84). */
 	void StartFiring(int32 Seed);
 	/** 발사 정지. 이미 뜬 탄은 수명까지 유지(일괄 소멸 안 함). */

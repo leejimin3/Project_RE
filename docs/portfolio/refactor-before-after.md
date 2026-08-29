@@ -1,0 +1,1413 @@
+# 리팩터링 코드 전후 비교
+
+**작성일:** 2026-08-29 · **성격:** **계획서** — Before 는 현행 코드 실물, After 는 제안 코드
+**계획 문서:** [`refactor-plan.md`](refactor-plan.md) (왜 고치는지·위험·게이트는 그쪽)
+
+> **읽는 법**
+> - `Before` 블록은 현재 리포지토리에서 그대로 옮긴 것이다. 파일:줄 표기는 2026-08-29 기준.
+> - `After` 블록은 **제안**이다. 구현 세션이 이 형태로 만들되, 컴파일·게이트가 우선이다.
+> - 구현 세션은 실제 적용 후 이 문서의 `After` 를 **실제 적용된 코드로 교체**하고
+>   각 항목 끝에 게이트 결과를 붙인다.
+
+---
+
+## 목차
+
+| ID | 제목 | 주 파일 |
+|---|---|---|
+| [R-01](#r-01) | 템플릿 잔재 제거 | `Project_RE.Build.cs`, `Project_RE.uproject` |
+| [R-02](#r-02) | 로그 카테고리 신설 | `Project_RE.h/.cpp` (신설), 전 `.cpp` |
+| [R-03](#r-03) | 널·불변식 계약 명시화 | `REAttackComponent.cpp`, `REBossCharacter.cpp` 외 |
+| [R-04](#r-04) | 패턴 정의 단일 출처 테이블 | `REBossPatternTable.h` (신설), `REBossCharacter.*` |
+| [R-05](#r-05) | `Multicast_FireArtillery_Implementation` 분해 | `REBossCharacter.cpp` |
+| [R-06](#r-06) | Mass 배치 스폰 | `REBulletSpawnSubsystem.cpp` |
+| [R-07](#r-07) | 히트 반경 결합 해소 + 데미지 이관 | `REBulletGeometry.h` (신설), `REStatsSettings.h` |
+| [R-08](#r-08) | 헤드리스 프로브 분리 | `REHeadlessProbeComponent.*` (신설) |
+
+---
+
+<a name="r-01"></a>
+## R-01 — 템플릿 잔재 제거
+
+### ① 디렉터리
+
+**Before** — `Source/Project_RE/` 142파일 중
+
+```
+Variant_Combat/          18 파일   (CombatCharacter, CombatAIController, StateTree 유틸, EQS 컨텍스트 …)
+Variant_Platforming/      8 파일
+Variant_SideScrolling/    6 파일
+```
+
+참조 검사:
+
+```bash
+grep -rl "Variant_Combat\|Variant_Platforming\|Variant_SideScrolling" \
+  Source/Project_RE --include=*.cpp --include=*.h | grep -v "^Source/Project_RE/Variant_"
+# → 출력 없음 (실사용 코드에서 참조 0)
+```
+
+**After** — 세 디렉터리 삭제 (32파일).
+
+### ② `Project_RE.Build.cs`
+
+**Before**
+
+```csharp
+PublicDependencyModuleNames.AddRange(new string[] {
+    "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput",
+    "AIModule",
+    "StateTreeModule",              // ← Variant_Combat 전용
+    "GameplayStateTreeModule",      // ← Variant_Combat 전용
+    "UMG", "Slate", "SlateCore",
+    "MassEntity", "MassCore", "GameplayAbilities", "Niagara",
+    "GameplayTags", "GameplayTasks", "NavigationSystem", "DeveloperSettings"
+});
+
+PrivateDependencyModuleNames.AddRange(new string[] { });
+
+PublicIncludePaths.AddRange(new string[] {
+    "Project_RE",
+    "Project_RE/Baseline",
+    "Project_RE/Core",
+    "Project_RE/Mass",
+    "Project_RE/UI",
+    "Project_RE/Variant_Platforming",                 // ← 이하 13줄 전부 잔재
+    "Project_RE/Variant_Platforming/Animation",
+    "Project_RE/Variant_Combat",
+    "Project_RE/Variant_Combat/AI",
+    "Project_RE/Variant_Combat/Animation",
+    "Project_RE/Variant_Combat/Gameplay",
+    "Project_RE/Variant_Combat/Interfaces",
+    "Project_RE/Variant_Combat/UI",
+    "Project_RE/Variant_SideScrolling",
+    "Project_RE/Variant_SideScrolling/AI",
+    "Project_RE/Variant_SideScrolling/Gameplay",
+    "Project_RE/Variant_SideScrolling/Interfaces",
+    "Project_RE/Variant_SideScrolling/UI"
+});
+
+// Uncomment if you are using Slate UI
+// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
+// Uncomment if you are using online features
+// PrivateDependencyModuleNames.Add("OnlineSubsystem");
+```
+
+**After**
+
+```csharp
+PublicDependencyModuleNames.AddRange(new string[] {
+    "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput",
+    // AIModule: REPlayerController 가 UAIBlueprintHelperLibrary::SimpleMoveToLocation 을 쓴다.
+    // 이름만 보고 지우면 우클릭 이동이 죽는다.
+    "AIModule",
+    "UMG", "Slate", "SlateCore",
+    "MassEntity", "MassCore", "GameplayAbilities", "Niagara",
+    "GameplayTags", "GameplayTasks", "NavigationSystem", "DeveloperSettings"
+});
+
+PublicIncludePaths.AddRange(new string[] {
+    "Project_RE",
+    "Project_RE/Abilities",
+    "Project_RE/Baseline",
+    "Project_RE/Core",
+    "Project_RE/Mass",
+    "Project_RE/UI"
+});
+```
+
+> `Abilities` 는 원래 목록에 없었다. 지금은 모듈 루트 상대경로(`"Abilities/REGameplayTags.h"`)로
+> 우회하고 있어 동작하지만, 다른 디렉터리와 규칙이 어긋난다. 같이 맞춘다.
+> 삭제한 `StateTreeModule` / `GameplayStateTreeModule` 은 실사용 코드 참조 0 —
+> 검사: `grep -rn "StateTree" Source/Project_RE/{Core,Mass,UI,Abilities,Baseline}` → 출력 없음.
+> 주석 처리된 예시 두 줄은 템플릿 잔재라 같이 지운다(`Slate`/`SlateCore` 는 이미 Public 에 있다).
+
+### ③ `Project_RE.uproject`
+
+**Before**
+
+```
+ModelingToolsEditorMode      True
+StateTree                    True      ← 잔재
+GameplayStateTree            True      ← 잔재
+MassGameplay                 True
+GameplayAbilities            True
+ModelContextProtocol         True      ← 개발 도구
+Niagara                      True
+PythonScriptPlugin           True      ← scripts/*.py 가 쓴다. 유지
+CascadeToNiagaraConverter    True      ← 잔재 (변환은 이미 끝났다)
+```
+
+**After** — `StateTree`, `GameplayStateTree`, `CascadeToNiagaraConverter` 를 `"Enabled": false`.
+
+> `ModelContextProtocol` 은 개발 도구다. 쿡에 영향이 있는지 확인 후 판단 — **불확실하면 남긴다.**
+> 플러그인 변경은 **별도 커밋**으로 분리한다 (롤백 지점).
+
+### 게이트
+
+- [ ] Development Editor 빌드 통과
+- [ ] **풀 유니티 빌드** 통과
+- [ ] 에디터에서 `Main.umap` 열림, 쿡 경고 없음
+- [ ] `dedi-verify.ps1 -Clients 2` PASS
+
+---
+
+<a name="r-02"></a>
+## R-02 — 로그 카테고리 신설
+
+**현황:** `UE_LOG` 77회, 전부 `LogTemp`. 전용 카테고리 0.
+
+### 선언 (신설)
+
+**Before** — 없음.
+
+**After** — `Source/Project_RE/Project_RE.h`
+
+```cpp
+// 게임루프 공통 (GameMode / CharacterBase / PlayerController)
+DECLARE_LOG_CATEGORY_EXTERN(LogRE, Log, All);
+// Mass 탄막 (Sim / Render / Hit / Arc / Fx / SpawnSubsystem)
+DECLARE_LOG_CATEGORY_EXTERN(LogREBullet, Log, All);
+// 복제·RPC 경로 (Multicast 구현, 헤드리스 프로브)
+DECLARE_LOG_CATEGORY_EXTERN(LogRENet, Log, All);
+```
+
+`Source/Project_RE/Project_RE.cpp`
+
+```cpp
+DEFINE_LOG_CATEGORY(LogRE);
+DEFINE_LOG_CATEGORY(LogREBullet);
+DEFINE_LOG_CATEGORY(LogRENet);
+```
+
+> 기본 verbosity `Log`, 컴파일 상한 `All` — `LogTemp` 와 동일하게 맞춘다.
+> 다르게 잡으면 기존 `Verbose` 로그가 조용히 사라진다.
+
+### 치환 — 카테고리만 바꾼다
+
+**Before** — `Mass/REBulletHitProcessor.cpp:85`
+
+```cpp
+UE_LOG(LogTemp, Verbose, TEXT("[RE] BulletHit: dash-destroy (무적, 데미지 없음)"));
+```
+
+**After**
+
+```cpp
+UE_LOG(LogREBullet, Verbose, TEXT("[RE] BulletHit: dash-destroy (무적, 데미지 없음)"));
+```
+
+**Before** — `Core/REBossCharacter.cpp:436`
+
+```cpp
+UE_LOG(LogTemp, Log, TEXT("[RE] Boss Phase: %s %.1fs"), PhaseName, PhaseSec);
+```
+
+**After**
+
+```cpp
+UE_LOG(LogRE, Log, TEXT("[RE] Boss Phase: %s %.1fs"), PhaseName, PhaseSec);
+```
+
+> **`[RE]` 접두어와 메시지 본문은 한 글자도 바꾸지 않는다.** `dedi-verify.ps1` 과
+> 헤드리스 프로브 판정이 이 문자열을 grep 한다. 바뀌는 건 첫 인자뿐이다.
+
+### 스크립트 갱신 (같은 커밋)
+
+**Before** — `scripts/dedi-verify.ps1` (Verbose 켜는 지점)
+
+```powershell
+-LogCmds="LogTemp Verbose"
+```
+
+**After**
+
+```powershell
+-LogCmds="LogRE Verbose,LogREBullet Verbose,LogRENet Verbose"
+```
+
+> 이게 이 항목의 실질적 이득이다. 전에는 엔진 전체가 Verbose 로 쏟아졌다.
+> **스크립트 갱신을 빠뜨리면 Verbose 판정이 조용히 죽는다** — 실패가 아니라 무판정이 된다.
+
+### 게이트
+
+- [ ] `grep -rc "UE_LOG(LogTemp" Source/Project_RE --include=*.cpp` → 0
+- [ ] `dedi-verify.ps1 -Clients 2` PASS
+- [ ] 헤드리스 프로브 3종 완주
+
+---
+
+<a name="r-03"></a>
+## R-03 — 널·불변식 계약 명시화
+
+**현황:** `check`/`checkf`/`ensure`/`ensureMsgf` **0건**. `GetWorld()` 40회 중 17회가 널 검사 없이 즉시 역참조.
+
+### 먼저 정책을 코드에 적는다
+
+**After** — `Source/Project_RE/Project_RE.h` (R-02 와 같은 파일)
+
+```cpp
+/**
+ *  이 모듈의 실패 처리 규약.
+ *
+ *  1) 정상적으로 발생 가능한 부재  → if 폴백 + UE_LOG. 예외가 아니라 설계된 경로다.
+ *     (데디에 ISM 없음 / 폰 없음 / 전원 사망 / 접속 직후 GameState 미복제)
+ *  2) 프로그래머 실수로만 발생      → ensureMsgf + 조기 반환.
+ *     개발 빌드에선 콜스택 + 메시지가 남고, 쉬핑에선 컴파일 아웃되어 조기 반환만 남는다.
+ *  3) 진행하면 데이터가 깨짐        → checkf. 현재 이 모듈엔 해당 경로가 없다.
+ *
+ *  금지: 로그 없는 early-return. 조용한 실패가 이 프로젝트의 측정을 두 번 망쳤다 (#50, #88).
+ *  금지: Mass 프로세서의 워커 스레드 경로에서 ensure — 발화 순서가 보장되지 않는다.
+ *        (bRequiresGameThreadExecution=false 인 프로세서: REBulletSimProcessor, REArcSimProcessor)
+ */
+```
+
+### 사례 ① — 부류 2 (프로그래머 실수)
+
+**Before** — `Core/REAttackComponent.cpp:54,68`
+
+```cpp
+const double Now = GetWorld()->GetTimeSeconds();
+...
+const bool bBlockingHit = GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Pawn, Params);
+```
+
+컴포넌트가 등록됐는데 월드가 없는 상황은 정상 경로에 없다. 그런데 지금은 널이면
+`EXCEPTION_ACCESS_VIOLATION` 으로 **원인 메시지 없이** 죽는다.
+
+**After**
+
+```cpp
+UWorld* World = GetWorld();
+if (!ensureMsgf(World, TEXT("[RE] AttackComponent: World 없음 — 등록된 컴포넌트에선 불가능한 상태")))
+{
+    return;   // 쉬핑에선 ensure 가 컴파일 아웃되고 이 반환만 남는다
+}
+const double Now = World->GetTimeSeconds();
+...
+const bool bBlockingHit = World->LineTraceSingleByChannel(Hit, Start, End, ECC_Pawn, Params);
+```
+
+> 부수 효과: `GetWorld()` 호출이 2회 → 1회. 의도가 아니라 덤이다.
+
+### 사례 ② — 부류 1 (정상 부재) + 일관성
+
+**Before** — `Core/REBossCharacter.cpp:910`
+
+```cpp
+int32 CurrentLive = -1;
+if (const UREBulletRenderSubsystem* RS = GetWorld()->GetSubsystem<UREBulletRenderSubsystem>())
+{
+    if (const UInstancedStaticMeshComponent* ISM = RS->GetISM())
+    {
+        CurrentLive = ISM->GetInstanceCount();
+    }
+}
+```
+
+`RS` 가 없는 건 **정상**이다 — 데디 서버엔 ISM 이 없다(그래서 `-1` 폴백이 있다).
+문제는 `GetWorld()` 자체를 안 막는 것이고, 같은 파일 613줄에서는 막고 있다.
+
+**After**
+
+```cpp
+int32 CurrentLive = -1;   // -1 = 라이브 관측 불가 → 피드포워드 폴백 (데디 등, 정상 경로)
+if (const UWorld* World = GetWorld())
+{
+    if (const UREBulletRenderSubsystem* RS = World->GetSubsystem<UREBulletRenderSubsystem>())
+    {
+        if (const UInstancedStaticMeshComponent* ISM = RS->GetISM())
+        {
+            CurrentLive = ISM->GetInstanceCount();
+        }
+    }
+}
+```
+
+> 여기엔 `ensure` 를 **쓰지 않는다.** 부재가 설계된 경로이고, 아래에서 `CurrentLive < 0` 을
+> 이미 분기한다. `ensure` 를 달면 데디 서버에서 매 발사마다 오탐이 뜬다.
+
+### 사례 ③ — 로그 없는 폴백 금지
+
+**Before** — `Core/REBossCharacter.cpp:478` (`FireCurrentPattern` 도입부)
+
+```cpp
+if (bIsDead)
+{
+    return;
+}
+```
+
+죽은 보스가 타이머 콜백을 받는 건 정상이다(타이머 정리와 사망 사이 한 틱). 이건 그대로 둔다.
+
+**Before** — `Core/REBossCharacter.cpp:527` (조준 폴백)
+
+```cpp
+if (const APawn* Target = FindNearestLivingPlayerPawn())
+{
+    const FVector D = Target->GetActorLocation() - GetActorLocation();
+    AngleDeg = FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X));
+}
+// else: AngleDeg = 0 폴백 — 로그 없음
+```
+
+**After**
+
+```cpp
+if (const APawn* Target = FindNearestLivingPlayerPawn())
+{
+    const FVector D = Target->GetActorLocation() - GetActorLocation();
+    AngleDeg = FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X));
+}
+else
+{
+    // 전원 사망 — 곧 EndGame 이 발사를 끊는다. 그때까지 0도로 쏜다.
+    // 로그가 없으면 "왜 갑자기 한 방향으로만 쏘는가"를 사후에 알 수 없다.
+    UE_LOG(LogRE, Verbose, TEXT("[RE] Boss: no living target, AngleDeg=0 폴백"));
+}
+```
+
+### 적용 대상 (17곳)
+
+| 파일 | 줄 | 부류 |
+|---|---|---|
+| `Core/REAttackComponent.cpp` | 54, 68 | 2 (ensure) |
+| `Core/REBossCharacter.cpp` | 910, 1129 | 1 (if 폴백) |
+| `Core/RECharacterBase.cpp` | 398 | 1 |
+| `Core/REGameMode.cpp` | 59, 87, 138 | 2 (GameMode 는 월드 없이 존재 불가) |
+| `Core/REPlayerController.cpp` | 274, 386, 484, 487, 514, 567, 614, 616, 655, 691, 711, 713 | 대부분 2 |
+| `Mass/REBulletSpawnSubsystem.cpp` | 12 | 이미 가드됨 — 변경 없음 |
+
+> `REPlayerController` 의 프로브 관련 줄(614~713)은 **R-08 에서 파일이 통째로 이동한다.**
+> R-03 을 R-08 앞에 두면 같은 줄을 두 번 만진다 — 그래서 실행 순서가 R-03 → R-08 이다.
+
+### 게이트
+
+- [ ] Development 빌드 통과
+- [ ] **Shipping 빌드 통과** (`ensure` 컴파일 아웃 후에도 조기 반환이 정상 동작)
+- [ ] 헤드리스 프로브 3종 완주 — **새 `ensure` 가 하나도 발화하지 않을 것**
+- [ ] `dedi-verify.ps1 -Clients 2` PASS
+
+---
+
+<a name="r-04"></a>
+## R-04 — 패턴 정의 단일 출처 테이블 ★
+
+### Before — 같은 지식이 7곳에 흩어져 있다
+
+**(1) 계열 판별** — `Core/REBossCharacter.cpp:53~77`
+
+```cpp
+namespace REBoss
+{
+    static bool IsArcPattern(EBulletPattern P)
+    {
+        return P == EBulletPattern::Artillery
+            || P == EBulletPattern::ArtilleryStorm
+            || P == EBulletPattern::LissajousStorm
+            || P == EBulletPattern::BezierVortex
+            || P == EBulletPattern::RoseField
+            || P == EBulletPattern::AerialDome
+            || P == EBulletPattern::Spirograph
+            || P == EBulletPattern::MicroMissile;
+    }
+
+    static bool IsBloomPattern(EBulletPattern P)
+    {
+        return P == EBulletPattern::StarBloom
+            || P == EBulletPattern::LemniscateBloom
+            || P == EBulletPattern::SuperformulaBloom;
+    }
+}
+```
+
+**(2) 로테이션 풀** — `:355`
+
+```cpp
+static const EBulletPattern Pool[15] = {
+    EBulletPattern::Spiral, EBulletPattern::Fan, EBulletPattern::Artillery,
+    EBulletPattern::ArtilleryStorm, EBulletPattern::RoseEnvelope, EBulletPattern::Cardioid,
+    EBulletPattern::LissajousStorm, EBulletPattern::BezierVortex,
+    EBulletPattern::StarBloom, EBulletPattern::LemniscateBloom, EBulletPattern::SuperformulaBloom,
+    EBulletPattern::RoseField, EBulletPattern::AerialDome, EBulletPattern::Spirograph,
+    EBulletPattern::MicroMissile };
+```
+
+**(3) 페이즈 길이 + 로그 이름** — `:397~431` (14 case)
+
+```cpp
+float PhaseSec = SpiralPhaseSec;
+const TCHAR* PhaseName = TEXT("Spiral");
+switch (CurrentPhasePattern)
+{
+case EBulletPattern::Fan:
+    PhaseSec = FanPhaseSec; PhaseName = TEXT("Fan"); break;
+case EBulletPattern::Artillery:
+    PhaseSec = ArtilleryPhaseSec; PhaseName = TEXT("Artillery"); break;
+// … 12 case 더
+default: break;   // Spiral 기본값
+}
+```
+
+**(4) 발사 간격** — `:455~476` (12 case)
+
+```cpp
+float AREBossCharacter::FireIntervalFor(EBulletPattern P)
+{
+    switch (P)
+    {
+    case EBulletPattern::Fan:            return FanFireIntervalSec;
+    case EBulletPattern::Artillery:      return ArtilleryFireInterval;
+    // … 10 case 더
+    default:                             return REBulletPattern::FireIntervalSec();
+    }
+}
+```
+
+**(5) 외관** — `:165~236` (14 case), **(6) 곡사 파라미터** — `:632~661` (7단 if-else, R-05 에서 다룸)
+
+### 문제의 크기
+
+패턴 16번째를 추가하려면 **7곳**을 고쳐야 한다. 하나를 빠뜨려도 **컴파일이 통과한다** —
+전부 `default:` 가 있다. 결과는 크래시가 아니라 조용한 오동작이다.
+
+코드 자신이 이미 알고 있다 (`:56`):
+
+> `// 두 곳에 각각 나열하면 패턴을 늘릴 때 한쪽만 고쳐 조용히 어긋난다.`
+
+주석은 기록할 뿐 **막지 못한다.**
+
+### After — 테이블 하나 + 컴파일 타임 검증
+
+**신설** `Source/Project_RE/Core/REBossPatternTable.h`
+
+```cpp
+#pragma once
+
+#include "CoreMinimal.h"
+#include "REBulletPattern.h"
+
+namespace REBoss
+{
+    /** 발사 경로 분기. 세 계열이 서로 다른 스폰 진입점을 탄다. */
+    enum class EFamily : uint8
+    {
+        Direct,   // 직선탄 — Multicast_FireDirect
+        Bloom,    // 곡선 블룸(직선탄이지만 스폰 위치로 모양을 그린다) — Multicast_FireDirect
+        Arc       // 곡사 — Multicast_FireArtillery
+    };
+
+    /** 보스 외관(#130). 패턴마다 (질감, 이미시브) 쌍이 겹치지 않게 배분돼 있다. */
+    struct FBossLook
+    {
+        float        Snow = 0.f;
+        float        Lava = 0.f;
+        FLinearColor Emis = FLinearColor(1.f, 0.1f, 0.05f, 1.f);   // 기본 = Spiral 빨강
+    };
+
+    /** 곡사 계열 전용 파라미터. Family != Arc 이면 읽지 않는다. */
+    struct FArcDef
+    {
+        float FlightTime = 0.f;
+        float MaxHeight  = 0.f;
+        int32 Count      = 0;
+    };
+
+    /**
+     *  패턴 1종의 정의 전부. **이 구조체가 패턴 지식의 유일한 출처다.**
+     *  패턴을 추가하려면 아래 테이블에 한 줄을 넣는다 — 넣지 않으면 컴파일이 실패한다.
+     */
+    struct FPatternDef
+    {
+        EBulletPattern Pattern;        // 자기 자신 (테이블 순서 검증용)
+        EFamily        Family;
+        const TCHAR*   Name;           // 로그 표기
+        float          PhaseSec;       // 발사 구간 길이
+        float          FireInterval;   // < 0 이면 ini 기본(REBulletPattern::FireIntervalSec())
+        bool           bInRotation;    // 로테이션 풀 포함 여부
+        FArcDef        Arc;
+        FBossLook      Look;
+    };
+
+    /** 인덱스 == (int32)EBulletPattern. 아래 static_assert 가 강제한다. */
+    extern const FPatternDef PatternTable[];
+    extern const int32       PatternTableNum;
+
+    /** 테이블 조회. 범위 밖이면 Spiral(인덱스 0) 폴백 + 로그. */
+    const FPatternDef& GetPatternDef(EBulletPattern P);
+
+    inline bool IsArcPattern  (EBulletPattern P) { return GetPatternDef(P).Family == EFamily::Arc;   }
+    inline bool IsBloomPattern(EBulletPattern P) { return GetPatternDef(P).Family == EFamily::Bloom; }
+}
+```
+
+**신설** `Source/Project_RE/Core/REBossPatternTable.cpp` (발췌 — 16행 전부는 구현 세션이 채운다)
+
+```cpp
+#include "REBossPatternTable.h"
+#include "Project_RE.h"   // LogRE
+
+namespace REBoss
+{
+// 상수는 REBossCharacter.h 의 기존 constexpr 를 **값 그대로** 옮긴다. 계산식 변경 금지.
+const FPatternDef PatternTable[] =
+{
+    //  Pattern                       Family          Name                     Phase  Interval  Rot   Arc{Flight, Height, Count}     Look{Snow, Lava, Emis}
+    {   EBulletPattern::Spiral,           EFamily::Direct, TEXT("Spiral"),            5.f,   -1.f,  true,  {},                            {} },
+    {   EBulletPattern::Fan,              EFamily::Direct, TEXT("Fan"),               3.f,   0.5f,  true,  {},                            { FanSnowAmount, 0.f, FLinearColor(0.15f, 0.70f, 1.0f, 1.f) } },
+    {   EBulletPattern::Homing,           EFamily::Direct, TEXT("Homing"),            0.f,   -1.f,  false, {},                            {} },   // #67 백로그 스텁 — 로테이션 제외
+    {   EBulletPattern::Artillery,        EFamily::Arc,    TEXT("Artillery"),         /*…*/  },
+    // … 나머지 12행
+};
+
+const int32 PatternTableNum = UE_ARRAY_COUNT(PatternTable);
+
+/**
+ *  테이블 인덱스가 enum 값과 1:1인지 컴파일 타임에 확인한다.
+ *  이게 이 리팩터링의 목적 전부다 — 패턴을 추가하면서 테이블 행을 빠뜨리거나
+ *  순서를 어긋내면 **빌드가 실패한다.** 지금은 조용히 오동작한다.
+ */
+constexpr bool IsTableOrdered()
+{
+    for (int32 i = 0; i < (int32)UE_ARRAY_COUNT(PatternTable); ++i)
+    {
+        if ((int32)PatternTable[i].Pattern != i)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+static_assert(IsTableOrdered(), "PatternTable 순서가 EBulletPattern 과 어긋났다");
+static_assert(UE_ARRAY_COUNT(PatternTable) == (int32)EBulletPattern::Count,
+              "EBulletPattern 에 패턴을 추가했으면 PatternTable 에도 행을 추가하라");
+
+const FPatternDef& GetPatternDef(EBulletPattern P)
+{
+    const int32 Idx = (int32)P;
+    if (Idx >= 0 && Idx < PatternTableNum)
+    {
+        return PatternTable[Idx];
+    }
+    // 네트워크 페이로드로 들어온 값이라 범위 밖이 이론상 가능하다(구버전 클라 등).
+    // 크래시 대신 Spiral 로 폴백하되 조용히 넘기지 않는다.
+    UE_LOG(LogRE, Error, TEXT("[RE] GetPatternDef: 범위 밖 패턴 %d — Spiral 폴백"), Idx);
+    return PatternTable[0];
+}
+} // namespace REBoss
+```
+
+**enum 에 센티널 추가** — `Mass/REBulletPattern.h`
+
+```cpp
+    MicroMissile,    // 동/서/남/북 윗대각선으로 뻗었다가 꺾여 플레이어 위치로 내리꽂는 4발.
+
+    Count UMETA(Hidden)   // 테이블 크기 검증 전용. BP 드롭다운에서 숨긴다.
+};
+```
+
+> 기존 값이 하나도 안 바뀌므로 **네트워크 페이로드 호환이 유지된다.**
+> `UMETA(Hidden)` 이라 블루프린트 드롭다운에도 안 뜬다.
+
+### 호출부 치환
+
+**(2) 로테이션 풀 — Before**
+
+```cpp
+static const EBulletPattern Pool[15] = { /* 15개 나열 */ };
+...
+NewPattern = Pool[PhaseRng.RandRange(0, UE_ARRAY_COUNT(Pool) - 1)];
+```
+
+**After**
+
+```cpp
+// 로테이션 풀은 테이블에서 파생한다 — 손으로 나열하지 않는다.
+// static 지역: 첫 호출에 1회 구성. 테이블이 constexpr 이라 결과가 불변이다.
+static const TArray<EBulletPattern> Pool = []()
+{
+    TArray<EBulletPattern> P;
+    for (int32 i = 0; i < REBoss::PatternTableNum; ++i)
+    {
+        if (REBoss::PatternTable[i].bInRotation)
+        {
+            P.Add(REBoss::PatternTable[i].Pattern);
+        }
+    }
+    return P;
+}();
+...
+NewPattern = Pool[PhaseRng.RandRange(0, Pool.Num() - 1)];
+```
+
+> **주의:** `Pool.Num()` 이 15 임을 게이트로 확인한다. 16이 되면
+> `Homing` 이 로테이션에 섞여 "미구현" 경고만 찍고 아무것도 안 쏘는 페이즈가 생긴다.
+
+**(3) 페이즈 길이 + 이름 — Before** (14 case switch, 35줄)
+
+**After**
+
+```cpp
+const REBoss::FPatternDef& Def = REBoss::GetPatternDef(CurrentPhasePattern);
+const float        PhaseSec  = Def.PhaseSec;
+const TCHAR* const PhaseName = Def.Name;
+```
+
+**(4) 발사 간격 — Before** (12 case switch, 22줄)
+
+**After**
+
+```cpp
+float AREBossCharacter::FireIntervalFor(EBulletPattern P)
+{
+    const float Interval = REBoss::GetPatternDef(P).FireInterval;
+    // 음수 = "ini 기본을 쓴다". Spiral / RoseEnvelope / Cardioid 는 링 지오메트리가 같아 공유한다.
+    return (Interval >= 0.f) ? Interval : REBulletPattern::FireIntervalSec();
+}
+```
+
+**(5) 외관 — Before** (14 case switch, 72줄)
+
+**After**
+
+```cpp
+REBoss::FBossLook AREBossCharacter::LookForPattern(EBulletPattern Pattern)
+{
+    return REBoss::GetPatternDef(Pattern).Look;
+}
+```
+
+> 각 색 선택의 **근거 주석**(왜 이 패턴이 청록인지, 왜 Cardioid 는 질감까지 바꾸는지)은
+> 테이블 행 위로 그대로 옮긴다. 이 프로젝트에서 그 주석이 자산이다 — 지우지 않는다.
+
+### 이행 안전장치 (한 커밋 동안만)
+
+```cpp
+// 값을 옮기며 오타가 나면 게임플레이가 조용히 바뀐다. 원본 constexpr 를 아직 지우지 말고
+// 컴파일 타임에 동일함을 증명한 뒤, 다음 커밋에서 원본을 제거한다.
+static_assert(PatternTable[(int32)EBulletPattern::LissajousStorm].PhaseSec == LissaPhaseSec, "");
+static_assert(PatternTable[(int32)EBulletPattern::LissajousStorm].Arc.Count == LissaCount,   "");
+// … 옮긴 값 전부에 대해
+```
+
+### 규모
+
+| | Before | After |
+|---|---:|---:|
+| 패턴 지식이 사는 곳 | 7곳 | **1곳** |
+| 패턴 추가 시 수정 지점 | 7 | **1** |
+| 누락 시 결과 | 조용한 오동작 | **컴파일 실패** |
+| `REBossCharacter.cpp` 관련 줄 | ~150 | ~15 |
+
+### 게이트
+
+- [ ] **리팩터 전에** 15종 각각 `re.Debug.BossPattern <N>` 고정 실행 → 로그 캡처 (기준선)
+- [ ] 리팩터 후 같은 실행 → **볼리당 스폰 수·페이즈 길이·패턴 이름 로그가 동일**
+- [ ] `Pool.Num() == 15`
+- [ ] 이행용 `static_assert` 전부 통과 후 제거
+
+---
+
+<a name="r-05"></a>
+## R-05 — `Multicast_FireArtillery_Implementation` 분해
+
+### Before — `Core/REBossCharacter.cpp:608~867`, 한 함수 259줄
+
+```cpp
+void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pattern, EArtilleryShape Shape,
+                                                              FVector_NetQuantize Origin, FVector_NetQuantize AimLoc,
+                                                              int32 CallSeed, int32 SweepIdx, float ServerTime)
+{
+    UREBulletSpawnSubsystem* Spawner = GetWorld() ? GetWorld()->GetSubsystem<UREBulletSpawnSubsystem>() : nullptr;
+    if (!Spawner) { /* 로그 후 반환 */ }
+
+    // ── 7개 병렬 bool ────────────────────────────────────────────
+    const bool bStorm  = (Pattern == EBulletPattern::ArtilleryStorm);
+    const bool bLissa  = (Pattern == EBulletPattern::LissajousStorm);
+    const bool bVortex = (Pattern == EBulletPattern::BezierVortex);
+    const bool bRoseF  = (Pattern == EBulletPattern::RoseField);
+    const bool bDome   = (Pattern == EBulletPattern::AerialDome);
+    const bool bSpiro  = (Pattern == EBulletPattern::Spirograph);
+    const bool bMicro  = (Pattern == EBulletPattern::MicroMissile);
+    const bool bShaped = bRoseF || bDome || bSpiro;
+
+    // ── 분기 1회차: 파라미터 (7단 if-else, 30줄) ──────────────────
+    float FlightTime = ArtilleryFlightTime;
+    float MaxHeight  = ArtilleryMaxHeight;
+    int32 Count      = ArtilleryCount;
+    if (bStorm)       { FlightTime = StormFlightTime;  MaxHeight = StormMaxHeight;  Count = StormCount; }
+    else if (bLissa)  { FlightTime = LissaFlightTime;  MaxHeight = LissaMaxHeight;  Count = LissaCount; }
+    else if (bVortex) { /* … */ }
+    else if (bRoseF)  { /* … */ }
+    else if (bDome)   { /* … */ }
+    else if (bSpiro)  { /* … */ }
+    else if (bMicro)  { /* … */ }
+
+    const float Elapsed = GetElapsedSince(ServerTime);
+    if (Elapsed >= FlightTime) { /* 로그 후 반환 */ }
+    StartPatternLook(Pattern);
+    FRandomStream CallRng(CallSeed);
+
+    // ── 분기 2회차: 착지점 생성 (7단 if-else + Shape switch, 75줄) ─
+    TArray<FVector> Targets;
+    if (bStorm)       { Targets = REBulletPattern::GenSweepSpiral(/*…*/); }
+    else if (bLissa)  { Targets = REBulletPattern::GenLissajous(/*…*/); }
+    // … 5단 더
+    else
+    {
+        switch (Shape)   // ← default 없음
+        {
+        case EArtilleryShape::Ring:        Targets = /*…*/; break;
+        case EArtilleryShape::Line:        Targets = /*…*/; break;
+        case EArtilleryShape::Grid:        Targets = /*…*/; break;
+        case EArtilleryShape::Spiral:      Targets = /*…*/; break;
+        case EArtilleryShape::PlayerAimed: Targets = /*…*/; break;
+        case EArtilleryShape::Random:      Targets = /*…*/; break;
+        }                                  // ← Shape 추가 시 Targets 가 빈 채로 진행
+    }
+
+    // ── 분기 3회차: 샷 성형 (같은 bool 을 또 본다, 100줄) ──────────
+    TArray<REBulletPattern::FArcBulletSpawnParams> Shots;
+    for (int32 i = 0; i < Targets.Num(); ++i)
+    {
+        /* … P.Damage = bMicro ? … ; P.Radius = bLissa ? … ; if (bMicro) …; if (bShaped) …;
+             if (bVortex) …; if (bStorm) …;  각각 continue 로 스킵 가능 … */
+        Shots.Add(P);
+    }
+    Spawner->SpawnArcBulletBatch(Shots);
+    UE_LOG(/* … */);
+}
+```
+
+**문제:** 같은 7개 조건을 세 번 다시 분기한다. 한 곳만 고치면 어긋나고,
+이 함수는 **서버와 클라가 같이 실행하는 결정론 경로**다 — 어긋나면 탄막이 갈린다.
+그리고 `EArtilleryShape` switch 에 `default:` 가 없어, Shape 를 늘리면
+`Targets` 가 빈 채로 `SpawnArcBulletBatch(0)` 이 호출되고 **아무 일도 안 한 것과 구별되지 않는다.**
+
+### After — 3단 분리 (R-04 테이블 의존)
+
+```cpp
+void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pattern, EArtilleryShape Shape,
+                                                              FVector_NetQuantize Origin, FVector_NetQuantize AimLoc,
+                                                              int32 CallSeed, int32 SweepIdx, float ServerTime)
+{
+    UWorld* World = GetWorld();
+    UREBulletSpawnSubsystem* Spawner = World ? World->GetSubsystem<UREBulletSpawnSubsystem>() : nullptr;
+    if (!Spawner)
+    {
+        UE_LOG(LogRENet, Warning, TEXT("[RE] Boss::FireArtillery: Spawner NULL"));
+        return;
+    }
+
+    // 파라미터는 테이블이 쥔다 — 7단 if-else 가 사라진다 (R-04).
+    const REBoss::FArcDef& Arc = REBoss::GetPatternDef(Pattern).Arc;
+
+    // 지연 보정 — 이미 착지한 볼리는 착지점 생성·난수 소비 **전에** 버린다.
+    // 순서를 바꾸면 CallRng 소비 횟수가 달라져 서버/클라가 갈린다.
+    const float Elapsed = GetElapsedSince(ServerTime);
+    if (Elapsed >= Arc.FlightTime)
+    {
+        UE_LOG(LogRENet, Log, TEXT("[RE] Boss FireArtillery: skipped (Elapsed=%.3f >= FlightTime=%.2f)"),
+            Elapsed, Arc.FlightTime);
+        return;
+    }
+
+    StartPatternLook(Pattern);   // 페이즈 도중 접속한 클라 따라잡기
+
+    FRandomStream CallRng(CallSeed);   // 서버 시드 → 양쪽 동일 난수열
+    const FVector GroundZ2 = FVector(0, 0, Origin.Z + MarkerGroundOffset);
+
+    // 1) 착지 지오메트리
+    TArray<FVector> Targets;
+    if (!BuildArcTargets(Pattern, Shape, Origin, AimLoc, SweepIdx, ServerTime, Arc.Count, CallRng, Targets))
+    {
+        return;   // 실패는 BuildArcTargets 가 로그한다
+    }
+
+    // 2) 궤적 성형 + 어긋내기
+    TArray<REBulletPattern::FArcBulletSpawnParams> Shots;
+    ShapeArcShots(Pattern, Origin, Targets, Arc, Elapsed, SweepIdx, Shots);
+
+    // 3) 스폰
+    Spawner->SpawnArcBulletBatch(Shots);
+
+    UE_LOG(LogRENet, Log,
+        TEXT("[RE] Boss FireArtillery: Pattern=%d Shape=%d N=%d Flight=%.2f Sweep=%d Elapsed=%.3f role=%s"),
+        (int32)Pattern, (int32)Shape, Shots.Num(), Arc.FlightTime, SweepIdx, Elapsed,
+        *UEnum::GetValueAsString(GetLocalRole()));
+}
+```
+
+**착지점 생성 — Shape 누락 방어 포함**
+
+```cpp
+/**
+ *  착지점 생성. 실패 시 false + 로그.
+ *
+ *  결정론 계약: CallRng 를 소비하는 경로(GenRandom)의 **호출 위치와 횟수를 바꾸면 안 된다.**
+ *  서버와 클라가 같은 시드로 같은 순서로 뽑아야 착지점이 일치한다.
+ */
+bool AREBossCharacter::BuildArcTargets(EBulletPattern Pattern, EArtilleryShape Shape,
+                                       const FVector& BossLoc, const FVector& PlayerLoc,
+                                       int32 SweepIdx, float ServerTime, int32 Count,
+                                       FRandomStream& CallRng, TArray<FVector>& Out) const
+{
+    const float GroundZ = BossLoc.Z + MarkerGroundOffset;
+
+    switch (Pattern)
+    {
+    case EBulletPattern::ArtilleryStorm:
+    {
+        const float Denom = (float)FMath::Max(StormShotsPerSweep - 1, 1);
+        const float T0 = FMath::Clamp((SweepIdx * Count)             / Denom, 0.f, 1.f);
+        const float T1 = FMath::Clamp((SweepIdx * Count + Count - 1) / Denom, 0.f, 1.f);
+        Out = REBulletPattern::GenSweepSpiral(BossLoc, StormMinRadius, StormMaxRadius,
+                                              StormSweepTurns, T0, T1, Count, StormArms, GroundZ);
+        break;
+    }
+    case EBulletPattern::LissajousStorm:
+        Out = REBulletPattern::GenLissajous(BossLoc, LissaExtent, LissaExtent, LissaFreqX, LissaFreqY,
+                                            LissaDeltaDegPerSec * ServerTime, Count, GroundZ);
+        break;
+    // … BezierVortex / RoseField / AerialDome / Spirograph / MicroMissile
+    //    (본문은 현행과 **한 줄도 다르지 않게** 옮긴다)
+
+    case EBulletPattern::Artillery:
+        return BuildArtilleryShapeTargets(Shape, BossLoc, PlayerLoc, Count, GroundZ, CallRng, Out);
+
+    default:
+        // 곡사가 아닌 패턴이 이 경로에 오면 라우팅이 깨진 것이다 (R-04 테이블 Family 불일치).
+        UE_LOG(LogRENet, Error, TEXT("[RE] BuildArcTargets: 곡사 아닌 패턴 %d 가 곡사 경로에 진입"),
+            (int32)Pattern);
+        return false;
+    }
+    return true;
+}
+
+bool AREBossCharacter::BuildArtilleryShapeTargets(EArtilleryShape Shape, const FVector& BossLoc,
+                                                  const FVector& PlayerLoc, int32 Count, float GroundZ,
+                                                  FRandomStream& CallRng, TArray<FVector>& Out) const
+{
+    switch (Shape)
+    {
+    case EArtilleryShape::Ring:
+        Out = REBulletPattern::GenRing(BossLoc, ArenaRadius * 0.75f, Count, GroundZ);            break;
+    case EArtilleryShape::Line:
+        Out = REBulletPattern::GenLine(BossLoc, PlayerLoc, ArenaRadius * 2.f, Count, GroundZ);   break;
+    case EArtilleryShape::Grid:
+        Out = REBulletPattern::GenGrid(BossLoc, ArenaRadius, ArenaRadius, 4, 3, GroundZ);        break;
+    case EArtilleryShape::Spiral:
+        Out = REBulletPattern::GenArcSpiral(BossLoc, ArenaRadius, Count, GroundZ);               break;
+    case EArtilleryShape::PlayerAimed:
+        Out = REBulletPattern::GenPlayerCluster(PlayerLoc, 150.f, 4, GroundZ);                   break;
+    case EArtilleryShape::Random:
+        Out = REBulletPattern::GenRandom(BossLoc, ArenaRadius, Count, CallRng, GroundZ);         break;
+
+    default:
+        // Before 에는 이 경로가 없었다. Shape 를 늘리면 Targets 가 빈 채로 진행해
+        // "발사했는데 아무것도 안 떨어지는" 조용한 실패가 됐다.
+        // 동작은 그대로다(빈 배열 → 스폰 0). 관측 가능하게 만드는 것이 전부다.
+        ensureMsgf(false, TEXT("[RE] EArtilleryShape %d 가 BuildArtilleryShapeTargets 에 없다"), (int32)Shape);
+        UE_LOG(LogRENet, Error, TEXT("[RE] BuildArtilleryShapeTargets: 미처리 Shape %d"), (int32)Shape);
+        return false;
+    }
+    return true;
+}
+```
+
+> **결정론 주의:** `Random` 케이스만 `CallRng` 를 소비한다. `default` 를 추가해도
+> 난수 소비 순서는 변하지 않는다 — 그래서 이 방어는 안전하다.
+
+**샷 성형** — `ShapeArcShots` 는 현행 for 루프를 통째로 옮긴다. 바뀌는 것:
+
+```cpp
+// Before: 7개 bool 을 함수 상단에서 만들어 루프 안에서 재사용
+P.Damage = bMicro ? MicroDamage : ArtilleryDamage;
+P.Radius = bLissa ? LissaRadius : (bMicro ? MicroRadius : ArtilleryRadius);
+
+// After: 루프 밖에서 패턴별로 한 번만 결정 (조건 재평가 제거)
+const float ShotDamage = (Pattern == EBulletPattern::MicroMissile) ? MicroDamage : ArtilleryDamage;
+const float ShotRadius = (Pattern == EBulletPattern::LissajousStorm) ? LissaRadius
+                       : (Pattern == EBulletPattern::MicroMissile)   ? MicroRadius
+                       :                                               ArtilleryRadius;
+```
+
+> **인덱스 계약 유지:** `Shots` 는 `Targets` 보다 짧을 수 있다(`continue` 스킵).
+> 루프 인덱스 `i` 는 끝까지 **`Targets` 기준**이며 `Shots.Num()` 이 아니다.
+> `MicroMissile` 의 접선 각과 `Spirograph` 의 부호 뒤집기(`i & 1`)가 이 인덱스에 의존한다.
+
+### 규모
+
+| | Before | After |
+|---|---:|---:|
+| 최대 함수 길이 | **259줄** | ~45줄 (+ 헬퍼 3개) |
+| 병렬 bool | 7 | 0 |
+| 같은 조건 재분기 | 3회 | 1회 |
+| Shape 누락 시 | 조용한 무발사 | 로그 + `ensure` |
+
+### 게이트
+
+- [ ] **리팩터 전에** 곡사 8종 × 고정 `CallSeed` 실행 → 착지점 좌표 로그 캡처 (기준선)
+- [ ] 리팩터 후 같은 실행 → **좌표가 바이트 단위로 동일**
+- [ ] `dedi-verify.ps1 -Clients 2` — 서버/클라 착지점 일치
+- [ ] `profile.ps1 -ExtraExec "re.Debug.BossPattern 6"` (최악 패턴) p99 ≤ 14.95ms 유지
+
+---
+
+<a name="r-06"></a>
+## R-06 — Mass 배치 스폰
+
+### Before — `Mass/REBulletSpawnSubsystem.cpp:12, 29~57`
+
+```cpp
+FMassEntityManager* UREBulletSpawnSubsystem::GetEntityManager() const
+{
+    UMassEntitySubsystem* Mass = GetWorld() ? GetWorld()->GetSubsystem<UMassEntitySubsystem>() : nullptr;
+    return Mass ? &Mass->GetMutableEntityManager() : nullptr;
+}
+
+FMassEntityHandle UREBulletSpawnSubsystem::SpawnBullet(FVector Location, FVector Velocity,
+                                                       float Lifetime, float ColorSel)
+{
+    FMassEntityManager* EM = GetEntityManager();          // ← 발당 1회: GetWorld + GetSubsystem
+    if (!EM)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[RE] SpawnBullet: EntityManager NULL"));
+        return FMassEntityHandle();
+    }
+
+    EnsureArchetype(*EM);                                  // ← 발당 1회
+    FMassEntityHandle Entity = EM->CreateEntity(BulletArchetype);   // ← 엔티티 1개씩
+
+    EM->GetFragmentDataChecked<FTransformFragment>(Entity).GetMutableTransform().SetLocation(Location);
+    FBulletSimFragment& Sim = EM->GetFragmentDataChecked<FBulletSimFragment>(Entity);
+    Sim.Velocity = Velocity;
+    Sim.Lifetime = Lifetime;
+    Sim.ColorSel = ColorSel;
+    return Entity;
+}
+
+void UREBulletSpawnSubsystem::SpawnBulletBatch(TConstArrayView<FBulletSpawnParams> Params)
+{
+    for (const FBulletSpawnParams& P : Params)
+    {
+        SpawnBullet(P.Location, P.Velocity, P.Lifetime, P.ColorSel);   // ← N회 전부 반복
+    }
+}
+```
+
+`SpawnArcBulletBatch` 도 같은 구조다 (`:105~113`).
+
+**비용:** 볼리 N발마다 `GetWorld()` N회, `GetSubsystem` N회, `CreateEntity` N회.
+현재 게임플레이 발수는 `BulletsPerShot = 48`(ini), 곡사 폭풍은 `StormCount` 단위 볼리다.
+이 프로젝트의 주장이 성능인데 **스폰 경로가 배치 API 를 안 쓰고 있다.**
+
+### After
+
+```cpp
+void UREBulletSpawnSubsystem::SpawnBulletBatch(TConstArrayView<FBulletSpawnParams> Params)
+{
+    if (Params.IsEmpty())
+    {
+        return;   // BatchCreateEntities(0) 호출 금지
+    }
+
+    FMassEntityManager* EM = GetEntityManager();   // ← 볼리당 1회
+    if (!EM)
+    {
+        UE_LOG(LogREBullet, Warning, TEXT("[RE] SpawnBulletBatch: EntityManager NULL (N=%d)"), Params.Num());
+        return;
+    }
+    EnsureArchetype(*EM);                          // ← 볼리당 1회
+
+    TArray<FMassEntityHandle> Entities;
+    Entities.Reserve(Params.Num());
+    EM->BatchCreateEntities(BulletArchetype, Params.Num(), Entities);
+
+    for (int32 i = 0; i < Entities.Num(); ++i)
+    {
+        const FBulletSpawnParams& P = Params[i];
+        EM->GetFragmentDataChecked<FTransformFragment>(Entities[i])
+          .GetMutableTransform().SetLocation(P.Location);
+
+        FBulletSimFragment& Sim = EM->GetFragmentDataChecked<FBulletSimFragment>(Entities[i]);
+        Sim.Velocity = P.Velocity;
+        Sim.Lifetime = P.Lifetime;
+        Sim.ColorSel = P.ColorSel;
+        // FBulletRenderFragment.InstanceIndex 는 기본값 INDEX_NONE 유지 (#17 에서 할당)
+    }
+}
+```
+
+> **⚠ 구현 세션 확인 사항 (미검증):**
+> `FMassEntityManager::BatchCreateEntities` 의 **정확한 시그니처를 엔진 헤더에서 확인할 것.**
+> UE 5.x 계열에서 `FMassArchetypeSharedFragmentValues` 인자 유무와
+> `TSharedRef<FEntityCreationContext>` 반환 여부가 버전에 따라 갈린다.
+> 확인 경로: `<Engine>/Plugins/Runtime/MassEntity/Source/MassEntity/Public/MassEntityManager.h`
+> 이 프로젝트의 엔진은 **UE 5.8.1 소스 빌드**다.
+> 배치 API 가 기대와 다르면 **최소 목표는 `GetEntityManager()` + `EnsureArchetype()` 를
+> 루프 밖으로 빼는 것**이고, 그것만으로도 N회 → 1회가 된다.
+
+**호출자 계약 확인 (선행 작업):**
+
+```bash
+grep -rn "SpawnBullet(\|SpawnArcBullet(" Source/Project_RE --include=*.cpp | grep -v "REBulletSpawnSubsystem.cpp"
+```
+
+개별 `SpawnBullet` 의 **반환 핸들을 쓰는 호출자가 있는지** 먼저 확인한다.
+없으면 개별 함수는 배치의 얇은 래퍼로 남기고, 있으면 배치 경로가 핸들 배열을 돌려준다.
+
+### 게이트 — 이 항목은 측정이 판정한다
+
+```powershell
+# 리팩터 전 / 후 각각
+scripts/profile.ps1 -Bullets -1 -Frames 720 -ExtraExec "re.Fx.Explosions 1,re.Debug.BossPattern 0" -Label spawn_spiral
+scripts/profile.ps1 -Bullets -1 -Frames 720 -ExtraExec "re.Fx.Explosions 1,re.Debug.BossPattern 3" -Label spawn_storm
+scripts/profile-stats.ps1
+```
+
+- [ ] GT mean / p99 가 **나빠지지 않을 것**
+- [ ] 좋아지면 그 수치를 `docs/portfolio/portfolio-source.md` 소재 ① 에 추가
+- [ ] 나빠지면 **되돌린다.** 되돌린 것도 결과이며, 그 자체가 문서 소재다
+- [ ] 라이브 탄 수(`re.Bullets.Count 5000` 클로즈드루프)가 목표 ±5% 유지
+
+---
+
+<a name="r-07"></a>
+## R-07 — 히트 반경 결합 해소 + 탄 데미지 이관
+
+### Before — 3파일이 손으로 동기화돼 있다
+
+```cpp
+// Mass/REBulletRenderProcessor.cpp:19~27
+/**
+ *  탄환 인스턴스 스케일 — 엔진 Sphere(지름 100cm)를 지름 50cm로.
+ *  …
+ *  바꾸면 REBulletHitProcessor 의 HitRadius 와 Baseline/REBulletActor 의
+ *  ActorBulletScale 도 같이 맞춰야 한다.
+ */
+constexpr float BulletScale = 0.5f;
+```
+
+```cpp
+// Mass/REBulletHitProcessor.cpp:20~26
+/**
+ *  히트 반경(cm) — 탄환 시각 반경 25(BulletScale 0.5 × Sphere 반경 50) + 플레이어 캡슐 반경 ~35.
+ *  BulletScale 을 바꾸면 여기도 같이 바꿔야 한다. 안 그러면 눈에 안 닿았는데 맞거나
+ *  닿았는데 안 맞아 공정성이 깨진다 (#97).
+ */
+constexpr float HitRadius = 60.f;
+/** 탄환 1발 데미지 — 100 HP 기준 10발 사망. */
+constexpr float BulletDamage = 10.f;
+```
+
+```cpp
+// Baseline/REBulletActor.cpp:10~11
+/** Mass와 동일 — REBulletRenderProcessor.cpp:14 BulletScale. */
+constexpr float ActorBulletScale = 0.5f;
+```
+
+### 이미 어긋나기 시작했다
+
+`REBulletActor.cpp:10` 은 `BulletScale` 이 `REBulletRenderProcessor.cpp:14` 에 있다고 말한다.
+**실제로는 27번 줄이다.** 값은 아직 맞지만 참조는 이미 썩었다 —
+"주석으로 관리하는 결합"이 어떻게 붕괴하는지의 실물 증거다.
+
+### After — 유도식 하나로 묶는다
+
+**신설** `Source/Project_RE/Mass/REBulletGeometry.h`
+
+```cpp
+#pragma once
+
+#include "CoreMinimal.h"
+
+/**
+ *  탄환 지오메트리 단일 출처.
+ *
+ *  전에는 BulletScale(렌더) / HitRadius(판정) / ActorBulletScale(Actor 비교군)이
+ *  세 파일에 흩어져 **주석으로만** 묶여 있었다. 주석은 컴파일러가 검사하지 않는다 —
+ *  실제로 REBulletActor.cpp 의 참조 줄번호가 이미 썩어 있었다.
+ *
+ *  판정 반경이 시각 반경과 어긋나면 "눈에 안 닿았는데 맞거나, 닿았는데 안 맞는" 상태가 된다.
+ *  회피 게임에서 이건 공정성 버그다 (#97). 그래서 유도식으로 묶는다.
+ *
+ *  **네임스페이스를 쓰는 이유:** 익명 네임스페이스로 두면 유니티 빌드에서
+ *  동명 변수가 C4459 로 충돌한다 — 이 프로젝트에 전례가 있다(REBulletActor.cpp:11 주석).
+ */
+namespace REBulletGeometry
+{
+    /** /Engine/BasicShapes/Sphere 원본 반경(cm). 지름 100cm 구. */
+    inline constexpr float EngineSphereRadius = 50.f;
+
+    /**
+     *  탄환 인스턴스 스케일. 지름 50cm.
+     *  탄이 서로 겹친다: 간격 = BulletSpeed(200) × BossFireInterval(0.15) = 30uu < 지름 50uu.
+     *  겹침은 의도적 허용 — 축소하면(0.2 시도) 탄이 너무 작아 탄막의 인상이 사라진다.
+     *  대신 인접 탄을 다른 색으로 교차시켜 가른다 (#97).
+     */
+    inline constexpr float BulletScale = 0.5f;
+
+    /** 탄환 시각 반경(cm) — 유도값. 25. */
+    inline constexpr float BulletVisualRadius = EngineSphereRadius * BulletScale;
+
+    /** 플레이어 캡슐 반경(cm). ARECharacterBase 의 CapsuleComponent 설정과 일치해야 한다. */
+    inline constexpr float PlayerCapsuleRadius = 35.f;
+
+    /**
+     *  탄환 히트 반경(cm) — 유도값. 60.
+     *  BulletScale 을 바꾸면 여기가 **자동으로** 따라간다. 이게 이 헤더의 목적 전부다.
+     */
+    inline constexpr float HitRadius = BulletVisualRadius + PlayerCapsuleRadius;
+}
+```
+
+**치환** — `Mass/REBulletHitProcessor.cpp`
+
+```cpp
+#include "REBulletGeometry.h"
+
+// 이행 검증(한 커밋 동안만): 현행 값과 동일함을 컴파일 타임에 증명한다.
+// 판정 반경이 1이라도 바뀌면 게임플레이 회귀다.
+static_assert(REBulletGeometry::HitRadius == 60.f, "히트 반경이 바뀌었다 — 게임플레이 회귀");
+
+// … 사용처
+if (FVector::DistSquaredXY(BulletLoc, T.Location)
+    <= REBulletGeometry::HitRadius * REBulletGeometry::HitRadius)
+```
+
+`Mass/REBulletRenderProcessor.cpp` 와 `Baseline/REBulletActor.cpp` 의 로컬 상수는 삭제하고
+`REBulletGeometry::BulletScale` 을 쓴다. 유니티 빌드 C4459 가 **원인부터 사라진다.**
+
+### 곁들여 — 탄 데미지 Settings 이관
+
+**Before** — `Mass/REBulletHitProcessor.cpp:26`
+
+```cpp
+/** 탄환 1발 데미지 — 100 HP 기준 10발 사망. */
+constexpr float BulletDamage = 10.f;
+```
+
+플레이어 HP·공격 데미지·보스 HP 는 전부 `UREStatsSettings`(ini)인데 **탄 데미지만 cpp 상수**다.
+밸런스 축 하나가 리빌드를 요구한다.
+
+**After** — `Core/REStatsSettings.h`
+
+```cpp
+    /** 보스 탄환 1발이 주는 데미지. PlayerMaxHealth 100 기준 10발 사망. */
+    UPROPERTY(EditAnywhere, Config, Category = "Boss")
+    float BulletDamage = 10.f;
+```
+
+`Config/DefaultGame.ini`
+
+```ini
+BulletDamage=10.0
+```
+
+사용처
+
+```cpp
+// Execute() 진입부에서 1회 조회 — 엔티티 루프 안에서 GetDefault 를 부르지 않는다
+const float BulletDamage = GetDefault<UREStatsSettings>()->BulletDamage;
+```
+
+**주석 드리프트도 같이 고친다** — `Core/REStatsSettings.h:60`
+
+```cpp
+// Before: "동시 탄수는 발수 × 수명/주기로 자연 결정 (기본 16 × 15/0.1 = 2400)"
+// 실제 ini: BulletsPerShot=48, BulletLifetime=15.0, BossFireInterval=0.15
+// After:    "(ini 기본 48 × 15/0.15 = 4,800)"
+```
+
+### 게이트
+
+- [ ] `static_assert(REBulletGeometry::HitRadius == 60.f)` 통과
+- [ ] **풀 유니티 빌드** 통과 (C4459 원인 제거 확인)
+- [ ] 헤드리스 프로브 `hit boss` / 피격 게이트 PASS
+- [ ] `PlayerCapsuleRadius = 35.f` 가 `ARECharacterBase` 캡슐 실제 값과 일치 —
+      **다르면 상수 값이 아니라 이름/주석을 실제에 맞춘다.** 판정 반경 변경은 게임플레이 변경이다
+
+---
+
+<a name="r-08"></a>
+## R-08 — 헤드리스 프로브 분리
+
+### Before
+
+```
+Core/REPlayerController.cpp   714줄
+  RunHeadlessMoveProbe()      579~618
+  RunHeadlessFireProbe()      619~657
+  RunHeadlessDashProbe()      658~714
+                              ─────── 135줄 (19%)
+
+Core/REPlayerController.h
+  FTimerHandle ProbeFireTimer / ProbeDashTimer / ProbeMoveTimer / ProbeLogTimer
+  FVector      ProbeDashStart / ProbeTarget
+  void         RunHeadlessMoveProbe() / RunHeadlessFireProbe() / RunHeadlessDashProbe()
+```
+
+게이트는 런타임 하나뿐이다 — `Core/REPlayerController.cpp:176`
+
+```cpp
+// 헤드리스(-unattended) 서버권위 이동 프로브. 실플레이(PIE/에디터)엔 무발동.
+if (HasAuthority() && FApp::IsUnattended())
+{
+    RunHeadlessMoveProbe();
+    RunHeadlessFireProbe();
+    RunHeadlessDashProbe();
+}
+```
+
+**문제:** `FApp::IsUnattended()` 는 **런타임** 검사다. 프로브 코드는 쉬핑 빌드에 그대로 들어가고,
+`-unattended` 는 쉬핑에서도 커맨드라인으로 넘길 수 있다. 즉 **출시 빌드에서 프로브가 켜진다.**
+피해 자체는 크지 않지만(프로브가 자기 폰을 움직이는 정도), 리뷰어가 즉시 지적할 지점이다.
+
+### After
+
+**신설** `Source/Project_RE/Debug/REHeadlessProbeComponent.h`
+
+```cpp
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Components/ActorComponent.h"
+#include "REHeadlessProbeComponent.generated.h"
+
+/**
+ *  헤드리스 검증 프로브 (#77 / #82 / #112).
+ *
+ *  PIE 없이 `-game -nullrhi -unattended` 로 게임루프를 관측한다.
+ *  이동 → 발사 → 대쉬를 순차 실행하고 각 단계 결과를 로그로 남기면,
+ *  scripts/dedi-verify.ps1 이 그 로그를 판정해 PASS/FAIL 을 낸다.
+ *
+ *  **로그 문자열이 곧 판정 계약이다.** 메시지를 바꾸면 스크립트가 조용히 무판정이 된다.
+ *
+ *  프로덕션 컨트롤러에서 분리한 이유: 이건 테스트 하네스이고,
+ *  전에는 런타임 게이트(FApp::IsUnattended)만 있어 쉬핑 빌드에도 실려 있었다.
+ */
+UCLASS(ClassGroup = (RE), meta = (BlueprintSpawnableComponent))
+class UREHeadlessProbeComponent : public UActorComponent
+{
+    GENERATED_BODY()
+
+public:
+    /** 프로브 3종 순차 시작. 소유 액터는 AREPlayerController 여야 한다. */
+    void StartProbes();
+
+private:
+#if !UE_BUILD_SHIPPING
+    void RunMoveProbe();
+    void RunFireProbe();
+    void RunDashProbe();
+
+    FTimerHandle ProbeMoveTimer;
+    FTimerHandle ProbeLogTimer;
+    FTimerHandle ProbeFireTimer;
+    FTimerHandle ProbeDashTimer;
+    FVector      ProbeTarget    = FVector::ZeroVector;
+    FVector      ProbeDashStart = FVector::ZeroVector;
+#endif
+};
+```
+
+**`Source/Project_RE/Debug/REHeadlessProbeComponent.cpp`**
+
+```cpp
+void UREHeadlessProbeComponent::StartProbes()
+{
+#if !UE_BUILD_SHIPPING
+    RunMoveProbe();
+    RunFireProbe();
+    RunDashProbe();
+#endif
+}
+```
+
+> **UHT 주의:** `UCLASS` 자체는 항상 컴파일한다. `#if !UE_BUILD_SHIPPING` 으로
+> **멤버와 본문만** 감싼다. `GENERATED_BODY()` 를 조건부 블록 안에 넣으면 UHT 가 깨진다.
+> 쉬핑에서는 컴포넌트가 존재하되 `StartProbes()` 가 빈 함수가 된다.
+
+**호출부** — `Core/REPlayerController.cpp:176`
+
+```cpp
+// 헤드리스(-unattended) 서버권위 검증 프로브. 실플레이(PIE/에디터)엔 무발동.
+// 쉬핑 빌드에서는 컴포넌트 본문이 컴파일 아웃되어 이 경로가 no-op 다.
+if (HasAuthority() && FApp::IsUnattended())
+{
+    UREHeadlessProbeComponent* Probe = NewObject<UREHeadlessProbeComponent>(this);
+    Probe->RegisterComponent();
+    Probe->StartProbes();
+}
+```
+
+**본문은 그대로 옮긴다.** 바뀌는 것은 `this`(컨트롤러 → 컴포넌트) 참조뿐이다:
+
+```cpp
+// Before (컨트롤러 안)
+APawn* P = GetPawn();
+Server_RequestMove(ProbeTarget);
+GetWorld()->GetTimerManager().SetTimer(ProbeMoveTimer, MoveDel, 1.0f, false);
+
+// After (컴포넌트 안)
+AREPlayerController* PC = Cast<AREPlayerController>(GetOwner());
+if (!ensureMsgf(PC, TEXT("[RE] HeadlessProbe: 소유자가 AREPlayerController 가 아니다")))
+{
+    return;
+}
+APawn* P = PC->GetPawn();
+PC->Server_RequestMove(ProbeTarget);
+PC->GetWorldTimerManager().SetTimer(ProbeMoveTimer, MoveDel, 1.0f, false);
+```
+
+> `Server_RequestMove` / `Server_Dash` / `Server_RequestFire` 의 접근 지정자를 확인한다.
+> `private` 이면 **`public` 확대가 아니라 `friend class UREHeadlessProbeComponent`** 를 쓴다 —
+> 테스트 하네스 때문에 프로덕션 API 표면을 넓히지 않는다.
+
+### 로그 문자열 — 한 글자도 바꾸지 않는다
+
+`dedi-verify.ps1` 과 프로브 판정이 grep 하는 문자열:
+
+```
+[Move] probe start: pawn=%s target=%s
+[Move] probe dist=%.1f loc=%s
+[Move] probe: no pawn
+```
+
+카테고리는 R-02 에서 `LogRENet` 으로 바뀌지만 **메시지 본문은 불변**이다.
+
+### 규모
+
+| | Before | After |
+|---|---:|---:|
+| `REPlayerController.cpp` | 714줄 | ~580줄 |
+| `REPlayerController.h` 프로브 멤버 | 6 + 함수 3 | **0** |
+| 쉬핑 빌드에 포함 | 예 | **아니오** |
+
+### 게이트
+
+- [ ] `dedi-verify.ps1 -Clients 2` PASS — **프로브 3종 완주 로그가 전부 동일**
+- [ ] 프로브 로그 문자열 diff: 없음
+- [ ] Shipping 구성 빌드 통과
+- [ ] `AREGameMode::NotifyProbeComplete` 호출 횟수·순서 동일
+
+---
+
+## 전체 완료 판정
+
+| # | 게이트 | 통과 |
+|---|---|---|
+| 1 | Development Editor 빌드 (신규 경고 0) | ☐ |
+| 2 | **풀 유니티 빌드** | ☐ |
+| 3 | Shipping 빌드 | ☐ |
+| 4 | 헤드리스 프로브 3종 완주, 로그 문자열 동일 | ☐ |
+| 5 | `dedi-verify.ps1 -Clients 2` PASS | ☐ |
+| 6 | 패턴 15종 스폰 수·페이즈 로그 리팩터 전과 동일 | ☐ |
+| 7 | 곡사 8종 착지점 좌표(고정 시드) 동일 | ☐ |
+| 8 | `profile.ps1` GT mean/p99 나빠지지 않음 | ☐ |
+| 9 | `UE_LOG(LogTemp` 0건 | ☐ |
+| 10 | 워커 스레드 프로세서에 `ensure` 없음 | ☐ |
+
+> **6·7번은 리팩터를 시작하기 전에 기준 로그를 먼저 캡처해야 한다.**
+> 캡처를 빠뜨리면 회귀를 판정할 근거가 사라진다 — 이 프로젝트가 #88 에서 겪은 실패와 같은 종류다.

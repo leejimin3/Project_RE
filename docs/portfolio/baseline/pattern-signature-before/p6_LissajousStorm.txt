@@ -1,0 +1,3 @@
+[RE] Boss FireArtillery: Pattern=7 Shape=0 N=150 Flight=2.50
+[RE] Boss Phase: LissajousStorm 9.0s
+[RE] Boss Phase: Rest 1.0s

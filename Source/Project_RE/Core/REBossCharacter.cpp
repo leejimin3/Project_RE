@@ -20,6 +20,7 @@
 #include "TimerManager.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/GameStateBase.h"
+#include "EngineUtils.h"                                  // [TEMP #141 STEP0] TActorIterator
 
 /**
  *  측정용 클로즈드루프 오버라이드. 발사 시점 조회 — 재시작 없이 다음 발사부터 반영.
@@ -47,6 +48,13 @@ static TAutoConsoleVariable<int32> CVarBossPattern(
 	     "8=StarBloom 9=LemniscateBloom 10=SuperformulaBloom "
 	     "11=RoseField 12=AerialDome 13=Spirograph 14=MicroMissile 고정."),
 	ECVF_Cheat);
+
+/**
+ *  [TEMP #141 STEP0] 곡사 결정론 덤프 활성 플래그. DebugDumpArcShots 가 켜고 끈다.
+ *  평시 발사 경로에는 로그가 붙지 않는다 — 캡처 로그를 오염시키지 않기 위해서다.
+ *  **PR 직전 마지막 커밋에서 되돌린다.**
+ */
+static bool GREArcDumpActive = false;
 
 namespace REBoss
 {
@@ -857,12 +865,127 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 		}
 		Shots.Add(P);
 	}
+	// [TEMP #141 STEP0] 게이트 7 기준선. %.17g 는 double 을 왕복 손실 없이 찍는 자릿수다
+	// (FVector 성분이 UE5 에서 double 이다).
+	if (GREArcDumpActive)
+	{
+		for (int32 Si = 0; Si < Shots.Num(); ++Si)
+		{
+			const REBulletPattern::FArcBulletSpawnParams& S = Shots[Si];
+			UE_LOG(LogTemp, Log,
+				TEXT("[RE] ArcDump P=%d Sh=%d Sw=%d i=%d ")
+				TEXT("St=%.17g,%.17g,%.17g Tg=%.17g,%.17g,%.17g ")
+				TEXT("Ft=%.17g Mh=%.17g Dm=%.17g Rd=%.17g El=%.17g ")
+				TEXT("C=%.17g,%.17g,%.17g C1=%.17g,%.17g,%.17g C2=%.17g,%.17g,%.17g"),
+				(int32)Pattern, (int32)Shape, SweepIdx, Si,
+				S.Start.X, S.Start.Y, S.Start.Z, S.Target.X, S.Target.Y, S.Target.Z,
+				S.FlightTime, S.MaxHeight, S.Damage, S.Radius, S.Elapsed,
+				S.CtrlOffset.X, S.CtrlOffset.Y, S.CtrlOffset.Z,
+				S.Ctrl1Offset.X, S.Ctrl1Offset.Y, S.Ctrl1Offset.Z,
+				S.Ctrl2Offset.X, S.Ctrl2Offset.Y, S.Ctrl2Offset.Z);
+		}
+	}
+
 	Spawner->SpawnArcBulletBatch(Shots);
 
 	UE_LOG(LogTemp, Log, TEXT("[RE] Boss FireArtillery: Pattern=%d Shape=%d N=%d Flight=%.2f Sweep=%d Elapsed=%.3f role=%s"),
 		(int32)Pattern, (int32)Shape, Shots.Num(), FlightTime, SweepIdx, Elapsed,
 		*UEnum::GetValueAsString(GetLocalRole()));
 }
+
+/**
+ *  [TEMP #141 STEP0] 게이트 7 기준선 덤프.
+ *
+ *  곡사 착지점은 ServerTime 에서 유도되는 패턴이 5종이라(Lissa/Vortex/RoseField/Dome/Spiro)
+ *  라이브 실행 로그로는 리팩터를 안 해도 실행마다 좌표가 달라진다. 그래서 입력을 전부 고정해
+ *  실제 RPC 구현을 그대로 통과시킨다 — 비교 대상이 함수의 실제 출력(Shots)이라
+ *  R-05 분해가 파라미터 결정·착지 지오메트리·샷 성형 어느 단계를 어긋내도 잡힌다.
+ *
+ *  ServerTime 을 GetServerNow() 보다 훨씬 크게 잡는 이유: GetElapsedSince 가 [0,1] 로
+ *  클램프하므로 Elapsed 가 항상 0 이 되어 어긋내기까지 결정론이 된다.
+ *
+ *  **PR 직전 마지막 커밋에서 되돌린다.**
+ */
+void AREBossCharacter::DebugDumpArcShots()
+{
+	const FVector_NetQuantize DumpOrigin(600.f, 0.f, 90.f);     // GameMode 데모 스폰 좌표
+	const FVector_NetQuantize DumpAim(0.f, 300.f, 90.f);        // 조준점(Line/PlayerAimed/Micro 가 먹는다)
+	const int32 DumpSeed = 12345;
+	const float DumpServerTime = 1000.f;
+
+	static const EBulletPattern ArcPatterns[] = {
+		EBulletPattern::Artillery,      EBulletPattern::ArtilleryStorm,
+		EBulletPattern::LissajousStorm, EBulletPattern::BezierVortex,
+		EBulletPattern::RoseField,      EBulletPattern::AerialDome,
+		EBulletPattern::Spirograph,     EBulletPattern::MicroMissile };
+
+	GREArcDumpActive = true;
+	UE_LOG(LogTemp, Log, TEXT("[RE] ArcDump BEGIN"));
+	for (EBulletPattern P : ArcPatterns)
+	{
+		// Artillery 만 Shape 축이 살아 있다. 나머지는 Shape 를 안 읽지만 로그 열을 맞춰 Ring 으로 고정.
+		const int32 ShapeLo = (P == EBulletPattern::Artillery) ? (int32)EArtilleryShape::Ring : (int32)EArtilleryShape::Ring;
+		const int32 ShapeHi = (P == EBulletPattern::Artillery) ? (int32)EArtilleryShape::Random : (int32)EArtilleryShape::Ring;
+		for (int32 Sh = ShapeLo; Sh <= ShapeHi; ++Sh)
+		{
+			for (int32 Sw = 0; Sw < 3; ++Sw)
+			{
+				Multicast_FireArtillery_Implementation(P, (EArtilleryShape)Sh, DumpOrigin, DumpAim,
+				                                       DumpSeed, Sw, DumpServerTime);
+			}
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("[RE] ArcDump END"));
+	GREArcDumpActive = false;
+}
+
+/** [TEMP #141 STEP0] 위 덤프의 진입점. **PR 직전 마지막 커밋에서 되돌린다.** */
+static FAutoConsoleCommandWithWorld GCmdDumpArcTargets(
+	TEXT("re.Debug.DumpArcTargets"),
+	TEXT("[TEMP #141] 곡사 전 조합을 고정 입력으로 실행해 생성 샷을 전부 로그한다 (게이트 7 기준선)."),
+	FConsoleCommandWithWorldDelegate::CreateStatic([](UWorld* World)
+	{
+		if (!World)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[RE] ArcDump: World NULL"));
+			return;
+		}
+		// -ExecCmds 가 보스 스폰보다 먼저 도착할 수 있다. 조용히 무판정이 되면 기준선이
+		// 통째로 사라지므로(#88 과 같은 실패), 없으면 1초 간격으로 10회까지 다시 본다.
+		static FTimerHandle RetryTimer;
+		static int32 Tries = 0;
+		Tries = 0;
+		TWeakObjectPtr<UWorld> WeakWorld(World);
+		auto TryDump = [WeakWorld]()
+		{
+			UWorld* W = WeakWorld.Get();
+			if (!W)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[RE] ArcDump: World 소멸 — 중단"));
+				return;
+			}
+			int32 N = 0;
+			for (TActorIterator<AREBossCharacter> It(W); It; ++It)
+			{
+				It->DebugDumpArcShots();
+				++N;
+			}
+			if (N > 0)
+			{
+				W->GetTimerManager().ClearTimer(RetryTimer);
+				return;
+			}
+			if (++Tries >= 10)
+			{
+				W->GetTimerManager().ClearTimer(RetryTimer);
+				UE_LOG(LogTemp, Error, TEXT("[RE] ArcDump: 보스 액터 없음 — 10회 재시도 후 포기"));
+				return;
+			}
+			UE_LOG(LogTemp, Warning, TEXT("[RE] ArcDump: 보스 액터 없음 — 재시도 %d/10"), Tries);
+		};
+		World->GetTimerManager().SetTimer(RetryTimer, FTimerDelegate::CreateLambda(TryDump),
+		                                  1.f, /*bLoop=*/true, /*InFirstDelay=*/0.f);
+	}));
 
 void AREBossCharacter::EndPhase()
 {
