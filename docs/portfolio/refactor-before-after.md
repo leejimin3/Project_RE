@@ -1,13 +1,16 @@
 # 리팩터링 코드 전후 비교
 
-**작성일:** 2026-08-29 · **성격:** **계획서** — Before 는 현행 코드 실물, After 는 제안 코드
+**작성일:** 2026-08-29 · **구현 완료:** 2026-08-30 · **성격:** **실행 기록**
 **계획 문서:** [`refactor-plan.md`](refactor-plan.md) (왜 고치는지·위험·게이트는 그쪽)
+**구현:** `feature/M8-portfolio-hardening` (#141) · 커밋 15개
 
 > **읽는 법**
-> - `Before` 블록은 현재 리포지토리에서 그대로 옮긴 것이다. 파일:줄 표기는 2026-08-29 기준.
-> - `After` 블록은 **제안**이다. 구현 세션이 이 형태로 만들되, 컴파일·게이트가 우선이다.
-> - 구현 세션은 실제 적용 후 이 문서의 `After` 를 **실제 적용된 코드로 교체**하고
->   각 항목 끝에 게이트 결과를 붙인다.
+> - `Before` 블록은 리팩터 전 리포지토리에서 그대로 옮긴 것이다. 파일:줄 표기는 2026-08-29 기준.
+> - `After` 블록은 **제안**이었고, 실제 적용과 달라진 곳은 각 항목의 **"제안과 달라진 것"**에
+>   적었다. 제안이 실물과 어긋난 경우가 넷 있었다(R-01 파일 수, R-02 스크립트, R-04 두 값, R-07 상수 이름).
+> - 게이트 체크박스는 실행 결과로 채웠다.
+> - **R-06 은 기각됐다.** 측정이 판정했다 — [`baseline/perf-r06.md`](baseline/perf-r06.md).
+> - 기준선과 재현 절차: [`baseline/README.md`](baseline/README.md)
 
 ---
 
@@ -47,7 +50,25 @@ grep -rl "Variant_Combat\|Variant_Platforming\|Variant_SideScrolling" \
 # → 출력 없음 (실사용 코드에서 참조 0)
 ```
 
-**After** — 세 디렉터리 삭제 (32파일).
+**After** — 세 디렉터리 삭제.
+
+### 제안과 달라진 것 — 파일 수가 32가 아니라 591이었다
+
+실측은 **76파일**(38 cpp + 38 h)이다. 그리고 에셋도 같이 지워야 했다:
+`DefaultGame.ini` 에 `DirectoriesToNeverCook` 이 없어 `Lvl_Combat` / `Lvl_SideScrolling` 도
+매번 쿡된다. C++ 만 지우면 그 맵들이 부모 클래스를 못 찾아 쿡 경고가 난다 — 게이트 4 가 깨진다.
+
+```
+Source/Project_RE/Variant_{Combat,Platforming,SideScrolling}/     76
+Content/Variant_*/                                                 61
+Content/__ExternalActors__/Variant_*/                             414
+Content/__ExternalObjects__/Variant_*/                             40
+                                                                  ───
+                                                                  591
+```
+
+`DefaultEngine.ini` 의 `ActiveClassRedirects` 는 건드리지 않았다 — 가리키는 대상이
+`TP_ThirdPerson*` → `Project_RE*` 이고 Variant 와 무관하다.
 
 ### ② `Project_RE.Build.cs`
 
@@ -143,12 +164,20 @@ CascadeToNiagaraConverter    True      ← 잔재 (변환은 이미 끝났다)
 > `ModelContextProtocol` 은 개발 도구다. 쿡에 영향이 있는지 확인 후 판단 — **불확실하면 남긴다.**
 > 플러그인 변경은 **별도 커밋**으로 분리한다 (롤백 지점).
 
-### 게이트
+### 게이트 — 전부 통과
 
-- [ ] Development Editor 빌드 통과
-- [ ] **풀 유니티 빌드** 통과
-- [ ] 에디터에서 `Main.umap` 열림, 쿡 경고 없음
-- [ ] `dedi-verify.ps1 -Clients 2` PASS
+- [x] Development Editor 빌드 통과, 신규 경고 0
+- [x] **풀 유니티 빌드** 통과
+- [x] 쿡 경고 없음 — `BuildCookRun` **0 error / 0 warning**. Variant 맵 515개를 지운 뒤에도 동일
+- [x] `dedi-verify.ps1 -Clients 2` PASS (21/21)
+
+**`ModelContextProtocol` 은 남겼다** — 개발 도구이고 쿡 영향이 불확실하다. 계획 규칙: 불확실하면 남긴다.
+
+**`StateTree` 는 uproject 에서 껐지만 여전히 마운트된다.** `MassGameplay.uplugin` 이
+`StateTree` 를 의존하기 때문이다(ZoneGraph / PoseSearch / SmartObjects / StateTree /
+DataValidation). 이 변경이 없애는 것은 "이 프로젝트가 StateTree 를 **직접** 쓴다"는 거짓
+선언이지 플러그인 로드 자체가 아니다. 헤드리스 로그로 확인했다 — `GameplayStateTree` 와
+`CascadeToNiagaraConverter` 는 로드 0회가 됐고 `StateTree` 만 남는다.
 
 ---
 
@@ -212,28 +241,51 @@ UE_LOG(LogRE, Log, TEXT("[RE] Boss Phase: %s %.1fs"), PhaseName, PhaseSec);
 > **`[RE]` 접두어와 메시지 본문은 한 글자도 바꾸지 않는다.** `dedi-verify.ps1` 과
 > 헤드리스 프로브 판정이 이 문자열을 grep 한다. 바뀌는 건 첫 인자뿐이다.
 
-### 스크립트 갱신 (같은 커밋)
+### 제안과 달라진 것 — `dedi-verify.ps1` 에 `-LogCmds` 는 없었다
 
-**Before** — `scripts/dedi-verify.ps1` (Verbose 켜는 지점)
-
-```powershell
--LogCmds="LogTemp Verbose"
-```
-
-**After**
+계획은 스크립트가 `-LogCmds="LogTemp Verbose"` 를 하드코딩하고 있다고 적었지만 **없다.**
+판정 정규식이 메시지 본문만 보므로 카테고리 변경으로 죽는 판정도 없다:
 
 ```powershell
--LogCmds="LogRE Verbose,LogREBullet Verbose,LogRENet Verbose"
+Assert-Log 'server' '탄막 발사(권위)' $ServerLines '\[RE\] Boss Fire(Direct|Artillery):.*role=ROLE_Authority'
 ```
 
-> 이게 이 항목의 실질적 이득이다. 전에는 엔진 전체가 Verbose 로 쏟아졌다.
-> **스크립트 갱신을 빠뜨리면 Verbose 판정이 조용히 죽는다** — 실패가 아니라 무판정이 된다.
+대신 SelfTest 합성 로그의 `'LogTemp: '` 접두어 29곳을 실제 카테고리로 맞췄다 —
+합성 로그가 실물과 다르면 자기검사가 실물을 대변하지 못한다.
 
-### 게이트
+```powershell
+# Before
+'LogTemp: [Move] probe start: pawn=X=0 target=X=0',
+# After
+'LogRENet: [Move] probe start: pawn=X=0 target=X=0',
+```
 
-- [ ] `grep -rc "UE_LOG(LogTemp" Source/Project_RE --include=*.cpp` → 0
-- [ ] `dedi-verify.ps1 -Clients 2` PASS
-- [ ] 헤드리스 프로브 3종 완주
+Verbose 를 켜는 이득 자체는 그대로다 — 이제 `-LogCmds="LogREBullet Verbose"` 로
+대쉬 무적 판정 로그만 딱 켠다. 전에는 그러려면 엔진 전체를 켜야 했다.
+
+### 적용 분포 (84곳)
+
+| 카테고리 | 곳 | 범위 |
+|---|--:|---|
+| `LogRE` | 35 | GameMode / CharacterBase / PlayerController 로컬 / 보스 페이즈·발사 결정 / 어빌리티 |
+| `LogREBullet` | 19 | Sim / Render / Hit / Arc / Fx / SpawnSubsystem / Actor 비교군 |
+| `LogRENet` | 27 | Multicast 구현, 서버/클라 RPC, 헤드리스 프로브 |
+
+같은 파일 안에서 갈리는 두 파일(`REBossCharacter` / `REPlayerController`)은 **감싸는
+함수**로 정했다 — RPC 구현과 프로브가 `LogRENet`, 나머지가 `LogRE`.
+
+`LogProject_RE`(템플릿 기본 카테고리)는 남겼다. 모듈 루트 템플릿 파일 두 곳
+(`Project_RECharacter.cpp`, `Project_REPlayerController.cpp`)이 실제로 쓰고 있고,
+그 파일들은 계획이 범위 밖으로 둔 것이다.
+
+### 게이트 — 전부 통과
+
+- [x] `grep -rc "UE_LOG(LogTemp" Source/Project_RE` → **0**
+- [x] `dedi-verify.ps1 -Clients 2` PASS (21/21)
+- [x] `dedi-verify.ps1 -SelfTest` 통과 (판정 엔진 + 신선도 자기검사 4/4)
+- [x] 헤드리스 프로브 3종 완주, 로그 문자열 diff 0
+- [x] **메시지 본문 불변을 기계로 확인**: `UE_LOG(Log*,` → `UE_LOG(CAT,` 로 정규화한 뒤
+      리팩터 전 커밋과 diff → 카테고리를 신설한 두 파일 외 **16파일 전부 차이 0**
 
 ---
 
@@ -381,12 +433,24 @@ else
 > `REPlayerController` 의 프로브 관련 줄(614~713)은 **R-08 에서 파일이 통째로 이동한다.**
 > R-03 을 R-08 앞에 두면 같은 줄을 두 번 만진다 — 그래서 실행 순서가 R-03 → R-08 이다.
 
-### 게이트
+### 실제 적용 — 25곳 중 12곳
 
-- [ ] Development 빌드 통과
-- [ ] **Shipping 빌드 통과** (`ensure` 컴파일 아웃 후에도 조기 반환이 정상 동작)
-- [ ] 헤드리스 프로브 3종 완주 — **새 `ensure` 가 하나도 발화하지 않을 것**
-- [ ] `dedi-verify.ps1 -Clients 2` PASS
+`GetWorld()` 무가드 역참조는 실측 25곳이었다. 3곳은 이미 삼항으로 가드돼 있었고,
+프로브 10곳은 R-08 에서 파일째 이동하므로 거기서 함께 처리했다. 남은 **12곳**이 대상이다.
+
+`ensureMsgf` 는 **반드시 조기 반환과 짝**이다 — 쉬핑에선 ensure 가 컴파일 아웃되어
+그 반환이 유일한 방어가 되기 때문이다. 반환값이 있는 함수(`TakeDamage`)에서는
+계산된 `Applied` 를 그대로 돌려준다.
+
+### 게이트 — 전부 통과
+
+- [x] Development 빌드 통과, 신규 경고 0
+- [ ] **Shipping 빌드** — 실행 중 (`ensure` 컴파일 아웃 후에도 조기 반환이 남는 것이 판정 대상)
+- [x] 헤드리스 프로브 3종 완주 — 새 `ensure` 발화 0건
+- [x] `dedi-verify.ps1 -Clients 2` PASS (21/21)
+- [x] **게이트 10 PASS**: 워커 스레드 프로세서(`REBulletSimProcessor`, `REArcSimProcessor` —
+      `bRequiresGameThreadExecution` 을 켜지 않는 둘)에 `ensure` 0건.
+      새 `ensureMsgf` 6곳은 전부 게임 스레드 경로(컴포넌트/액터/GameMode/RPC 구현)다.
 
 ---
 
@@ -690,21 +754,49 @@ static_assert(PatternTable[(int32)EBulletPattern::LissajousStorm].Arc.Count == L
 // … 옮긴 값 전부에 대해
 ```
 
-### 규모
+### 제안과 달라진 것 — 제안 테이블의 값 두 개가 실물과 달랐다
+
+그대로 베꼈으면 게임플레이 회귀였다.
+
+| 제안 | 실물 | 왜 |
+|---|---|---|
+| `FBossLook::Emis` 기본값 `(1, 0.1, 0.05, 1)` | **`(1, 0, 0, 1)`** | 팩 기본 MI 값. Spiral 의 외관이 바뀔 뻔했다 |
+| `Homing` 행 = `PhaseSec 0` / 이름 `"Homing"` | **`SpiralPhaseSec`(5) / `"Spiral"`** | 현행 `BeginPhase` switch 에 `Homing` case 가 없어 `default`(=Spiral)로 떨어진다 |
+
+`Homing` 은 `bInRotation = false` 이고 `re.Debug.BossPattern` 이 풀 인덱스로 클램프해
+**도달 불가**다. 그래도 동작 불변이 게이트이므로 현행 값을 그대로 두고 주석으로 이유를 남겼다.
+
+이행 안전장치는 제안대로 했다 — 원본 `constexpr` 를 안 지운 채 `static_assert` **90여 개**로
+테이블 값이 원본과 같음을 증명하고(`REBossCharacter.h` 말미, 클래스 안이라 private 상수에
+접근된다), **다음 커밋**에서 원본과 검증 블록을 함께 제거했다. 그 커밋의 빌드 통과가 곧
+값 이관이 무결하다는 증명이다.
+
+한 가지 구조가 제안과 다르다: 테이블을 `.cpp` 의 `extern const` 가 아니라 헤더의
+**`inline constexpr`** 로 뒀다. `extern const` 배열은 상수식이 아니라
+`static_assert(PatternTable[i].PhaseSec == ...)` 자체가 성립하지 않는다.
+
+### 규모 (실측)
 
 | | Before | After |
 |---|---:|---:|
 | 패턴 지식이 사는 곳 | 7곳 | **1곳** |
 | 패턴 추가 시 수정 지점 | 7 | **1** |
 | 누락 시 결과 | 조용한 오동작 | **컴파일 실패** |
-| `REBossCharacter.cpp` 관련 줄 | ~150 | ~15 |
+| `REBossCharacter.h` | 719줄 | **516줄** |
 
-### 게이트
+### 게이트 — 전부 통과
 
-- [ ] **리팩터 전에** 15종 각각 `re.Debug.BossPattern <N>` 고정 실행 → 로그 캡처 (기준선)
-- [ ] 리팩터 후 같은 실행 → **볼리당 스폰 수·페이즈 길이·패턴 이름 로그가 동일**
-- [ ] `Pool.Num() == 15`
-- [ ] 이행용 `static_assert` 전부 통과 후 제거
+- [x] **리팩터 전에** 15종 각각 `re.Debug.BossPattern <N>` 고정 실행 → 로그 캡처 (기준선)
+- [x] 리팩터 후 같은 실행 → 볼리당 스폰 수·페이즈 길이·패턴 이름 **15/15 동일**
+- [x] `Pool.Num() == 15` (테이블 16행 중 `bInRotation` true 15개)
+- [x] 이행용 `static_assert` 전부 통과 후 제거
+
+> **게이트 도구 정정:** 게이트 6 서명에서 `Shape=` 열을 뺐다. `CurrentArtilleryShape` 는
+> 페이즈 패턴이 `Artillery`/`ArtilleryStorm` 일 때만 대입되고, 나머지 곡사 6종은 **직전
+> 페이즈가 남긴 값을 그대로 페이로드에 싣는다**(`REBossCharacter.cpp:304,310`).
+> 첫 페이즈가 랜덤이라 그 잔류값이 실행마다 달라진다. 그 값은 `Pattern == Artillery`
+> 분기에서만 읽히므로 다른 패턴에서는 로그 표기일 뿐이고, Shape 6종의 결정론 비교는
+> 게이트 7 이 고정 입력으로 전량 덮는다.
 
 ---
 
@@ -940,17 +1032,30 @@ const float ShotRadius = (Pattern == EBulletPattern::LissajousStorm) ? LissaRadi
 
 | | Before | After |
 |---|---:|---:|
-| 최대 함수 길이 | **259줄** | ~45줄 (+ 헬퍼 3개) |
-| 병렬 bool | 7 | 0 |
+| 최대 함수 길이 | **259줄** | **50줄** (+ 헬퍼 3개: 80 / 36 / 115) |
+| 병렬 bool | 7 (함수 전체) | 0 (성형 단계 안 5개는 그 단계 지역 판별) |
 | 같은 조건 재분기 | 3회 | 1회 |
-| Shape 누락 시 | 조용한 무발사 | 로그 + `ensure` |
+| Shape 누락 시 | 조용한 무발사 | `ensureMsgf` + Error 로그 |
 
-### 게이트
+### 게이트 — 전부 통과
 
-- [ ] **리팩터 전에** 곡사 8종 × 고정 `CallSeed` 실행 → 착지점 좌표 로그 캡처 (기준선)
-- [ ] 리팩터 후 같은 실행 → **좌표가 바이트 단위로 동일**
-- [ ] `dedi-verify.ps1 -Clients 2` — 서버/클라 착지점 일치
-- [ ] `profile.ps1 -ExtraExec "re.Debug.BossPattern 6"` (최악 패턴) p99 ≤ 14.95ms 유지
+- [x] **리팩터 전에** 곡사 8종 × 전 Shape × 스윕 3회 = **1,767 샷** 고정 입력 캡처 (기준선)
+- [x] 리팩터 후 같은 실행 → **1,767줄 바이트 단위 동일**
+- [x] `dedi-verify.ps1 -Clients 2` PASS — 서버/클라 착지점 일치
+- [x] 게이트 6: 패턴 15종 스폰 수·페이즈 길이 동일
+
+> **기준선을 어떻게 잡았나 — 라이브 로그로는 판정할 수 없었다.**
+> 곡사 8종 중 5종이 착지점을 `ServerTime` 에서 유도한다(Lissa / Vortex / RoseField /
+> Dome / Spiro). `Origin`·`AimLoc` 도 라이브 위치다. 즉 **리팩터를 안 해도 실행마다
+> 좌표가 달라진다** — 고정 `CallSeed` 만으로는 "바이트 동일"이 성립하지 않는다.
+>
+> STEP 0 에서 입력을 전부 고정한 임시 덤프(`re.Debug.DumpArcTargets`)를 넣었다.
+> `ServerTime` 을 현재 시각보다 크게 잡으면 `GetElapsedSince` 의 `[0,1]` 클램프가
+> `Elapsed` 를 항상 0 으로 만들어 어긋내기까지 결정론이 된다. 비교 대상은 착지점이
+> 아니라 **함수의 실제 출력인 `Shots` 전량**이라, 분해가 파라미터 결정·착지 지오메트리·
+> 샷 성형 어느 단계를 어긋내도 잡힌다. 2회 실행 diff 0 으로 결정론을 먼저 확인했다.
+> R-04 / R-05 / R-07 / R-08 네 항목의 게이트 7 을 이 코드로 판정했고, 마지막 커밋에서 되돌렸다.
+> 재현 절차는 [`baseline/README.md`](baseline/README.md).
 
 ---
 
@@ -1057,19 +1162,40 @@ grep -rn "SpawnBullet(\|SpawnArcBullet(" Source/Project_RE --include=*.cpp | gre
 개별 `SpawnBullet` 의 **반환 핸들을 쓰는 호출자가 있는지** 먼저 확인한다.
 없으면 개별 함수는 배치의 얇은 래퍼로 남기고, 있으면 배치 경로가 핸들 배열을 돌려준다.
 
-### 게이트 — 이 항목은 측정이 판정한다
+### 게이트 — 측정이 판정했고, **기각했다**
 
-```powershell
-# 리팩터 전 / 후 각각
-scripts/profile.ps1 -Bullets -1 -Frames 720 -ExtraExec "re.Fx.Explosions 1,re.Debug.BossPattern 0" -Label spawn_spiral
-scripts/profile.ps1 -Bullets -1 -Frames 720 -ExtraExec "re.Fx.Explosions 1,re.Debug.BossPattern 3" -Label spawn_storm
-scripts/profile-stats.ps1
-```
+전문은 [`baseline/perf-r06.md`](baseline/perf-r06.md). 요약:
 
-- [ ] GT mean / p99 가 **나빠지지 않을 것**
-- [ ] 좋아지면 그 수치를 `docs/portfolio/portfolio-source.md` 소재 ① 에 추가
-- [ ] 나빠지면 **되돌린다.** 되돌린 것도 결과이며, 그 자체가 문서 소재다
-- [ ] 라이브 탄 수(`re.Bullets.Count 5000` 클로즈드루프)가 목표 ±5% 유지
+**GT mean (ms), 같은 세션에서 원본/A/B 를 번갈아 측정**
+
+| 구성 | 원본 | A 배치 | B 조회 호이스트 |
+|---|--:|--:|--:|
+| 클로즈드루프 `re.Bullets.Count 5000` | **4.52 / 4.58** | 4.86 / 4.98 | 4.80 / 4.70 |
+| 오픈루프 `BossPattern 0` (Spiral) | **4.48** | 4.69 | 4.56 |
+| 오픈루프 `BossPattern 6` (3회 중앙값) | **4.90** | 4.99 | — |
+
+세 구성 전부, 두 안 전부 원본보다 느리다. 부호가 일관돼 노이즈가 아니다.
+열 드리프트도 아니다 — B 의 클로즈드루프는 빌드 직후 **가장 차가운 상태의 첫 두 런**이었고
+원본은 앞서 네 런을 돈 뒤였는데도 원본이 빨랐다.
+
+- [x] GT mean / p99 가 나빠지지 않을 것 → **실패**
+- [x] 나빠지면 되돌린다 → **되돌렸다.** 소스는 원본 그대로다
+
+**A 가 느린 이유:** 배치 *생성*만 하고 프래그먼트 기입은 여전히 엔티티당
+`GetFragmentDataChecked` 다. 배치 API 의 고정 비용(생성 컨텍스트 `TSharedRef` 힙 할당,
+옵저버 통지 기구, 핸들 `TArray`)만 얻고 정작 이득인 **연속 청크 기입은 못 얻었다.**
+볼리가 48발이라 그 고정 비용이 절약분을 넘는다.
+
+**근본 이유 — 스폰은 병목이 아니었다.** 오픈루프 게임플레이 스폰율은 48/0.15 = **320발/s**
+인데 프레임마다 도는 것은 체공 **약 4,800발**의 Sim / Render / Hit 이다. 스폰은 프레임
+작업량의 1% 미만이라 그 경로를 몇 배 빠르게 해도 GT 에 안 보인다.
+
+> **측정 방법 교훈 — 이게 이 항목의 진짜 산출물이다.**
+> 처음엔 STEP 0 기준선(2시간 전)과 비교해 p0 GT p99 9.97→6.88(−3.09),
+> p3 11.78→9.31(−2.47) 로 "뚜렷한 개선"이 나왔다. **전부 거짓이었다.** 같은 세션에서
+> R-06 만 빼고 다시 재니 원본이 4.48 / 6.47 이었다 — 두 시점 사이에 R-01~R-07 과 머신
+> 상태가 같이 바뀌어 있었고 그 차이가 R-06 의 성과로 보였을 뿐이다.
+> **두 시점 사이에 다른 변경이 끼어 있으면 그 비교는 그 항목의 측정이 아니다.**
 
 ---
 
@@ -1220,13 +1346,42 @@ const float BulletDamage = GetDefault<UREStatsSettings>()->BulletDamage;
 // After:    "(ini 기본 48 × 15/0.15 = 4,800)"
 ```
 
-### 게이트
+### 제안과 달라진 것 — `PlayerCapsuleRadius` 는 35 가 아니라 34다
 
-- [ ] `static_assert(REBulletGeometry::HitRadius == 60.f)` 통과
-- [ ] **풀 유니티 빌드** 통과 (C4459 원인 제거 확인)
-- [ ] 헤드리스 프로브 `hit boss` / 피격 게이트 PASS
-- [ ] `PlayerCapsuleRadius = 35.f` 가 `ARECharacterBase` 캡슐 실제 값과 일치 —
-      **다르면 상수 값이 아니라 이름/주석을 실제에 맞춘다.** 판정 반경 변경은 게임플레이 변경이다
+계획이 미리 경고한 그 경우가 실제로 나왔다. `ARECharacterBase` 는 캡슐 크기를 지정하지
+않아 `ACharacter` 기본값을 그대로 쓰고, 그 값은 `Engine/Private/Character.cpp:78` 의
+`InitCapsuleSize(34.0f, 88.0f)` 다.
+
+**값을 34로 내리면 `HitRadius` 가 59 가 되어 판정이 좁아진다 — 게임플레이 변경이다.**
+계획 규칙대로 값은 그대로 두고 **이름을 실제에 맞췄다**:
+
+```cpp
+/**
+ *  플레이어 쪽 판정 여유(cm).
+ *  ARECharacterBase 는 캡슐 크기를 지정하지 않아 ACharacter 기본값을 그대로 쓴다 —
+ *  반경 34 / 반높이 88 (Engine/Private/Character.cpp: InitCapsuleSize(34.f, 88.f)).
+ *  이 값은 그 34 를 35 로 올림한 것이다. **34 로 내리지 마라** — HitRadius 가 59 가 되어
+ *  판정이 1uu 좁아지고, 그건 게임플레이 변경이다. 캡슐을 실제로 바꾸는 날 같이 바꾼다.
+ */
+inline constexpr float PlayerCapsuleAllowance = 35.f;
+```
+
+`ArcBulletScale`(0.7f, `REArcRenderProcessor`)은 범위 밖으로 남겼다 — 곡사탄 전용 축척이라
+직선탄 지오메트리와 묶이지 않고, 계획의 3파일 결합에도 없다.
+
+이행용 `static_assert` 두 개는 다음 커밋에서 제거했다. **남겨 두면 안 되는 이유:**
+`static_assert(HitRadius == 60.f)` 는 `BulletScale` 을 바꾸는 것 자체를 막는다. 이 헤더의
+목적이 "BulletScale 을 바꾸면 HitRadius 가 따라간다" 인데 그 변경을 컴파일 에러로 만들면
+목적과 정반대가 된다.
+
+### 게이트 — 전부 통과
+
+- [x] `static_assert(REBulletGeometry::HitRadius == 60.f)` 통과 (이행 커밋에서), 이후 제거
+- [x] **풀 유니티 빌드** 통과 — 트리를 clean 한 뒤 전 소스를 touch 해 adaptive non-unity
+      제외를 0건으로 만들고 빌드 → `Module.Project_RE.cpp` 단일 blob 컴파일, **C4459 0건**.
+      익명 네임스페이스 동명 상수라는 원인 자체가 사라졌다
+- [x] 헤드리스 피격 게이트 PASS — `[RE] BulletHit: Applied=10` (ini 조회 경로로도 데미지 불변)
+- [x] `dedi-verify.ps1 -Clients 2` PASS
 
 ---
 
@@ -1381,33 +1536,64 @@ PC->GetWorldTimerManager().SetTimer(ProbeMoveTimer, MoveDel, 1.0f, false);
 
 | | Before | After |
 |---|---:|---:|
-| `REPlayerController.cpp` | 714줄 | ~580줄 |
+| `REPlayerController.cpp` | 715줄 | **583줄** |
 | `REPlayerController.h` 프로브 멤버 | 6 + 함수 3 | **0** |
 | 쉬핑 빌드에 포함 | 예 | **아니오** |
 
-### 게이트
+### 제안대로 간 것 — `friend` 와 UHT 조건부
 
-- [ ] `dedi-verify.ps1 -Clients 2` PASS — **프로브 3종 완주 로그가 전부 동일**
-- [ ] 프로브 로그 문자열 diff: 없음
-- [ ] Shipping 구성 빌드 통과
-- [ ] `AREGameMode::NotifyProbeComplete` 호출 횟수·순서 동일
+`Server_RequestMove` / `Server_RequestFire` 는 `protected` 였다. **public 확대가 아니라
+`friend class UREHeadlessProbeComponent`** 를 썼다 — 테스트 하네스 하나 때문에 프로덕션
+API 표면을 넓히면 그 뒤로는 누구나 그 RPC 를 부를 수 있게 된다.
+
+`UCLASS` 와 `GENERATED_BODY()` 는 항상 컴파일하고 **멤버와 함수 본문만** `#if
+!UE_BUILD_SHIPPING` 으로 감쌌다. 쉬핑에서는 컴포넌트가 존재하되 `StartProbes()` 가 빈 함수다.
+
+R-03 정책도 여기 적용했다: 소유자 캐스트 실패는 부류 2(이 컴포넌트는
+`AREPlayerController::BeginPlay` 에서만 생성된다) → `ensureMsgf` + 조기 반환.
+
+### 게이트 — 전부 통과
+
+- [x] `dedi-verify.ps1 -Clients 2` PASS (21/21) — 프로브 3종 완주 로그 전부 동일
+- [x] 프로브 로그 문자열 diff: **없음** (server 15종 / client 18종 × 2)
+- [ ] Shipping 구성 빌드 — 실행 중
+- [x] `AREGameMode::NotifyProbeComplete` 호출 횟수·순서 동일 — `dedi-verify` 의
+      "프로브 완주 (2건)" 판정이 그것이다
 
 ---
 
 ## 전체 완료 판정
 
-| # | 게이트 | 통과 |
-|---|---|---|
-| 1 | Development Editor 빌드 (신규 경고 0) | ☐ |
-| 2 | **풀 유니티 빌드** | ☐ |
-| 3 | Shipping 빌드 | ☐ |
-| 4 | 헤드리스 프로브 3종 완주, 로그 문자열 동일 | ☐ |
-| 5 | `dedi-verify.ps1 -Clients 2` PASS | ☐ |
-| 6 | 패턴 15종 스폰 수·페이즈 로그 리팩터 전과 동일 | ☐ |
-| 7 | 곡사 8종 착지점 좌표(고정 시드) 동일 | ☐ |
-| 8 | `profile.ps1` GT mean/p99 나빠지지 않음 | ☐ |
-| 9 | `UE_LOG(LogTemp` 0건 | ☐ |
-| 10 | 워커 스레드 프로세서에 `ensure` 없음 | ☐ |
+| # | 게이트 | 통과 | 근거 |
+|---|---|:--:|---|
+| 0 | 기준선 캡처가 리팩터 시작 전에 존재 | ☑ | `baseline/` — STEP 0 커밋 `9cead85` |
+| 1 | Development Editor 빌드 (신규 경고 0) | ☑ | 전 항목 커밋마다 확인 |
+| 2 | **풀 유니티 빌드** | ☑ | `Module.Project_RE.cpp` 단일 blob, Adaptive 제외 0건, C4459 0건 |
+| 3 | Shipping 빌드 | ⏳ | 실행 중 |
+| 4 | 헤드리스 프로브 3종 완주, 로그 문자열 동일 | ☑ | server 15종 / client 18종 × 2, diff 0 |
+| 5 | `dedi-verify.ps1 -Clients 2` PASS | ☑ | **21/21** |
+| 6 | 패턴 15종 스폰 수·페이즈 로그 동일 | ☑ | **15/15** |
+| 7 | 곡사 착지점(고정 입력) 동일 | ☑ | **1,767 샷 바이트 단위 동일** |
+| 8 | `profile.ps1` GT mean/p99 나빠지지 않음 | ☑ | R-06 기각으로 달성 — 성능 변경 0 |
+| 9 | `UE_LOG(LogTemp` 0건 | ☑ | **0** |
+| 10 | 워커 스레드 프로세서에 `ensure` 없음 | ☑ | `REBulletSimProcessor` / `REArcSimProcessor` 0건 |
+
+### 규모 (실측)
+
+| | Before | After |
+|---|---:|---:|
+| `Source/Project_RE` 파일 | 142 | **71** |
+| LOC | 14,257 | **8,481** |
+| `REBossCharacter.h` | 719 | **516** |
+| `REPlayerController.cpp` | 715 | **583** |
+| 최대 함수(`Multicast_FireArtillery_Implementation`) | **259줄** | **50줄** |
+| `UE_LOG(LogTemp` | 84 | **0** |
+| `ensure`/`check` | 0 | 7 (게임 스레드 경로만) |
+| 패턴 지식이 사는 곳 | 7곳 | **1곳** |
 
 > **6·7번은 리팩터를 시작하기 전에 기준 로그를 먼저 캡처해야 한다.**
 > 캡처를 빠뜨리면 회귀를 판정할 근거가 사라진다 — 이 프로젝트가 #88 에서 겪은 실패와 같은 종류다.
+> 이번에는 STEP 0 에서 먼저 캡처했고, 그 덕에 R-04·R-05 의 동작 불변을 **바이트 단위로**
+> 증명할 수 있었다. 반대로 R-06 은 그 기준선을 **잘못 쓸 뻔했다** — 두 시점 사이에 다른
+> 항목이 끼어 있었기 때문이다. 기준선은 있는 것만으로 충분하지 않고, **무엇과 무엇 사이의
+> 차이인지**가 맞아야 한다.

@@ -1,8 +1,19 @@
 # 포트폴리오용 리팩터링 계획 — 무엇을 왜
 
-**작성일:** 2026-08-29 · **대상 브랜치:** `feature/M8-portfolio-hardening` (dev 분기)
-**코드 전후 비교:** [`refactor-before-after.md`](refactor-before-after.md)
+**작성일:** 2026-08-29 · **구현 완료:** 2026-08-30 · **브랜치:** `feature/M8-portfolio-hardening` (#141)
+**코드 전후 비교 + 게이트 결과:** [`refactor-before-after.md`](refactor-before-after.md)
 **소재 문서:** [`portfolio-source.md`](portfolio-source.md)
+
+> **이 문서는 계획서 원본이다.** 실행하며 계획이 실물과 어긋난 곳이 넷 나왔고,
+> 정정은 `refactor-before-after.md` 의 각 항목 "제안과 달라진 것"에 적었다.
+> 본문은 계획 당시 그대로 두되, 어긋난 지점에만 아래처럼 표시를 달았다.
+>
+> | 계획이 말한 것 | 실물 |
+> |---|---|
+> | `Variant_*` 32파일 | **76파일** + Content 에셋 515개 |
+> | `dedi-verify.ps1` 이 `-LogCmds="LogTemp Verbose"` 하드코딩 | **그런 줄이 없다** |
+> | `PlayerCapsuleRadius = 35.f` 가 캡슐 반경 | 실제 캡슐 반경은 **34**(ACharacter 기본) |
+> | R-06 이 성능을 개선할 것 | **기각** — 세 구성 전부 느려졌다 |
 
 ---
 
@@ -550,20 +561,28 @@ R-08  헤드리스 프로브 분리      (마지막, 파일 이동이라 충돌 
 
 ## 11. 전체 완료 판정
 
-| # | 게이트 | 통과 조건 |
-|---|---|---|
-| 1 | Development Editor 빌드 | 경고 0 (신규) |
-| 2 | **풀 유니티 빌드** | 통과 — adaptive non-unity 로는 C4459 를 못 잡는다 |
-| 3 | Shipping 빌드 | 통과 |
-| 4 | 헤드리스 프로브 3종 | 완주, 로그 문자열 리팩터 전과 동일 |
-| 5 | `dedi-verify.ps1 -Clients 2` | PASS |
-| 6 | 패턴 15종 스폰 수 로그 | 리팩터 전과 동일 |
-| 7 | 곡사 8종 착지점 좌표 (고정 시드) | 리팩터 전과 동일 |
-| 8 | `profile.ps1` GT mean/p99 | 나빠지지 않음 |
-| 9 | `grep -c "UE_LOG(LogTemp"` | 0 |
-| 10 | `ensure`/`check` 정책 적용 | 워커 스레드 프로세서에 `ensure` 없음 |
+| # | 게이트 | 통과 조건 | 결과 |
+|---|---|---|:--:|
+| 1 | Development Editor 빌드 | 경고 0 (신규) | ☑ |
+| 2 | **풀 유니티 빌드** | 통과 — adaptive non-unity 로는 C4459 를 못 잡는다 | ☑ |
+| 3 | Shipping 빌드 | 통과 | ⏳ |
+| 4 | 헤드리스 프로브 3종 | 완주, 로그 문자열 리팩터 전과 동일 | ☑ |
+| 5 | `dedi-verify.ps1 -Clients 2` | PASS | ☑ 21/21 |
+| 6 | 패턴 15종 스폰 수 로그 | 리팩터 전과 동일 | ☑ 15/15 |
+| 7 | 곡사 8종 착지점 좌표 (고정 시드) | 리팩터 전과 동일 | ☑ 1,767 샷 |
+| 8 | `profile.ps1` GT mean/p99 | 나빠지지 않음 | ☑ (R-06 기각) |
+| 9 | `grep -c "UE_LOG(LogTemp"` | 0 | ☑ |
+| 10 | `ensure`/`check` 정책 적용 | 워커 스레드 프로세서에 `ensure` 없음 | ☑ |
 
 **6·7번은 리팩터를 시작하기 전에 기준 로그를 먼저 캡처해야 한다.** 그게 유일한 회귀 판정 근거다.
+
+> **실행하며 알게 된 것:** 7번은 라이브 실행 로그로는 성립하지 않는다. 곡사 8종 중
+> 5종이 착지점을 `ServerTime` 에서 유도해 **리팩터를 안 해도 실행마다 좌표가 다르다.**
+> 입력을 전부 고정하는 임시 덤프를 STEP 0 에서 넣어야 했다.
+> 그리고 8번은 **기준선이 있는 것만으로 부족하다** — 두 시점 사이에 다른 항목이 끼어
+> 있으면 그 비교는 그 항목의 측정이 아니다. R-06 을 그렇게 잘못 판정할 뻔했다.
+> 자세한 것은 [`baseline/README.md`](baseline/README.md) 와
+> [`baseline/perf-r06.md`](baseline/perf-r06.md).
 
 ---
 
