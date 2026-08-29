@@ -14,9 +14,9 @@ public class Project_RE : ModuleRules
 			"Engine",
 			"InputCore",
 			"EnhancedInput",
+			// AIModule: REPlayerController 가 UAIBlueprintHelperLibrary::SimpleMoveToLocation 을 쓴다.
+			// 이름만 보고 지우면 우클릭 이동이 죽는다 — Variant_* 와 함께 지울 항목이 아니다.
 			"AIModule",
-			"StateTreeModule",
-			"GameplayStateTreeModule",
 			"UMG",
 			"Slate",
 			"SlateCore",
@@ -30,35 +30,13 @@ public class Project_RE : ModuleRules
 			"DeveloperSettings"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
-
 		PublicIncludePaths.AddRange(new string[] {
 			"Project_RE",
+			"Project_RE/Abilities",
 			"Project_RE/Baseline",
 			"Project_RE/Core",
 			"Project_RE/Mass",
-			"Project_RE/UI",
-			"Project_RE/Variant_Platforming",
-			"Project_RE/Variant_Platforming/Animation",
-			"Project_RE/Variant_Combat",
-			"Project_RE/Variant_Combat/AI",
-			"Project_RE/Variant_Combat/Animation",
-			"Project_RE/Variant_Combat/Gameplay",
-			"Project_RE/Variant_Combat/Interfaces",
-			"Project_RE/Variant_Combat/UI",
-			"Project_RE/Variant_SideScrolling",
-			"Project_RE/Variant_SideScrolling/AI",
-			"Project_RE/Variant_SideScrolling/Gameplay",
-			"Project_RE/Variant_SideScrolling/Interfaces",
-			"Project_RE/Variant_SideScrolling/UI"
+			"Project_RE/UI"
 		});
-
-		// Uncomment if you are using Slate UI
-		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
-
-		// Uncomment if you are using online features
-		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
-
-		// To include OnlineSubsystemSteam, add it to the plugins section in your uproject file with the Enabled attribute set to true
 	}
 }
