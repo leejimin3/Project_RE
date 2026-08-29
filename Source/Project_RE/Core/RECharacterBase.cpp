@@ -396,7 +396,14 @@ float ARECharacterBase::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 	{
 		bIsDead = true;
 		UE_LOG(LogRE, Log, TEXT("[RE] Player died (Health<=0)"));
-		if (AREGameMode* GM = GetWorld()->GetAuthGameMode<AREGameMode>())
+		// 월드 부재는 부류 2(소유된 폰에선 불가능). GM 부재는 부류 1 —
+		// 클라에는 AuthGameMode 가 없는 것이 정상이다.
+		UWorld* World = GetWorld();
+		if (!ensureMsgf(World, TEXT("[RE] CharacterBase: World 없음 — 소유된 폰에선 불가능한 상태")))
+		{
+			return Applied;
+		}
+		if (AREGameMode* GM = World->GetAuthGameMode<AREGameMode>())
 		{
 			// 전원 사망이어야 패배다 — 판정은 GameMode가 한다 (#85).
 			GM->NotifyPlayerDied(Cast<APlayerController>(GetController()));

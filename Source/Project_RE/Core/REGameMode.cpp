@@ -55,9 +55,16 @@ void AREGameMode::BeginPlay()
 			Stats->BossMaxHealth, Stats->BulletSpeed, Stats->BulletLifetime, Stats->BossFireInterval, Stats->BulletsPerShot);
 	}
 
+	// 부류 2 — GameMode 는 월드 없이 존재할 수 없다. 아래 세 곳이 같은 월드를 쓴다.
+	UWorld* World = GetWorld();
+	if (!ensureMsgf(World, TEXT("[RE] GameMode: World 없음 — GameMode 는 월드 없이 존재할 수 없다")))
+	{
+		return;
+	}
+
 	// Mass 스모크 테스트: 서브시스템 얻고 엔티티 1개 생성 → 로그.
 	// GameMode는 서버 권위라 HasAuthority 가드 불필요.
-	if (UMassEntitySubsystem* Mass = GetWorld()->GetSubsystem<UMassEntitySubsystem>())
+	if (UMassEntitySubsystem* Mass = World->GetSubsystem<UMassEntitySubsystem>())
 	{
 		FMassEntityManager& EM = Mass->GetMutableEntityManager();
 		FMassArchetypeHandle Arch = EM.CreateArchetype({ FRETestFragment::StaticStruct() });
@@ -85,7 +92,7 @@ void AREGameMode::BeginPlay()
 	//      REActorBulletSpawner::SpawnOrigin(측정 비교군)과 반드시 동일 좌표 유지.
 	FActorSpawnParameters BossSpawnParams;
 	BossSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	if (AREBossCharacter* Boss = GetWorld()->SpawnActor<AREBossCharacter>(
+	if (AREBossCharacter* Boss = World->SpawnActor<AREBossCharacter>(
 			AREBossCharacter::StaticClass(), FVector(0.f, 0.f, 90.f), FRotator::ZeroRotator, BossSpawnParams))
 	{
 		// #64: 발사 주체를 Boss로 이관. 발사 시작은 클라 준비 후 (#84) — 여기서 켜지 않는다.
@@ -136,7 +143,14 @@ void AREGameMode::EndGame(bool bVictory)
 	// 2) 결과 화면 + 입력 차단 — 전 클라에 보낸다 (#85).
 	//    이미 죽어서 입력이 차단된 플레이어도 결과 화면은 받아야 하므로 필터하지 않는다.
 	//    FConstPlayerControllerIterator는 약참조를 주므로 역참조 전에 유효성을 본다.
-	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	// EndGame 은 위 BeginPlay 와 별개 함수다 — 월드를 다시 잡는다.
+	// 부류 2: GameMode 는 월드 없이 존재할 수 없다.
+	UWorld* World = GetWorld();
+	if (!ensureMsgf(World, TEXT("[RE] GameMode: World 없음 — GameMode 는 월드 없이 존재할 수 없다")))
+	{
+		return;
+	}
+	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
 	{
 		if (!It->IsValid())
 		{

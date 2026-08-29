@@ -51,8 +51,17 @@ bool UREAttackComponent::FireInDirection(const FVector& Dir)
 		return false;
 	}
 
+	// 부류 2 — 등록된 컴포넌트에 월드가 없는 상황은 정상 경로에 없다. 전에는 널이면
+	// 원인 메시지 없이 EXCEPTION_ACCESS_VIOLATION 으로 죽었다. 쉬핑에선 ensure 가
+	// 컴파일 아웃되고 아래 조기 반환만 남는다.
+	UWorld* World = GetWorld();
+	if (!ensureMsgf(World, TEXT("[RE] AttackComponent: World 없음 — 등록된 컴포넌트에선 불가능한 상태")))
+	{
+		return false;
+	}
+
 	// rate limit — 클라 페이싱과 별개로 서버가 재검증. 0.9배: 프레임/네트워크 지터 허용 오차.
-	const double Now = GetWorld()->GetTimeSeconds();
+	const double Now = World->GetTimeSeconds();
 	if (LastFireTime >= 0.0 && Now - LastFireTime < AttackInterval * 0.9)
 	{
 		UE_LOG(LogRE, Log, TEXT("[Attack] rate-limited (dt=%.2f)"), Now - LastFireTime);
@@ -66,7 +75,7 @@ bool UREAttackComponent::FireInDirection(const FVector& Dir)
 	const FVector End = Start + Dir * AttackRange;
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(REAttack), /*bTraceComplex=*/false, GetOwner());
 	FHitResult Hit;
-	const bool bBlockingHit = GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Pawn, Params);
+	const bool bBlockingHit = World->LineTraceSingleByChannel(Hit, Start, End, ECC_Pawn, Params);
 
 	// 발사 모션 + 이펙트 — 코스메틱, 판정과 무관하게 발사 자체에 재생 (M4 #74, 이펙트 #120).
 	// 서버 메시에 직접 재생하면 데디에선 아무도 못 본다 — 오너 캐릭터의 Multicast로 위임한다.

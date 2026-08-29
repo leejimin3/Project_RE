@@ -406,6 +406,12 @@ void AREBossCharacter::FireCurrentPattern()
 			const FVector D = Target->GetActorLocation() - GetActorLocation();
 			AngleDeg = FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X));
 		}
+		else
+		{
+			// 부류 1 — 전원 사망. 곧 EndGame 이 발사를 끊는다. 그때까지 0도로 쏜다.
+			// 로그가 없으면 "왜 갑자기 한 방향으로만 쏘는가"를 사후에 알 수 없다.
+			UE_LOG(LogRE, Verbose, TEXT("[RE] Boss: no living target, AngleDeg=0 폴백"));
+		}
 	}
 
 	Multicast_FireDirect(CurrentPhasePattern, GetActorLocation(), AngleDeg, Count, GetServerNow());
@@ -940,12 +946,19 @@ int32 AREBossCharacter::ResolveSpiralCount()
 
 		// 라이브 탄환 수 = ISM 인스턴스 수(렌더 프로세서가 매 프레임 엔티티 수로 동기화).
 		// 관측 불가(데디서버 등 ISM 없음)면 CurrentLive=-1 → 피드포워드 폴백.
+		// 부류 1 — 부재가 설계된 경로다. 데디 서버엔 ISM 이 없고, 그래서 아래에서
+		// CurrentLive < 0 을 이미 분기한다. **여기엔 ensure 를 쓰지 않는다** —
+		// 달면 데디에서 매 발사마다 오탐이 뜬다. 같은 파일의 Spawner 조회가 이미
+		// 이 형태로 막고 있었는데 이 줄만 안 막고 있었다.
 		int32 CurrentLive = -1;
-		if (const UREBulletRenderSubsystem* RS = GetWorld()->GetSubsystem<UREBulletRenderSubsystem>())
+		if (const UWorld* World = GetWorld())
 		{
-			if (const UInstancedStaticMeshComponent* ISM = RS->GetISM())
+			if (const UREBulletRenderSubsystem* RS = World->GetSubsystem<UREBulletRenderSubsystem>())
 			{
-				CurrentLive = ISM->GetInstanceCount();
+				if (const UInstancedStaticMeshComponent* ISM = RS->GetISM())
+				{
+					CurrentLive = ISM->GetInstanceCount();
+				}
 			}
 		}
 
@@ -1160,7 +1173,14 @@ float AREBossCharacter::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 	{
 		bIsDead = true;
 		UE_LOG(LogRE, Log, TEXT("[RE] Boss died (Health<=0)"));
-		if (AREGameMode* GM = GetWorld()->GetAuthGameMode<AREGameMode>())
+		// 월드 부재는 부류 2(스폰된 액터에선 불가능). GM 부재는 부류 1 —
+		// 클라에는 AuthGameMode 가 없는 것이 정상이고, 승리 판정은 서버만 한다.
+		UWorld* World = GetWorld();
+		if (!ensureMsgf(World, TEXT("[RE] Boss: World 없음 — 스폰된 액터에선 불가능한 상태")))
+		{
+			return Applied;
+		}
+		if (AREGameMode* GM = World->GetAuthGameMode<AREGameMode>())
 		{
 			GM->EndGame(/*bVictory=*/true);
 		}
