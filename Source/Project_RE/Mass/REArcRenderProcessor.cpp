@@ -68,7 +68,8 @@ void UREArcRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 
 	// 스폰 팝 지속시간(s). 직선탄과 같은 값 — 수명 페이드는 넣지 않는다 (#97).
 	// 이름을 직선탄 쪽 PopDuration 과 다르게 둔다: 익명 네임스페이스 동명 상수가
-	// 유니티 빌드에서 충돌한 전례가 있다(같은 파일 ActorBulletScale 주석 참조).
+	// 유니티 빌드에서 C4459 로 충돌한 전례가 있다 — 그 전례였던 BulletScale /
+	// ActorBulletScale 쌍은 REBulletGeometry.h 로 합쳐 원인을 없앴다 (#141).
 	constexpr float ArcPopDuration = 0.1f;
 
 	// 1) live arc탄 → 탄 트랜스폼 + 마커 트랜스폼 + 스폰 팝 수집.

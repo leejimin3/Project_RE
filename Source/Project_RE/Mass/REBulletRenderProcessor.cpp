@@ -2,6 +2,7 @@
 
 #include "REBulletRenderProcessor.h"
 #include "REBulletFragments.h"
+#include "REBulletGeometry.h"                              // 탄환 스케일 단일 출처 (#141)
 #include "REBulletRenderSubsystem.h"
 #include "REBulletPatternGenerator.h"   // BulletLifetimeSec() — 스폰 팝 나이 계산 (#97)
 #include "MassExecutionContext.h"
@@ -16,17 +17,6 @@ CSV_DECLARE_CATEGORY_EXTERN(REBullet);  // 정의는 REBulletSimProcessor.cpp
 
 namespace
 {
-	/**
-	 *  탄환 인스턴스 스케일 — 엔진 Sphere(지름 100cm)를 지름 50cm로. #17: 0.2는 카메라 거리서 sub-pixel이라 0.5로 상향.
-	 *
-	 *  탄이 서로 겹친다: 간격 = BulletSpeed(200) × BossFireInterval(0.15) = 30uu < 지름 50uu.
-	 *  겹침 자체는 의도적으로 허용한다 — 축소해서 틈을 만들면(0.2 시도) 탄이 너무 작아
-	 *  탄막의 압도적인 인상이 사라진다. 대신 인접 탄을 **다른 색으로 교차**시켜 가른다(#97).
-	 *  바꾸면 REBulletHitProcessor 의 HitRadius 와 Baseline/REBulletActor 의
-	 *  ActorBulletScale 도 같이 맞춰야 한다.
-	 */
-	constexpr float BulletScale = 0.5f;
-
 	/**
 	 *  N>0 이면 이 프로세서의 N번째 실행에서 화면을 PNG로 저장한다 (0=끔).
 	 *
@@ -105,7 +95,7 @@ void UREBulletRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassE
 		for (int32 i = 0; i < Num; ++i)
 		{
 			FTransform B = T[i].GetTransform();
-			B.SetScale3D(FVector(BulletScale));  // 탄환 크기 통일
+			B.SetScale3D(FVector(REBulletGeometry::BulletScale));  // 탄환 크기 통일
 			Xf.Add(B);
 
 			// Lifetime 은 잔여시간(REBulletSimProcessor 가 Dt 만큼 감소) → 나이 = 총수명 - 잔여
