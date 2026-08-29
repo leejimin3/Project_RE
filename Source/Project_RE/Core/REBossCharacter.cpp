@@ -507,36 +507,36 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 	// 아래 셋은 바닥에 그래프를 그리고 3차 제어점으로 가는 길을 성형한다.
 	const bool bShaped = bRoseF || bDome || bSpiro;
 
-	float FlightTime = ArtilleryFlightTime;
-	float MaxHeight  = ArtilleryMaxHeight;   // 소용돌이는 탄마다 덮어쓴다(층 만들기)
-	int32 Count      = ArtilleryCount;
+	float FlightTime = REBoss::ArtilleryFlightTime;
+	float MaxHeight  = REBoss::ArtilleryMaxHeight;   // 소용돌이는 탄마다 덮어쓴다(층 만들기)
+	int32 Count      = REBoss::ArtilleryCount;
 	if (bStorm)
 	{
-		FlightTime = StormFlightTime;  MaxHeight = StormMaxHeight;  Count = StormCount;
+		FlightTime = REBoss::StormFlightTime;  MaxHeight = REBoss::StormMaxHeight;  Count = REBoss::StormCount;
 	}
 	else if (bLissa)
 	{
-		FlightTime = LissaFlightTime;  MaxHeight = LissaMaxHeight;  Count = LissaCount;
+		FlightTime = REBoss::LissaFlightTime;  MaxHeight = REBoss::LissaMaxHeight;  Count = REBoss::LissaCount;
 	}
 	else if (bVortex)
 	{
-		FlightTime = VortexFlightTime; MaxHeight = VortexMaxHeight; Count = VortexCount;
+		FlightTime = REBoss::VortexFlightTime; MaxHeight = REBoss::VortexMaxHeight; Count = REBoss::VortexCount;
 	}
 	else if (bRoseF)
 	{
-		FlightTime = RoseFieldFlightTime; MaxHeight = RoseFieldMaxHeight; Count = RoseFieldCount;
+		FlightTime = REBoss::RoseFieldFlightTime; MaxHeight = REBoss::RoseFieldMaxHeight; Count = REBoss::RoseFieldCount;
 	}
 	else if (bDome)
 	{
-		FlightTime = DomeFlightTime;      MaxHeight = DomeMaxHeight;      Count = DomeCount;
+		FlightTime = REBoss::DomeFlightTime;      MaxHeight = REBoss::DomeMaxHeight;      Count = REBoss::DomeCount;
 	}
 	else if (bSpiro)
 	{
-		FlightTime = SpiroFlightTime;     MaxHeight = SpiroMaxHeight;     Count = SpiroCount;
+		FlightTime = REBoss::SpiroFlightTime;     MaxHeight = REBoss::SpiroMaxHeight;     Count = REBoss::SpiroCount;
 	}
 	else if (bMicro)
 	{
-		FlightTime = MicroFlightTime;     MaxHeight = MicroMaxHeight;     Count = MicroCount;
+		FlightTime = REBoss::MicroFlightTime;     MaxHeight = REBoss::MicroMaxHeight;     Count = REBoss::MicroCount;
 	}
 
 	// 지연 보정 — 이미 착지한 탄은 스폰하지 않는다. 착지점 생성·난수 뽑기보다 먼저 검사해 헛수고를 막는다.
@@ -695,7 +695,7 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 			// 출발하지 않고 **착지점 근처에서 튀어나왔다.** 동시에 쏘면 전부 보스에서 뻗는다.
 			if (bDome)
 			{
-				P.Elapsed += DomeFireInterval * (float)(Count - 1 - i) / Count;
+				P.Elapsed += REBoss::DomeFireInterval * (float)(Count - 1 - i) / Count;
 				if (P.Elapsed >= FlightTime)
 				{
 					continue;
@@ -707,13 +707,13 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 			// 고도를 탄마다 어긋내 층을 만든다. 궤적이 정규화 보간이라 높이를 바꿔도 착지
 			// 타이밍은 안 변한다 — 층이 져도 링은 여전히 동시에 떨어진다.
 			const float f = (Targets.Num() > 1) ? ((float)i / (Targets.Num() - 1)) : 0.f;
-			P.MaxHeight  = FMath::Lerp(VortexMinHeight, VortexMaxHeight, f);
+			P.MaxHeight  = FMath::Lerp(VortexMinHeight, REBoss::VortexMaxHeight, f);
 			// 제어점을 접선으로 밀어 직선 대신 휘감아 들어가게 한다. 끝점은 그대로다.
 			P.CtrlOffset = REBulletPattern::ArcSwirlOffset(P.Start, P.Target, VortexSwirl);
 			// 폭풍과 같은 어긋내기. 안 하면 Count 발이 한 프레임에 통째로 나가 소용돌이가
 			// 이어진 리본이 아니라 덩어리로 보인다(실제로 그랬다). 마커는 Target 기반이라
 			// 어긋내기가 안 먹지만 스케일 램프가 Elapsed 를 쓰므로 링도 순차로 자란다.
-			P.Elapsed += VortexFireInterval * (float)(Count - 1 - i) / Count;
+			P.Elapsed += REBoss::VortexFireInterval * (float)(Count - 1 - i) / Count;
 			if (P.Elapsed >= FlightTime)
 			{
 				continue;   // 지연이 커서 이미 착지했을 발은 버린다
@@ -727,7 +727,7 @@ void AREBossCharacter::Multicast_FireArtillery_Implementation(EBulletPattern Pat
 			// 나누는 단위는 발이 아니라 **슬롯**이다: 같은 슬롯의 팔들은 동시 발사다
 			// (GenSweepSpiral 이 슬롯 우선으로 채우므로 i/StormArms 가 슬롯 인덱스다).
 			const int32 Slot = i / StormArms;
-			P.Elapsed += StormFireInterval * (float)(Count - 1 - Slot) / Count;
+			P.Elapsed += REBoss::StormFireInterval * (float)(Count - 1 - Slot) / Count;
 			if (P.Elapsed >= FlightTime)
 			{
 				continue;   // 지연이 커서 이미 착지했을 서브샷은 버린다
