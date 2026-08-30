@@ -49,13 +49,14 @@ void UREBulletHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 	TArray<FREHitTarget> Targets;
 	GatherHitTargets(World, Targets);
 
-	// ini 조회는 진입부에서 1회. 엔티티 루프 안에서 GetDefault 를 부르지 않는다 —
-	// 볼리당 수천 발이라 CDO 조회가 그대로 프레임 비용이 된다.
-	const float BulletDamage = GetDefault<UREStatsSettings>()->BulletDamage;
 	if (Targets.IsEmpty())
 	{
 		return;
 	}
+
+	// ini 조회는 진입부에서 1회. 엔티티 루프 안에서 GetDefault 를 부르지 않는다 —
+	// 볼리당 수천 발이라 CDO 조회가 그대로 프레임 비용이 된다.
+	const float BulletDamage = GetDefault<UREStatsSettings>()->BulletDamage;
 
 	EntityQuery.ForEachEntityChunk(Context, [&](FMassExecutionContext& Ctx)
 	{
@@ -77,7 +78,7 @@ void UREBulletHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 					{
 						// 이 경로는 로그가 없으면 관측 불가다 — 데미지를 안 주므로 아래 Applied 로그가
 						// 안 찍히고, "탄이 그냥 사라진 것"과 구별되지 않는다. 대쉬 한 번에 다수라 Verbose
-						// (검증 시 -LogCmds="LogTemp Verbose").
+						// (검증 시 -LogCmds="LogREBullet Verbose").
 						UE_LOG(LogREBullet, Verbose, TEXT("[RE] BulletHit: dash-destroy (무적, 데미지 없음)"));
 					}
 					else if (T.Player->HasAuthority())

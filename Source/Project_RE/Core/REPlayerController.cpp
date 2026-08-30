@@ -280,7 +280,7 @@ void AREPlayerController::PlayerTick(float DeltaTime)
 	if (FacingLockUntil >= 0.0 && Now < FacingLockUntil)
 	{
 		// 서버 보정이 회전을 덮은 흔적. 실측상 1분 플레이에 100회 넘게 발생하므로 Verbose로 둔다
-		// (기본 출력 안 됨). 회전 문제가 재발하면 `Log LogTemp Verbose`로 켜서 관측한다.
+		// (기본 출력 안 됨). 회전 문제가 재발하면 `Log LogRE Verbose`로 켜서 관측한다.
 		const FRotator Cur = Char->GetActorRotation();
 		if (FMath::Abs(FRotator::NormalizeAxis(Cur.Yaw - FacingLockYaw)) > 2.f)
 		{
