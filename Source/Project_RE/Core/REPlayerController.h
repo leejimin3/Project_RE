@@ -10,6 +10,7 @@ class UInputAction;
 class UInputMappingContext;
 struct FInputActionValue;
 class URECheatPanelWidget;
+class UREHeadlessProbeComponent;
 
 /**
  *  탑뷰 PlayerController. 우클릭으로 커서 아래 지점으로 폰을 이동시킨다.
@@ -20,6 +21,13 @@ UCLASS()
 class AREPlayerController : public APlayerController
 {
 	GENERATED_BODY()
+
+	/**
+	 *  헤드리스 검증 프로브가 Server_RequestMove / Server_RequestFire 를 호출한다 (#141).
+	 *  **public 확대가 아니라 friend 를 쓰는 이유:** 테스트 하네스 하나 때문에 프로덕션
+	 *  API 표면을 넓히면, 그 뒤로는 누구나 그 RPC 를 부를 수 있게 된다.
+	 */
+	friend class UREHeadlessProbeComponent;
 
 public:
 	/**
@@ -91,12 +99,6 @@ private:
 	/** 폰이 살아있는가. 서버 RPC 가드용 — 클라 DisableInput은 지연·조작에 뚫린다 (#85). */
 	bool IsPawnAlive() const;
 
-	/** 헤드리스(-unattended) 자기이동 프로브. 서버 권위에서만 발동. */
-	void RunHeadlessMoveProbe();
-
-	/** 헤드리스(-unattended) 대쉬 프로브. 서버 권위에서만 발동. */
-	void RunHeadlessDashProbe();
-
 	/** 클라 발사 페이싱 — 마지막 발사 요청 시각(월드초). 홀드 시 Triggered가 매 프레임 오는 것 억제. */
 	double LastFireRequestTime = -1.0;
 
@@ -124,18 +126,6 @@ private:
 
 	/** 회전 구동 설정을 1회 적용하기 위한 폰 추적. 폰이 바뀌면 다시 적용한다 (#79). */
 	TWeakObjectPtr<APawn> FacingPawn;
-
-	/** 헤드리스(-unattended) 발사 프로브. 서버 권위에서만 발동. */
-	void RunHeadlessFireProbe();
-
-	FTimerHandle ProbeFireTimer;
-
-	FTimerHandle ProbeDashTimer;
-	FVector ProbeDashStart = FVector::ZeroVector;
-
-	FTimerHandle ProbeMoveTimer;
-	FTimerHandle ProbeLogTimer;
-	FVector ProbeTarget = FVector::ZeroVector;
 
 	/** 치트 패널 토글 (F1). 위젯 1회 생성 후 표시/숨김. */
 	void OnToggleCheatPanel();

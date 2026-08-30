@@ -1,0 +1,34 @@
+﻿[dedi-verify] clients=2 port=7777
+[dedi-verify] run dir: E:\UnrealProjects\Project_
+RE\Saved\DediVerify\20260829-171248
+[dedi-verify] 서버 리스닝 확인
+[dedi-verify] client1 접속 요청
+[dedi-verify] client2 접속 요청
+[dedi-verify] 서버 자체 종료 확인 (전원 프로브 완주)
+
+[dedi-verify] 판정 (mode=Probe clients=2)
+  [PASS] server: 넷드라이버 리스닝
+  [PASS] server: 월드 기동
+  [PASS] server: 탄막 발사(권위)
+  [PASS] server: 크래시 없음
+  [PASS] server: 프로브 완주 (2건)
+  [PASS] server: 이동 프로브 기동 (2건)
+  [PASS] server: 이동 전진 (최소 잔여거리 251.4)
+  [PASS] server: 대쉬 거리 측정 (2건)
+  [PASS] server: 대쉬 이동거리 (2건, =678.3, 678.3)
+  [PASS] server: NavMesh 거부 없음(실목표)
+  [PASS] server: NavMesh 거부 확인(맵밖 좌표)
+  [PASS] server: 발사 몽타주 생략
+  [PASS] server: 대쉬 몽타주 생략
+  [PASS] client1: 탄막 수신·스폰
+  [PASS] client1: 크래시 없음
+  [PASS] client1: 발사 몽타주 재생
+  [PASS] client1: 대쉬 몽타주 재생(오너)
+  [PASS] client2: 탄막 수신·스폰
+  [PASS] client2: 크래시 없음
+  [PASS] client2: 발사 몽타주 재생
+  [PASS] client2: 대쉬 몽타주 재생(오너)
+
+[dedi-verify] 로그: E:\UnrealProjects\Project_RE\Sa
+ved\DediVerify\20260829-171248
+[dedi-verify] 전 항목 통과

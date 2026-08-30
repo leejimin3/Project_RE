@@ -57,9 +57,21 @@ public:
 
 	/**
 	 *  발사당 탄 수(균등 링) — 오픈루프 고정이라 패턴이 매 발사 균일하다.
-	 *  동시 탄수는 발수 × 수명/주기로 자연 결정 (기본 16 × 15/0.1 = 2400).
+	 *  동시 탄수는 발수 × 수명/주기로 자연 결정 (ini 기본 48 × 15/0.15 = 4,800).
 	 *  CVar re.Bullets.Count가 0 이상이면 측정용 클로즈드루프가 대신 돈다.
 	 */
 	UPROPERTY(EditAnywhere, Config, Category = "Boss")
 	int32 BulletsPerShot = 16;
+
+	/**
+	 *  보스 탄환 1발이 주는 데미지. PlayerMaxHealth 100 기준 10발 사망.
+	 *
+	 *  전에는 REBulletHitProcessor.cpp 의 익명 네임스페이스 상수였다 — 플레이어 HP,
+	 *  공격 데미지, 보스 HP 가 전부 여기 있는데 **탄 데미지만 cpp 상수**라 밸런스 축
+	 *  하나가 리빌드를 요구했다 (#141).
+	 *  곡사탄은 별개다: 패턴마다 발수가 달라 발당 데미지를 같이 조절해야 하므로
+	 *  REBossPatternTable 쪽 ArtilleryDamage / MicroDamage 가 쥔다.
+	 */
+	UPROPERTY(EditAnywhere, Config, Category = "Boss")
+	float BulletDamage = 10.f;
 };

@@ -8,6 +8,7 @@
 #include "GameFramework/PlayerController.h"
 #include "EngineUtils.h"   // TActorIterator — 클라에서도 전원 탐지 (#98)
 #include "HAL/IConsoleManager.h"
+#include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 namespace
 {
@@ -60,8 +61,8 @@ void GatherHitTargets(const UWorld* World, TArray<FREHitTarget>& Out)
 		const bool bDashing = ASC && ASC->HasMatchingGameplayTag(RETag_State_Dashing);
 		if (bDashing)
 		{
-			// 대쉬 중엔 매 프레임 찍히므로 Verbose — 검증 시 -LogCmds="LogTemp Verbose"로 관측.
-			UE_LOG(LogTemp, Verbose, TEXT("[RE] HitTargets: invulnerable (State.Dashing)"));
+			// 대쉬 중엔 매 프레임 찍히므로 Verbose — 검증 시 -LogCmds="LogREBullet Verbose"로 관측.
+			UE_LOG(LogREBullet, Verbose, TEXT("[RE] HitTargets: invulnerable (State.Dashing)"));
 		}
 		Out.Add(FREHitTarget{ Player, Player->GetActorLocation(), bDashing });
 	}

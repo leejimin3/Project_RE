@@ -26,6 +26,7 @@
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInterface.h"
 #include "REExplosionFx.h"
+#include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 // 치트: 1이면 플레이어 무적(TakeDamage 무피해). 데브 전용, 클라 로컬(ECVF_Cheat).
 static TAutoConsoleVariable<int32> CVarPlayerInvincible(
@@ -262,7 +263,7 @@ void ARECharacterBase::ShowFireFx(const FVector& BeamEnd)
 
 	// 빔은 0.06초만 뜨고 화면으로만 판정할 수 있다 — 스크린샷이 흐릿할 때 기하가 틀린 건지
 	// 룩이 약한 건지 가르려면 이 값이 필요하다(#120 검증에서 실제로 갈랐다).
-	UE_LOG(LogTemp, Log, TEXT("[Attack] beam start=%s end=%s len=%.1f"),
+	UE_LOG(LogRE, Log, TEXT("[Attack] beam start=%s end=%s len=%.1f"),
 		*Start.ToCompactString(), *BeamEnd.ToCompactString(), Len);
 
 	const float Override = CVarFireFxSec.GetValueOnGameThread();
@@ -354,7 +355,7 @@ void ARECharacterBase::Multicast_PlayDashMontage_Implementation(FVector DashDir)
 	}
 
 	const float Len = PlayedMontage->GetPlayLength();
-	UE_LOG(LogTemp, Log, TEXT("[Dash] anim len=%.2f (role=%s)"), Len, *UEnum::GetValueAsString(GetLocalRole()));
+	UE_LOG(LogRE, Log, TEXT("[Dash] anim len=%.2f (role=%s)"), Len, *UEnum::GetValueAsString(GetLocalRole()));
 
 	// 몽타주 재생이 끝나면 기본 모드로 복귀.
 	// 약참조로 캡처한다: raw 포인터를 캡처하면 월드 정리(접속 종료/레벨 전환) 중 타이머가 돌 때
@@ -394,8 +395,15 @@ float ARECharacterBase::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 	if (Health <= 0.f && !bIsDead)
 	{
 		bIsDead = true;
-		UE_LOG(LogTemp, Log, TEXT("[RE] Player died (Health<=0)"));
-		if (AREGameMode* GM = GetWorld()->GetAuthGameMode<AREGameMode>())
+		UE_LOG(LogRE, Log, TEXT("[RE] Player died (Health<=0)"));
+		// 월드 부재는 부류 2(소유된 폰에선 불가능). GM 부재는 부류 1 —
+		// 클라에는 AuthGameMode 가 없는 것이 정상이다.
+		UWorld* World = GetWorld();
+		if (!ensureMsgf(World, TEXT("[RE] CharacterBase: World 없음 — 소유된 폰에선 불가능한 상태")))
+		{
+			return Applied;
+		}
+		if (AREGameMode* GM = World->GetAuthGameMode<AREGameMode>())
 		{
 			// 전원 사망이어야 패배다 — 판정은 GameMode가 한다 (#85).
 			GM->NotifyPlayerDied(Cast<APlayerController>(GetController()));
@@ -443,7 +451,7 @@ void ARECharacterBase::InitASCActorInfo()
 {
 	// OwnerActor=AvatarActor=this (Pawn 소유). 오너 클라 판정은 Pawn→Controller 소유 체인으로 엔진이 처리.
 	AbilitySystemComponent->InitAbilityActorInfo(this, this);
-	UE_LOG(LogTemp, Log, TEXT("[GAS] ASC ActorInfo set (role=%s)"), *UEnum::GetValueAsString(GetLocalRole()));
+	UE_LOG(LogRE, Log, TEXT("[GAS] ASC ActorInfo set (role=%s)"), *UEnum::GetValueAsString(GetLocalRole()));
 }
 
 void ARECharacterBase::PossessedBy(AController* NewController)
@@ -509,7 +517,7 @@ void ARECharacterBase::Multicast_PlayFire_Implementation(UAnimSequence* FireAnim
 			// "클라 재생 / 서버 생략"을 판정한다. 재생 방식이 바뀌었어도 검증하는 사실은
 			// 그대로이므로, 코드와 검증기를 같은 커밋에서 함께 바꿔 게이트를 느슨하게 만들지 않는다.
 			// (다이나믹 몽타주도 실제로 UAnimMontage 다 — 문구가 틀린 것도 아니다.)
-			UE_LOG(LogTemp, Log, TEXT("[Attack] fire montage len=%.2f"),
+			UE_LOG(LogRE, Log, TEXT("[Attack] fire montage len=%.2f"),
 				Played ? Played->GetPlayLength() : -1.f);
 		}
 	}

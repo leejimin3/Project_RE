@@ -4,12 +4,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
-
-namespace
-{
-	/** Mass와 동일 — REBulletRenderProcessor.cpp:14 BulletScale. */
-	constexpr float ActorBulletScale = 0.5f;  // 이름은 Mass 쪽 익명 네임스페이스 BulletScale과 유니티 빌드에서 충돌해 구분
-}
+#include "Mass/REBulletGeometry.h"                         // 탄환 스케일 단일 출처 (#141)
 
 AREBulletActor::AREBulletActor()
 {
@@ -21,7 +16,10 @@ AREBulletActor::AREBulletActor()
 	// Mass ISM도 NoCollision(REBulletRenderSubsystem.cpp:30, #34). 콜리전 켜면 액터 쪽에
 	// 불공정한 추가 비용이 붙어 비교가 오염된다.
 	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	Mesh->SetRelativeScale3D(FVector(ActorBulletScale));
+	// Mass 와 **같은 상수**를 쓴다 — 비교군이 다른 크기면 비교가 성립하지 않는다.
+	// 전에는 유니티 빌드 C4459 를 피하려고 이름을 ActorBulletScale 로 비틀어 복사해
+	// 두었다. 네임스페이스로 합쳐 원인부터 없앴다 (#141).
+	Mesh->SetRelativeScale3D(FVector(REBulletGeometry::BulletScale));
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
 	if (SphereMesh.Succeeded())

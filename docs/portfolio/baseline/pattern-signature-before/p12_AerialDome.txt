@@ -1,0 +1,3 @@
+[RE] Boss FireArtillery: Pattern=13 N=44 Flight=3.00
+[RE] Boss Phase: AerialDome 9.0s
+[RE] Boss Phase: Rest 1.0s

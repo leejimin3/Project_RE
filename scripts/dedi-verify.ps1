@@ -314,20 +314,20 @@ if ($SelfTest) {
     $goodServer = @(
         'LogNet: IpNetDriver listening on port 7777',
         'LogWorld: Bringing World /Game/Level/Main.Main up for play',
-        'LogTemp: [Move] probe start: pawn=X=0 target=X=0',
-        'LogTemp: [Move] probe dist=485.1 loc=X=0.000 Y=14.873 Z=130.150',
-        'LogTemp: [Move] probe dist=265.7 loc=X=0.000 Y=234.256 Z=130.150',
-        'LogTemp: [Move] rejected: off-navmesh X=100000.000 Y=100000.000 Z=0.000',
-        'LogTemp: [Dash] dist=602.4 (기대 ~600)',
-        'LogTemp: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.000 role=ROLE_Authority',
-        'LogTemp: [Dash] probe done'
+        'LogRENet: [Move] probe start: pawn=X=0 target=X=0',
+        'LogRENet: [Move] probe dist=485.1 loc=X=0.000 Y=14.873 Z=130.150',
+        'LogRENet: [Move] probe dist=265.7 loc=X=0.000 Y=234.256 Z=130.150',
+        'LogRENet: [Move] rejected: off-navmesh X=100000.000 Y=100000.000 Z=0.000',
+        'LogRENet: [Dash] dist=602.4 (기대 ~600)',
+        'LogRENet: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.000 role=ROLE_Authority',
+        'LogRENet: [Dash] probe done'
     )
     $goodClient = @(
-        'LogTemp: [Attack] fire montage len=1.20',
-        'LogTemp: [Dash] anim len=0.97 (role=ROLE_AutonomousProxy)',
-        'LogTemp: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.084 role=ROLE_SimulatedProxy',
+        'LogRE: [Attack] fire montage len=1.20',
+        'LogRE: [Dash] anim len=0.97 (role=ROLE_AutonomousProxy)',
+        'LogRENet: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.084 role=ROLE_SimulatedProxy',
         'LogNet: Host closed the connection',
-        'LogTemp: [Dash] anim len=0.97 (role=ROLE_Authority)'   # 폴백 구간 — 잘려야 한다
+        'LogRE: [Dash] anim len=0.97 (role=ROLE_Authority)'   # 폴백 구간 — 잘려야 한다
     )
 
     Invoke-Verdict -ServerLines $goodServer -ClientLines @{ 'client1' = $goodClient } -CheckVictory $false -Mode Probe -ClientCount 1
@@ -339,7 +339,7 @@ if ($SelfTest) {
 
     # 고장 로그는 반드시 잡혀야 한다 — 통과만 확인하면 항상-PASS 버그를 못 잡는다.
     $script:Failures = @()
-    $badServer = $goodServer + 'LogTemp: [Attack] fire montage len=1.20'   # 데디 가드 파손
+    $badServer = $goodServer + 'LogRE: [Attack] fire montage len=1.20'   # 데디 가드 파손
     Invoke-Verdict -ServerLines $badServer -ClientLines @{ 'client1' = @('nothing') } -CheckVictory $false -Mode Probe -ClientCount 1
     if ($script:Failures.Count -eq 0) { throw 'SelfTest: 고장 로그를 잡아내지 못했다' }
     # 볼리 어서션 자체가 (다른 어서션과 무관하게) 고장을 잡는지 — 실패 목록에 그 항목이 실제로 있어야 한다.
@@ -360,13 +360,13 @@ if ($SelfTest) {
     $twoDashServer = @(
         'LogNet: IpNetDriver listening on port 7777',
         'LogWorld: Bringing World /Game/Level/Main.Main up for play',
-        'LogTemp: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.000 role=ROLE_Authority',
-        'LogTemp: [Move] probe start: pawn=X=0 target=X=0',
-        'LogTemp: [Dash] dist=50.0 (기대 ~600)',
-        'LogTemp: [Dash] probe done',
-        'LogTemp: [Move] probe start: pawn=X=0 target=X=0',
-        'LogTemp: [Dash] dist=602.4 (기대 ~600)',
-        'LogTemp: [Dash] probe done'
+        'LogRENet: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.000 role=ROLE_Authority',
+        'LogRENet: [Move] probe start: pawn=X=0 target=X=0',
+        'LogRENet: [Dash] dist=50.0 (기대 ~600)',
+        'LogRENet: [Dash] probe done',
+        'LogRENet: [Move] probe start: pawn=X=0 target=X=0',
+        'LogRENet: [Dash] dist=602.4 (기대 ~600)',
+        'LogRENet: [Dash] probe done'
     )
     Invoke-Verdict -ServerLines $twoDashServer -ClientLines @{ 'client1' = $goodClient; 'client2' = $goodClient } `
                    -CheckVictory $false -Mode Probe -ClientCount 2
@@ -399,18 +399,18 @@ if ($SelfTest) {
     $goodServerOutcome = @(
         'LogNet: IpNetDriver listening on port 7777',
         'LogWorld: Bringing World /Game/Level/Main.Main up for play',
-        'LogTemp: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.000 role=ROLE_Authority',
-        'LogTemp: [RE] Spawn player idx=0 offsetY=-125 loc=X=0.000 Y=-125.000 Z=0.000',
-        'LogTemp: [RE] Spawn player idx=1 offsetY=125 loc=X=0.000 Y=125.000 Z=0.000',
-        'LogTemp: [RE] Boss firing started (2/2 ready)',
-        'LogTemp: [RE] Player died 1/2',
-        'LogTemp: [RE] Player died 2/2',
-        'LogTemp: [RE] All 2 players dead',
-        'LogTemp: [RE] EndGame: DEFEAT'
+        'LogRENet: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.000 role=ROLE_Authority',
+        'LogRE: [RE] Spawn player idx=0 offsetY=-125 loc=X=0.000 Y=-125.000 Z=0.000',
+        'LogRE: [RE] Spawn player idx=1 offsetY=125 loc=X=0.000 Y=125.000 Z=0.000',
+        'LogRE: [RE] Boss firing started (2/2 ready)',
+        'LogRE: [RE] Player died 1/2',
+        'LogRE: [RE] Player died 2/2',
+        'LogRE: [RE] All 2 players dead',
+        'LogRE: [RE] EndGame: DEFEAT'
     )
     $goodClientOutcome = @(
-        'LogTemp: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.084 role=ROLE_SimulatedProxy',
-        'LogTemp: [RE] Client_ShowResult: DEFEAT'
+        'LogRENet: [RE] Boss FireDirect: Pattern=0 Angle=0.0 N=16 Elapsed=0.084 role=ROLE_SimulatedProxy',
+        'LogRENet: [RE] Client_ShowResult: DEFEAT'
     )
     Invoke-Verdict -ServerLines $goodServerOutcome `
                    -ClientLines @{ 'client1' = $goodClientOutcome; 'client2' = $goodClientOutcome } `

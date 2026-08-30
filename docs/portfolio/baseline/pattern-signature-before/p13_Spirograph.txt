@@ -1,0 +1,3 @@
+[RE] Boss FireArtillery: Pattern=14 N=150 Flight=1.50
+[RE] Boss Phase: Rest 1.0s
+[RE] Boss Phase: Spirograph 9.0s

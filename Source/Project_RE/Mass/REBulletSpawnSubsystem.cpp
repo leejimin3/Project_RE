@@ -6,6 +6,7 @@
 #include "MassEntityManager.h"
 #include "Mass/EntityFragments.h"  // FTransformFragment
 #include "REBulletPatternGenerator.h"
+#include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 FMassEntityManager* UREBulletSpawnSubsystem::GetEntityManager() const
 {
@@ -31,7 +32,7 @@ FMassEntityHandle UREBulletSpawnSubsystem::SpawnBullet(FVector Location, FVector
 	FMassEntityManager* EM = GetEntityManager();
 	if (!EM)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[RE] SpawnBullet: EntityManager NULL"));
+		UE_LOG(LogREBullet, Warning, TEXT("[RE] SpawnBullet: EntityManager NULL"));
 		return FMassEntityHandle();
 	}
 
@@ -76,7 +77,7 @@ FMassEntityHandle UREBulletSpawnSubsystem::SpawnArcBullet(FVector Start, FVector
 	FMassEntityManager* EM = GetEntityManager();
 	if (!EM)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[RE] SpawnArcBullet: EntityManager NULL"));
+		UE_LOG(LogREBullet, Warning, TEXT("[RE] SpawnArcBullet: EntityManager NULL"));
 		return FMassEntityHandle();
 	}
 

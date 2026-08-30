@@ -25,11 +25,11 @@
 		},
 		{
 			"Name": "StateTree",
-			"Enabled": true
+			"Enabled": false
 		},
 		{
 			"Name": "GameplayStateTree",
-			"Enabled": true
+			"Enabled": false
 		},
 		{
 			"Name": "MassGameplay",
@@ -56,7 +56,7 @@
 		},
 		{
 			"Name": "CascadeToNiagaraConverter",
-			"Enabled": true,
+			"Enabled": false,
 			"TargetAllowList": [
 				"Editor"
 			]

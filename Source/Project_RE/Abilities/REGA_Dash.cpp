@@ -6,6 +6,7 @@
 #include "Core/RECharacterBase.h"
 #include "Abilities/Tasks/AbilityTask_ApplyRootMotionMoveToForce.h"
 #include "GameFramework/RootMotionSource.h"
+#include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 UREGA_Dash::UREGA_Dash()
 {
@@ -42,7 +43,7 @@ void UREGA_Dash::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	}
 	const FVector Dir = Char->GetPendingDashDir();
 
-	UE_LOG(LogTemp, Log, TEXT("[Dash] activate ok dir=%s"), *Dir.ToString());
+	UE_LOG(LogRE, Log, TEXT("[Dash] activate ok dir=%s"), *Dir.ToString());
 
 	// 목표지점형 RootMotion — 프레임 길이와 무관하게 고정거리를 보장한다.
 	//

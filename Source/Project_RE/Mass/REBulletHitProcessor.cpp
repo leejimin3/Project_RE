@@ -10,21 +10,12 @@
 #include "Engine/World.h"
 #include "ProfilingDebugging/CsvProfiler.h"
 #include "REHitTargets.h"
+#include "REBulletGeometry.h"                              // 히트 반경 단일 출처 (#141)
+#include "Core/REStatsSettings.h"                          // 탄 데미지 ini 이관 (#141)
 #include "REExplosionFx.h"   // 피격 폭발 (#98)
+#include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 CSV_DECLARE_CATEGORY_EXTERN(REBullet);  // 정의는 REBulletSimProcessor.cpp
-
-namespace
-{
-	/**
-	 *  히트 반경(cm) — 탄환 시각 반경 25(BulletScale 0.5 × Sphere 반경 50) + 플레이어 캡슐 반경 ~35.
-	 *  BulletScale 을 바꾸면 여기도 같이 바꿔야 한다. 안 그러면 눈에 안 닿았는데 맞거나
-	 *  닿았는데 안 맞아 공정성이 깨진다 (#97).
-	 */
-	constexpr float HitRadius = 60.f;
-	/** 탄환 1발 데미지 — 100 HP 기준 10발 사망. */
-	constexpr float BulletDamage = 10.f;
-}
 
 UREBulletHitProcessor::UREBulletHitProcessor()
 	: EntityQuery(*this)
@@ -57,10 +48,15 @@ void UREBulletHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 	UWorld* World = EntityManager.GetWorld();
 	TArray<FREHitTarget> Targets;
 	GatherHitTargets(World, Targets);
+
 	if (Targets.IsEmpty())
 	{
 		return;
 	}
+
+	// ini 조회는 진입부에서 1회. 엔티티 루프 안에서 GetDefault 를 부르지 않는다 —
+	// 볼리당 수천 발이라 CDO 조회가 그대로 프레임 비용이 된다.
+	const float BulletDamage = GetDefault<UREStatsSettings>()->BulletDamage;
 
 	EntityQuery.ForEachEntityChunk(Context, [&](FMassExecutionContext& Ctx)
 	{
@@ -73,7 +69,8 @@ void UREBulletHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 			const FVector BulletLoc = Transforms[i].GetTransform().GetLocation();
 			for (const FREHitTarget& T : Targets)
 			{
-				if (FVector::DistSquaredXY(BulletLoc, T.Location) <= HitRadius * HitRadius)
+				if (FVector::DistSquaredXY(BulletLoc, T.Location)
+					<= REBulletGeometry::HitRadius * REBulletGeometry::HitRadius)
 				{
 					// 데미지는 서버 권위. 클라는 파괴와 폭발만 한다 (#98).
 					// 대쉬 무적이면 데미지만 건너뛴다 — 소멸과 폭발은 그대로 (#102).
@@ -81,15 +78,15 @@ void UREBulletHitProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 					{
 						// 이 경로는 로그가 없으면 관측 불가다 — 데미지를 안 주므로 아래 Applied 로그가
 						// 안 찍히고, "탄이 그냥 사라진 것"과 구별되지 않는다. 대쉬 한 번에 다수라 Verbose
-						// (검증 시 -LogCmds="LogTemp Verbose").
-						UE_LOG(LogTemp, Verbose, TEXT("[RE] BulletHit: dash-destroy (무적, 데미지 없음)"));
+						// (검증 시 -LogCmds="LogREBullet Verbose").
+						UE_LOG(LogREBullet, Verbose, TEXT("[RE] BulletHit: dash-destroy (무적, 데미지 없음)"));
 					}
 					else if (T.Player->HasAuthority())
 					{
 						const float Applied = T.Player->TakeDamage(BulletDamage, FDamageEvent(), nullptr, nullptr);
 						// netmode 를 함께 찍는다 — 클라 프로세스는 접속 전 로컬 월드를 잠깐 돌리므로
 						// 로그에 데미지가 보인다고 곧 "클라가 데미지를 줬다"가 아니다. 판정에 필요하다 (#98).
-						UE_LOG(LogTemp, Log, TEXT("[RE] BulletHit: Applied=%.0f netmode=%d"),
+						UE_LOG(LogREBullet, Log, TEXT("[RE] BulletHit: Applied=%.0f netmode=%d"),
 							Applied, (int32)World->GetNetMode());
 					}
 					REExplosionFx::SpawnBulletExplosion(World, BulletLoc);

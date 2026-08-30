@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "REBulletPattern.h"
+#include "REBossPatternTable.h"
+#include "REBulletPatternGenerator.h"   // FArcBulletSpawnParams — ShapeArcShots 시그니처 (#141)
 #include "REBossCharacter.generated.h"
 
 class UREHealthBarComponent;
@@ -169,10 +171,7 @@ private:
 	 */
 	static constexpr int32 ProfileWarmupPhases = 3;
 
-	static constexpr float SpiralPhaseSec     = 5.f;
-	static constexpr float FanPhaseSec        = 3.f;
 	static constexpr float RestSec            = 1.f;
-	static constexpr float FanFireIntervalSec = 0.5f;
 
 	//~ 장미 포락선(RoseEnvelope) 파라미터. 헤더 상수 — 플레이 후 튜닝.
 	//  각은 균등 링이고 **속력만** 각도의 함수다: s(θ) = BulletSpeed·(1 + Amp·cos(k·θ + ω·t)).
@@ -181,7 +180,6 @@ private:
 	//  발사당 탄 수와 발사 간격은 Spiral과 공유한다(ResolveSpiralCount / FireIntervalSec):
 	//  링 지오메트리가 같아 새 손잡이를 만들 이유가 없다. 동시 체공 = 48/0.15 × 15 ≈ 4,800발로
 	//  Spiral과 같은 예산이고, 곡사와 달리 **착지가 없어** 프레임 비용이 무시할 수준이다.
-	static constexpr float RosePhaseSec      = 8.f;    // 파면이 여러 겹 쌓여야 무늬가 성립한다
 	/** 로브 수 k. 홀수라 로브가 정반대로 겹치지 않는다 — 무늬가 비대칭이 된다. 로브 각폭 72°. */
 	static constexpr int32 RoseLobes         = 5;
 	/**
@@ -200,7 +198,6 @@ private:
 	//~ 심장형 조준(Cardioid) 파라미터.
 	//  FireDirect 페이로드의 각은 하나뿐이고 그 자리를 **조준각**이 쓴다. 링 자체 회전은
 	//  상수·ServerTime 에서 순수 유도하므로 실을 필요가 없다 (#84).
-	static constexpr float CardioidPhaseSec = 7.f;
 	static constexpr int32 CardioidCount    = 64;
 	/** 변조 깊이. 1.0 이면 반대편 속력이 0 이라 탄이 보스 발밑에 눌어붙는다. */
 	static constexpr float CardioidAmp      = 0.6f;
@@ -214,24 +211,6 @@ private:
 	//  통째로 메워 둥근 사각형 덩어리가 됐다 — 실제로 그랬다. 5겹으로 낮춘다.
 	//  비용도 같이 내려간다: 착지율 60/0.5 = 120/s 로 폭풍(160/s, 9.23ms)보다 싸다.
 	//  착지 프레임마다 도는 폭발 Niagara 가 이 패턴 비용의 대부분이었다(Draws 1723).
-	static constexpr float LissaPhaseSec     = 9.f;
-	/**
-	 *  아레나 전체(Extent 1900)를 덮으려고 곡선이 길어져 표본이 60→150 으로 늘었고,
-	 *  착지율이 120→300/s 로 뛰어 15.17ms(게이트 16.6)가 됐다. 간격으로 되돌린다.
-	 *
-	 *  1.0(150/s)에서 패턴 15개 중 **최악**이었다: p99 14.95ms(720p) / 15.55ms(1080p).
-	 *  런 간 노이즈가 ±0.9ms 라 게이트까지 1.05ms 는 방어됐다고 말할 폭이 아니다.
-	 *  1.3(115/s)으로 낮춘다 — 겹수는 2.5/1.3 = 1.9 라 곡선 가독성은 그대로다
-	 *  (RoseField·Spirograph 가 겹수 1로도 읽힌다).
-	 */
-	static constexpr float LissaFireInterval = 1.3f;
-	static constexpr float LissaFlightTime   = 2.5f;
-	static constexpr float LissaMaxHeight    = 350.f;
-	/**
-	 *  곡선 위 표본 수. 이 값이 곧 매듭의 해상도다 — 점 간격이 마커 지름(2×120=240)보다
-	 *  커지면 곡선이 끊긴 점 무더기로 보인다. 30 으로는 실제로 그랬다.
-	 */
-	static constexpr int32 LissaCount        = 150;
 	/**
 	 *  매듭의 반폭(uu). 아레나 반경 2000 안쪽이면 착지점이 바닥 위이긴 하나 그것만으론 부족하다 —
 	 *  1100 은 화면(가로 약 3000uu)에 다 안 들어와 무늬가 잘렸다. 750 이면 통째로 보이고
@@ -255,18 +234,6 @@ private:
 	//  착지점은 보스 둘레 링이고, 2차 베지어 제어점을 Start→Target 의 **접선**으로 밀어
 	//  탄이 직선 대신 옆으로 크게 휘감아 들어간다. 착지 시각·착지점·마커는 제어점과
 	//  무관하므로(끝점 고정) 회피 규칙은 일반 곡사와 같고 화면만 3D 소용돌이가 된다.
-	static constexpr float VortexPhaseSec     = 9.f;
-	/**
-	 *  발수를 링 둘레에 맞춰 52로 올리면서 착지율이 180→260/s 로 뛰어 13.72ms 가 됐다 —
-	 *  게이트 16.6 에 17%%밖에 안 남는다. 간격으로 착지율을 되돌린다(52/0.28 = 186/s).
-	 */
-	static constexpr float VortexFireInterval = 0.28f;
-	static constexpr float VortexFlightTime   = 3.5f;
-	/**
-	 *  볼리당 발수 = 착지 링의 점 수. 링 둘레 2π·900 을 이 값으로 나눈 간격이 마커 지름(240)
-	 *  보다 작아야 링이 끊기지 않는다 — 36 이면 157uu 다.
-	 */
-	static constexpr int32 VortexCount        = 52;
 	//~ 링 반경이 톱니로 팽창한다 — 고정 링이면 그 띠 밖은 영영 안전하다.
 	//  AerialDome 과 같은 수법이고 위상을 ServerTime 에서 뽑으므로 페이로드가 필요 없다.
 	static constexpr float VortexMinRadius   = 400.f;
@@ -281,7 +248,6 @@ private:
 	//  800 은 탑다운 카메라(높이 1500) 위로 솟아 화면 밖으로 나갔다 — 폭풍이 같은 이유로
 	//  800→400 을 겪었다(StormMaxHeight 주석). 곡사 기준 고도인 400 을 상한으로 맞춘다.
 	static constexpr float VortexMinHeight = 150.f;
-	static constexpr float VortexMaxHeight = 400.f;
 
 	//~ 곡선 블룸 3종(StarBloom / LemniscateBloom / SuperformulaBloom) 공용 파라미터.
 	//  탄을 곡선 위에 스폰하고 속도를 위치 벡터에 비례시킨다 → 도형이 자기닮음으로 부푼다.
@@ -315,16 +281,7 @@ private:
 	static constexpr float LemniSpinDegPerSec     = 27.f;
 	/** 초공식은 m=4~8 이라 최소 4겹 → 90°. 14×7 = 98°. */
 	static constexpr float SuperSpinDegPerSec     = 14.f;
-	/**
-	 *  블룸 전용 발사 간격(s). **이 패턴이 읽히느냐를 이 값이 혼자 정한다.**
-	 *  동시에 보이는 복사본 사이의 반경 간격이 R₀·ScaleRate·이 값이고, 그게 탄 지름(70uu)보다
-	 *  작으면 이웃 복사본이 서로 겹쳐 도형이 통째로 뭉갠다.
-	 *  Spiral 과 공유하던 0.15 는 165·1.7·0.15 = 42uu 라 지름보다 작았다 — 실제로 뭉갰다.
-	 *  0.4 면 112uu 로 분리된다. 수명 7초 동안 17겹이 고른 간격으로 퍼진다.
-	 */
-	static constexpr float BloomFireInterval = 0.4f;
 
-	static constexpr float StarBloomPhaseSec = 8.f;
 	/** 별 다각형 {N/Skip}. gcd(7,3)=1 이라 한붓그리기로 닫힌다. */
 	static constexpr int32 StarBloomVerts    = 7;
 	static constexpr int32 StarBloomSkip     = 3;
@@ -332,12 +289,10 @@ private:
 	static constexpr int32 StarBloomSegPerEdge = 40;
 	static constexpr float StarBloomRadius   = 165.f;
 
-	static constexpr float LemniPhaseSec = 8.f;
 	static constexpr int32 LemniCount    = 200;
 	/** 렘니스케이트 반폭(uu). u=0 에서 x=A 라 이 값이 그대로 반폭이다. */
 	static constexpr float LemniA        = 165.f;
 
-	static constexpr float SuperPhaseSec = 9.f;
 	static constexpr int32 SuperCount    = 240;
 	static constexpr float SuperRadius   = 165.f;
 	/** n1 이 작을수록 뾰족하다. 0.3 은 별처럼 각이 선다. */
@@ -367,42 +322,25 @@ private:
 	//  뭉개져 마커 덩어리가 됐다(실제로 그랬다).
 	//  겹이 하나면 회전 뭉갬 자체가 없으므로 회전은 오히려 크게 줘도 된다 — 볼리마다
 	//  곡선이 크게 돌아앉아 시간으로 맵을 덮는다.
-	static constexpr float RoseFieldPhaseSec     = 9.f;
-	static constexpr float RoseFieldFireInterval = 1.2f;
-	/** 회피 예고 시간. Artillery(1.5)와 같게 둔다 — 곡선을 읽고 움직일 시간이다. */
-	static constexpr float RoseFieldFlightTime   = 1.5f;
-	/** 곡선 위 표본 수. 장미 둘레(≈18,000uu) / 마커 지름(240) 을 넘겨야 곡선이 이어진다. */
-	static constexpr int32 RoseFieldCount        = 110;
 	static constexpr float RoseFieldRadius       = ArenaRadius;
 	/** 꽃잎 계수. 짝수라 꽃잎이 2×K = 4장 나온다. */
 	static constexpr int32 RoseFieldPetals       = 2;
 	/** 볼리당 48° 회전. 꽃잎 주기(360/4 = 90°)를 두 볼리에 덮는다. */
 	static constexpr float RoseFieldSpinDegPerSec = 40.f;
-	static constexpr float RoseFieldMaxHeight    = 150.f;
 	/** 감아 도는 하강. 정점 = 150 + 0.75·340 = 405. */
 	static constexpr float RoseFieldRise         = 340.f;
 	static constexpr float RoseFieldSwirl        = 600.f;
 
-	static constexpr float DomePhaseSec     = 9.f;
-	static constexpr float DomeFireInterval = 0.4f;
-	static constexpr float DomeFlightTime   = 3.f;
-	static constexpr int32 DomeCount        = 44;
 	//~ 링 반경이 톱니로 팽창한다 — 고정 링이면 가운데와 바깥이 영영 안전하다.
 	//  주기마다 안쪽에서 다시 시작해 '퍼지는 충격파'로 읽힌다.
 	static constexpr float DomeMinRadius    = 350.f;
 	static constexpr float DomeMaxRadius    = ArenaRadius;
 	static constexpr float DomeExpandSec    = 4.f;
 	static constexpr float DomeSpinDegPerSec = 15.f;
-	static constexpr float DomeMaxHeight    = 100.f;
 	/** 정점 = 100 + 0.75·400 = 400. */
 	static constexpr float DomeRise         = 400.f;
 
 	//~ RoseField 와 같은 이유로 겹수를 1로 맞춘다(위 주석 참조).
-	static constexpr float SpiroPhaseSec     = 9.f;
-	static constexpr float SpiroFireInterval = 1.2f;
-	static constexpr float SpiroFlightTime   = 1.5f;
-	/** 로제트는 고리가 겹쳐 곡선이 길다 — 장미보다 표본을 더 준다. */
-	static constexpr int32 SpiroCount        = 150;
 	static constexpr float SpiroRadius       = ArenaRadius;
 	//~ 하이포트로코이드 파라미터. 서로소(5,3)라 도형이 닫히고, D 가 크면 고리가 깊어진다.
 	static constexpr int32 SpiroBigR         = 5;
@@ -410,7 +348,6 @@ private:
 	static constexpr float SpiroD            = 5.f;
 	/** 볼리당 66° 회전 — 로제트는 대칭 차수가 높아 조금만 돌려도 새 각을 덮는다. */
 	static constexpr float SpiroSpinDegPerSec = 55.f;
-	static constexpr float SpiroMaxHeight    = 150.f;
 	/** 정점 = 150 + 0.75·330 = 397. */
 	static constexpr float SpiroRise         = 330.f;
 	/** S자 진폭. 이웃 탄끼리 부호가 뒤집혀 이 값의 2배만큼 벌어졌다 만난다. */
@@ -432,27 +369,8 @@ private:
 	//  일련번호(PhaseVolleyIdx)를 페이로드의 SweepIdx 자리에 실어 보낸다 — 그 자리는 폭풍만
 	//  쓰고 있어 비어 있었다. ServerTime 에서 파생하면 타이머 지터(실측 ±5ms)에 인덱스가
 	//  건너뛴다. 클라 로컬 카운터는 멀티캐스트 유실 시 어긋난다 (#97 과 같은 이유).
-	static constexpr float MicroPhaseSec     = 7.f;
-	/** 볼리 주기(s). MicroCount 와 곱해 초당 발수를 낸다: 10/0.08 = 125발/s. RPC 는 12.5/s. */
-	static constexpr float MicroFireInterval = 0.08f;
-	/**
-	 *  체공(s). **이 값이 회피 가능성을 혼자 정한다.**
-	 *  목표는 발사 순간의 플레이어 위치이므로 착지 시점까지 플레이어가 움직인 거리가
-	 *  판정 반경(MicroRadius 90)을 넘으면 빗나간다. MaxWalkSpeed 는 ACharacter 기본 600 이라
-	 *  600 × 0.6 = 360uu 로 **4배 여유** — 계속 움직이면 확실히 피해지고 서 있으면 확정 피격이다.
-	 *  더 줄이면 여유가 사라지고, 0.15 아래로는 이동거리(90)가 반경과 같아져 회피가 불가능해진다.
-	 */
-	static constexpr float MicroFlightTime   = 0.6f;
-	/**
-	 *  볼리당 발수 = 부채꼴을 나누는 각 수. 원주를 이 수로 등분해 동시에 뻗어 나간다.
-	 *  동시 체공 = Count/Interval × FlightTime = 10/0.08 × 0.6 = 75발.
-	 *  어긋내기(Elapsed)는 쓰지 않는다 — 그러면 마커는 같은 프레임에 전부 뜨고 탄만 비행
-	 *  중간에서 튀어나온다(RoseField 에서 고친 그 버그). 볼리는 진짜 동시 발사다.
-	 */
-	static constexpr int32 MicroCount        = 10;
 	/** 볼리마다 부채꼴 전체가 도는 각(deg). 90 이면 동→서→북→남 사분면 교대가 유지된다. */
 	static constexpr float MicroBaseStepDeg  = 90.f;
-	static constexpr float MicroMaxHeight    = 100.f;
 	/** 꺾이기 전 나침반 방향으로 뻗는 거리(uu). 작으면 그냥 포물선처럼 보인다. */
 	static constexpr float MicroOutDist      = 900.f;
 	//~ 정점 = MaxHeight + 0.375·(Rise1+Rise2) = 100 + 300 = 400. 곡사 기준 고도를 안 넘는다.
@@ -477,13 +395,8 @@ private:
 	static constexpr float MicroDamage       = 3.f;
 
 	//~ 곡사(Artillery) 페이즈 파라미터. 헤더 상수 — 플레이 후 튜닝.
-	static constexpr float ArtilleryPhaseSec     = 4.f;    // 페이즈 길이
-	static constexpr float ArtilleryFireInterval = 1.8f;   // 일제사 간격(비행시간보다 길게 → 겹침 억제)
-	static constexpr float ArtilleryFlightTime   = 1.5f;   // 회피 시간
-	static constexpr float ArtilleryMaxHeight    = 400.f;  // 포물선 최대 고도
 	static constexpr float ArtilleryRadius       = 120.f;  // 폭발/마커 반경
 	static constexpr float ArtilleryDamage       = 15.f;
-	static constexpr int32 ArtilleryCount        = 12;     // 일제사 착지점 수(모양별 기준)
 	static constexpr float MarkerGroundOffset     = -88.f; // 캡슐 중심→바닥(착지 평면). 판정은 XY라 시각용.
 
 	//~ 곡사 폭풍(ArtilleryStorm) 파라미터. 헤더 상수 — 플레이 후 튜닝.
@@ -499,21 +412,6 @@ private:
 	//  비용은 체공수가 아니라 착지율(Count/FireInterval = 80/s)이 쥔다 — 착지 프레임마다
 	//  폭발 Niagara 1개 + TakeDamage 가 돈다. 체공시간을 늘리는 쪽이 밀도를 싸게 산다.
 	//  Radius/Damage 는 Artillery 와 공유한다(별도 상수 안 둔다).
-	static constexpr float StormPhaseSec      = 10.f;   // 스윕 1회 길이
-	static constexpr float StormFireInterval  = 0.05f;  // 볼리 간격 = 생성 이벤트 주기(RPC 20/s)
-	/**
-	 *  체공(s). 6 은 탄이 너무 느리게 떨어졌다 — 3 으로 줄여 낙하가 빨라진다.
-	 *  동시 체공 탄이 여기에 정비례하므로 밀도가 절반이 된다(960 → 480). 착지율은 안 변해
-	 *  프레임 비용도 그대로다 — 밀도를 되찾으려면 Arms 를 올려야 하고 그건 비용이 붙는다.
-	 */
-	static constexpr float StormFlightTime    = 3.f;
-	/**
-	 *  포물선 최대 고도. 궤적이 물리가 아니라 정규화 보간이라(REArcSimProcessor) 높이와
-	 *  체공 시간은 완전히 독립이다 — 이 값을 바꿔도 착지 타이밍은 안 변한다.
-	 *  800 은 탑다운 카메라(높이 1500) 위로 탄이 솟아 화면 밖으로 나갔다 — 절반으로 낮췄다.
-	 */
-	static constexpr float StormMaxHeight     = 400.f;
-	static constexpr int32 StormCount         = 4;      // 볼리당 슬롯 수 = 단발 사격의 시간 해상도
 	/**
 	 *  나선 팔 수. 팔마다 360/Arms 도씩 각이 어긋난 같은 나선이 겹쳐 돈다.
 	 *  체공 탄이 정확히 이 배수로 늘어나고, 착지율(=비용)도 같은 배수로 는다 —
@@ -541,9 +439,9 @@ private:
 	 *  스윕 1회의 볼리 수 = 페이즈당 발사 횟수. 첫 발사가 인트로 종료 시점이라 +1 이다
 	 *  (BeginPhase 의 InFirstDelay 참조). 스윕 진행도 분모다.
 	 */
-	static constexpr int32 StormVolleyCount   = (int32)(StormPhaseSec / StormFireInterval) + 1;
+	static constexpr int32 StormVolleyCount   = (int32)(REBoss::StormPhaseSec / REBoss::StormFireInterval) + 1;
 	/** 스윕 1회의 총 발수. 나선 진행도의 분모다 — 탄 하나가 이 중 한 칸을 차지한다. */
-	static constexpr int32 StormShotsPerSweep = StormVolleyCount * StormCount;
+	static constexpr int32 StormShotsPerSweep = StormVolleyCount * REBoss::StormCount;
 
 	EArtilleryShape CurrentArtilleryShape = EArtilleryShape::Ring;
 	/**
@@ -562,6 +460,29 @@ private:
 	/** 현재 페이즈 Artillery/ArtilleryStorm 1회 일제사(FireCurrentPattern에서 분기). */
 	void FireArtillery();
 
+	//~ Multicast_FireArtillery_Implementation 3단 분해 (#141 R-05).
+	//  전에는 한 함수 259줄 안에서 **같은 7개 조건을 세 번 다시 분기**했다 —
+	//  파라미터 결정 / 착지점 생성 / 샷 성형. 한 곳만 고치면 어긋나는 구조였고,
+	//  이 함수는 서버와 클라가 같이 실행하는 결정론 경로라 어긋나면 탄막이 갈린다.
+	//  파라미터는 R-04 테이블이 가져갔고, 남은 두 단계를 아래로 나눈다.
+
+	/** 착지 지오메트리. 실패 시 false + 로그. CallRng 소비 순서가 서버/클라 일치의 계약이다. */
+	bool BuildArcTargets(EBulletPattern Pattern, EArtilleryShape Shape,
+	                     const FVector& BossLoc, const FVector& PlayerLoc,
+	                     int32 SweepIdx, float ServerTime, int32 Count,
+	                     FRandomStream& CallRng, TArray<FVector>& Out) const;
+
+	/** Artillery 페이즈 전용 착지 모양(EArtilleryShape). Random 케이스만 CallRng 를 소비한다. */
+	bool BuildArtilleryShapeTargets(EArtilleryShape Shape, const FVector& BossLoc,
+	                                const FVector& PlayerLoc, int32 Count, float GroundZ,
+	                                FRandomStream& CallRng, TArray<FVector>& Out) const;
+
+	/** 착지점 → 스폰 파라미터. 제어점 성형과 출발 시각 어긋내기. */
+	void ShapeArcShots(EBulletPattern Pattern, const FVector& BossLoc,
+	                   const TArray<FVector>& Targets, const REBoss::FArcDef& Arc,
+	                   float Elapsed, int32 SweepIdx,
+	                   TArray<REBulletPattern::FArcBulletSpawnParams>& Shots) const;
+
 	//~ 페이즈별 외관 (#118). 보스는 고정형이라 애님BP 없이 single-node로 재생한다 —
 	//  Stone Golem은 자체 스켈레톤이라 ABP_Unarmed(플레이어 공유)가 붙지 않고,
 	//  idle 하나면 충분해 리타겟할 이유가 없다.
@@ -571,13 +492,12 @@ private:
 	UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> BodyMID = nullptr;
 	FTimerHandle LeapTimer;   // 도약 원샷 종료 → idle 복귀
 
-	/** 바디 머티리얼의 한 상태. 팩 마스터가 노출한 파라미터가 그대로 필드다. */
-	struct FBossLook
-	{
-		float Snow = 0.f;
-		float Lava = 0.f;
-		FLinearColor Emis = FLinearColor(1.f, 0.f, 0.f, 1.f);   // 팩 기본 MI 값
-	};
+	/**
+	 *  바디 머티리얼의 한 상태. 정의는 REBossPatternTable.h 로 옮겼다 (#141) —
+	 *  패턴별 외관이 테이블 필드가 되면서 테이블 쪽이 이 타입의 주인이 됐다.
+	 *  별칭을 남겨 기존 AREBossCharacter::FBossLook 표기를 그대로 쓴다.
+	 */
+	using FBossLook = REBoss::FBossLook;
 
 	/** 패턴별 목표 외관. */
 	static FBossLook LookForPattern(EBulletPattern Pattern);
@@ -599,24 +519,14 @@ private:
 	EBulletPattern LookPattern = EBulletPattern::Spiral;    // 현재 목표 패턴
 
 	//~ 팩 MI 프리셋에서 그대로 가져온 값 — MI_Stone_Golem_Inst1(Snow) / Inst2(Lava).
-	static constexpr float FanSnowAmount       = 1.34f;
-	static constexpr float ArtilleryLavaAmount = 2.47f;
-	/** 폭풍 이미시브 — 용암은 Artillery 와 공유하므로 색으로 가른다(주황 vs 금색). */
-	static constexpr float StormLavaAmount     = 2.47f;
 	//~ 패턴이 9개라 질감 축(Snow/Lava)만으로는 안 갈린다. **(질감, 이미시브 색) 쌍**이
 	//  유일하도록 배분한다 — LookForPattern 의 각 case 가 그 쌍 하나씩을 집는다.
-	static constexpr float CardioidSnowAmount    = 1.34f;
 	//~ 패턴이 16개다. 질감 3종 × 색으로도 슬슬 빠듯하다 — 새 패턴을 더 늘리면 외관 축을
 	//  하나 더 찾아야 한다(스케일·회전·발광 주기 등). 지금은 (질감, 색) 쌍 유일성으로 버틴다.
-	static constexpr float RoseFieldLavaAmount   = 2.47f;
-	static constexpr float DomeSnowAmount        = 1.34f;
-	static constexpr float SpiroLavaAmount       = 2.47f;
-	static constexpr float MicroSnowAmount       = 1.34f;
-	static constexpr float LissaLavaAmount       = 2.47f;
-	static constexpr float VortexSnowAmount      = 1.34f;
 	/**
 	 *  페이즈 인트로 길이(s). 외관 램프 시간이자 첫 발사 지연이다.
 	 *  도약 애님(0.47s)보다 길어 애님도 이 안에서 끝난다.
 	 */
 	static constexpr float LookIntroSec = 0.8f;
+
 };
