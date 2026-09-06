@@ -20,3 +20,4 @@ UnrealEditor.exe Project_RE.uproject /Game/Level/Main -game -windowed -ResX=1600
 | 파일 | 내용 | 이슈 |
 |---|---|---|
 | `hud-2026-08-16.png` | 플레이어 HUD — HP / 대쉬 쿨다운 / 투사체 수 | #100 |
+| `hero-spiral-2026-09-07.png` | 루트 README 대표 이미지 — Spiral 4,734발 동시 체공, GT 4.57ms / Draws 222 | #141 |
