@@ -21,9 +21,20 @@ Content/Characters/Mannequins/
 Content/Developers/
 Content/Collections/
 
+# 유료 마켓플레이스 에셋 (Fab, 재배포 불가)
+Content/BlinkDash/
+Content/Adventure_Pack/
+Content/IthrisCemetery/
+Content/Realistic_Starter_VFX_Pack_Vol2/
+Content/Stone_Golem/
+Adventure_Pack_2.png
+
 # Claude Code local data
 .claude/
 
 # Knowledge graph output
 graphify-out/
 Obsidian/graphify-out/
+
+# SDD 스크래치(계획 실행 원장·브리프·리뷰 패키지)
+.superpowers/

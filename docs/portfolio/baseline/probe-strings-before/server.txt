@@ -1,0 +1,15 @@
+[Attack] hit boss, applied=#
+[Attack] probe fire dir=VEC
+[Attack] rate-limited (dt=#)
+[Dash] activate ok dir=VEC
+[Dash] activate ok=# State.Dashing=#
+[Dash] dist=# (기대 ~#)
+[Dash] immediate retry activated=# (#=blocked by cooldown, 기대 #)
+[Dash] probe done
+[Dash] re-activate ok=# (기대 #, 쿨다운 만료)
+[Move] fire lock probe: 이동 요청 (거절 기대)
+[Move] probe dist=# loc=VEC
+[Move] probe start: pawn=VEC target=VEC
+[Move] rejected: fire lock (#s 남음)
+[Move] rejected: off-navmesh VEC
+[Move] Server_RequestMove recv target=VEC

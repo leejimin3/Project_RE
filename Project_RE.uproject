@@ -25,11 +25,41 @@
 		},
 		{
 			"Name": "StateTree",
-			"Enabled": true
+			"Enabled": false
 		},
 		{
 			"Name": "GameplayStateTree",
+			"Enabled": false
+		},
+		{
+			"Name": "MassGameplay",
 			"Enabled": true
+		},
+		{
+			"Name": "GameplayAbilities",
+			"Enabled": true
+		},
+		{
+			"Name": "ModelContextProtocol",
+			"Enabled": true
+		},
+		{
+			"Name": "Niagara",
+			"Enabled": true
+		},
+		{
+			"Name": "PythonScriptPlugin",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "CascadeToNiagaraConverter",
+			"Enabled": false,
+			"TargetAllowList": [
+				"Editor"
+			]
 		}
 	]
 }

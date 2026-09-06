@@ -65,22 +65,21 @@ Strong success criteria let the LLM loop independently. Weak criteria ("make it 
 | 브랜치 | 용도 |
 |--------|------|
 | `main` | 릴리즈 태그 전용 (Tag 0.1, 0.2, 1.0 ...) |
-| `develop` | 통합 브랜치. feature → develop 머지. |
-| `feature/*` | 기능 개발. develop에서 분기, develop으로 머지. |
-| `release/*` | 릴리즈 준비. develop에서 분기, bugfix만. main + develop 양쪽 머지. |
-| `hotfix/*` | 프로덕션 긴급 수정. main에서 분기, main + develop 양쪽 머지. |
+| `dev` | 통합 브랜치. feature → dev 머지. |
+| `feature/*` | 기능 개발. dev에서 분기, dev로 머지. |
+| `release/*` | 릴리즈 준비. dev에서 분기, bugfix만. main + dev 양쪽 머지. |
+| `hotfix/*` | 프로덕션 긴급 수정. main에서 분기, main + dev 양쪽 머지. |
 
 규칙:
 - feature 브랜치명: `feature/M1-mass-bullet`, `feature/M2-player-loop` 등 마일스톤 접두어
 - main 직접 커밋 금지 — 반드시 PR 경유
 - release 브랜치에서는 bugfix 커밋만 허용
 
-<!-- ## graphify
+7. Orca 에이전트 오케스트레이션
+이 프로젝트는 **Orca ADE** 위에서 개발한다. 네 세션은 Orca 터미널 페인 안에서 실행 중이다.
+확인법: `$env:ORCA_TERMINAL_HANDLE` 이 있으면 Orca 안이다.
 
-This project has a graphify knowledge graph at graphify-out/.
-
-Rules:
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
-- For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
-- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost) -->
+다음 상황이면 **`docs/guides/orca.md` 를 먼저 읽어라**:
+- 다른 에이전트 세션(옆 페인)에 지시를 보내거나 응답을 받아야 할 때
+- 여러 worktree에 작업을 병렬로 뿌려야 할 때
+- 코디네이터/워커로 일해야 할 때 (`worker_done` 규약이 있다 — 모르고 쓰면 코디네이터가 멈춘다)

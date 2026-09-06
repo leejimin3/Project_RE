@@ -1,0 +1,148 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "REBulletRenderProcessor.h"
+#include "REBulletFragments.h"
+#include "REBulletGeometry.h"                              // 탄환 스케일 단일 출처 (#141)
+#include "REBulletRenderSubsystem.h"
+#include "REBulletPatternGenerator.h"   // BulletLifetimeSec() — 스폰 팝 나이 계산 (#97)
+#include "MassExecutionContext.h"
+#include "Mass/EntityFragments.h"  // FTransformFragment
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Engine/World.h"
+#include "UnrealClient.h"   // FScreenshotRequest — 시각 검증 (#97)
+#include "ProfilingDebugging/CsvProfiler.h"
+#include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
+
+CSV_DECLARE_CATEGORY_EXTERN(REBullet);  // 정의는 REBulletSimProcessor.cpp
+
+namespace
+{
+	/**
+	 *  N>0 이면 이 프로세서의 N번째 실행에서 화면을 PNG로 저장한다 (0=끔).
+	 *
+	 *  탄막의 시각 결과(색 교차가 읽히는지, 밝기가 블룸으로 씻기는지)는 수치 게이트로
+	 *  판정할 수 없다. 이 CVar가 없으면 매번 사람이 눈으로 봐야 하고, 그 왕복이 렌더
+	 *  작업의 실제 병목이었다. 산출물: Saved/Screenshots/ (#97)
+	 *
+	 *  렌더 프로세서는 Standalone|Client 에서만 도므로 데디서버에는 영향이 없다.
+	 */
+	static TAutoConsoleVariable<int32> CVarDebugShotFrame(
+		TEXT("re.Debug.ScreenshotFrame"),
+		0,
+		TEXT("N번째 렌더 프로세서 실행에서 스크린샷 저장 (0=끔). 시각 검증용."),
+		ECVF_Cheat);
+
+	/**
+	 *  스크린샷에 화면공간 UI 를 포함할지 (#100).
+	 *
+	 *  기본 0 은 탄막 렌더 검증(#97)용이다 — HUD 가 화면을 가리면 탄 색·밝기 판정을 방해한다.
+	 *  1 로 켜면 HUD 를 포함해 찍는다. 화면공간 위젯은 이걸 안 켜면 PNG 에 아예 안 나온다
+	 *  (월드스페이스 위젯인 보스 체력바는 0 에서도 찍히므로, 안 나오는 이유를 오해하기 쉽다).
+	 */
+	static TAutoConsoleVariable<int32> CVarDebugShotUI(
+		TEXT("re.Debug.ScreenshotUI"),
+		0,
+		TEXT("스크린샷에 화면공간 UI 포함 (0=제외). UI 검증용."),
+		ECVF_Cheat);
+}
+
+UREBulletRenderProcessor::UREBulletRenderProcessor()
+	: EntityQuery(*this)
+{
+	// 5: 데디서버(Server) skip, 싱글/클라만 렌더
+	ExecutionFlags = (int32)(EProcessorExecutionFlags::Standalone | EProcessorExecutionFlags::Client);
+
+	// ISM(씬 컴포넌트) 변형은 게임 스레드 전용 — AddInstance가 물리 바디를 만들어
+	// 워커 스레드에서 실행 시 BodyInstance 어서션 크래시. Execute를 GT에 고정.
+	bRequiresGameThreadExecution = true;
+}
+
+void UREBulletRenderProcessor::ConfigureQueries(const TSharedRef<FMassEntityManager>& EntityManager)
+{
+	EntityQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadOnly);  // 위치 읽기
+	EntityQuery.AddRequirement<FBulletSimFragment>(EMassFragmentAccess::ReadOnly);  // Lifetime — 스폰 팝 나이 (#97)
+	EntityQuery.AddTagRequirement<FBulletTag>(EMassFragmentPresence::All);          // 탄환만 선별
+}
+
+void UREBulletRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassExecutionContext& Context)
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(RE_BulletRender);
+	CSV_SCOPED_TIMING_STAT(REBullet, BulletRender);
+
+	UWorld* World = EntityManager.GetWorld();
+	UREBulletRenderSubsystem* RS = World ? World->GetSubsystem<UREBulletRenderSubsystem>() : nullptr;
+	UInstancedStaticMeshComponent* ISM = RS ? RS->GetISM() : nullptr;
+	if (!ISM)
+	{
+		return;  // 데디서버 등 ISM 없으면 no-op
+	}
+
+	// 스폰 팝 지속시간(s). 태어난 직후만 밝기가 솟았다가 정상으로 붙는다.
+	// 수명 페이드는 넣지 않는다 — 죽기 직전 탄이 흐려지면 여전히 치명적인데 사라지는 중으로
+	// 오독되고, 탄막에서 히트박스 가독성은 공정성 문제다 (#97).
+	constexpr float PopDuration = 0.1f;
+	const float TotalLife = REBulletPattern::BulletLifetimeSec();
+
+	// 1) live 탄환 트랜스폼 + 커스텀데이터 수집 (청크를 가로질러 누적 → 전역 인스턴스 인덱스 연속).
+	// 커스텀데이터는 인스턴스당 연속으로 인터리브된다: [0]=스폰팝, [1]=색선택.
+	TArray<FTransform> Xf;
+	TArray<float> Cd;
+	EntityQuery.ForEachEntityChunk(Context, [&Xf, &Cd, TotalLife](FMassExecutionContext& Ctx)
+	{
+		const int32 Num = Ctx.GetNumEntities();
+		const TConstArrayView<FTransformFragment> T = Ctx.GetFragmentView<FTransformFragment>();
+		const TConstArrayView<FBulletSimFragment> S = Ctx.GetFragmentView<FBulletSimFragment>();
+		for (int32 i = 0; i < Num; ++i)
+		{
+			FTransform B = T[i].GetTransform();
+			B.SetScale3D(FVector(REBulletGeometry::BulletScale));  // 탄환 크기 통일
+			Xf.Add(B);
+
+			// Lifetime 은 잔여시간(REBulletSimProcessor 가 Dt 만큼 감소) → 나이 = 총수명 - 잔여
+			const float Age = TotalLife - S[i].Lifetime;
+			Cd.Add(FMath::Clamp(Age / PopDuration, 0.f, 1.f));   // [0] 스폰 팝
+			Cd.Add(S[i].ColorSel);                                // [1] 색 선택(스폰 시 고정)
+		}
+	});
+
+	// 2) 인스턴스 수를 M에 맞춤 (꼬리에서 add/remove → 타 인덱스 불변, swap 없음).
+	const int32 M = Xf.Num();
+	int32 Count = ISM->GetInstanceCount();
+	while (Count < M) { ISM->AddInstance(FTransform::Identity, /*bWorldSpace=*/true); ++Count; }
+	while (Count > M) { ISM->RemoveInstance(Count - 1);                               --Count; }
+
+	// 3) i번째 인스턴스 = i번째 live 탄환. 배열째 한 번에 넘긴다.
+	// 인스턴스당 개별 UpdateInstanceTransform 호출은 탄환 수에 비례해 게임 스레드를 먹었다 —
+	// 실측(40,000발) BulletRender 7.22 ms 로 GT의 52%. Xf 는 이미 만들어져 있으므로 배치 API가 그대로 받는다 (#95).
+	if (M > 0)
+	{
+		// 커스텀데이터를 먼저 쓰고 트랜스폼을 나중에 쓴다 — dirty 마크는 트랜스폼 호출이 담당한다.
+		// 위 while 루프가 인스턴스 수를 이미 M 으로 맞췄으므로 인덱스 범위가 유효하다.
+		ISM->SetCustomData(0, M - 1, Cd, /*bMarkRenderStateDirty=*/false);
+		ISM->BatchUpdateInstancesTransforms(0, Xf, /*bWorldSpace=*/true,
+			/*bMarkRenderStateDirty=*/true, /*bTeleport=*/true);
+	}
+
+	// 시각 검증용 스크린샷 — 지정한 실행 횟수에서 정확히 한 번 (#97).
+	{
+		const int32 ShotAt = CVarDebugShotFrame.GetValueOnGameThread();
+		static int32 ShotTick = 0;
+		++ShotTick;
+		if (ShotAt > 0 && ShotTick == ShotAt)
+		{
+			// 콘솔 HighResShot 은 -game 뷰포트에서 조용히 무시됐다(로그도 PNG도 안 남음).
+			// 직접 요청이 확실하다 — 산출물은 Saved/Screenshots/ 아래.
+			const bool bShowUI = CVarDebugShotUI.GetValueOnGameThread() != 0;
+			FScreenshotRequest::RequestScreenshot(bShowUI);
+			UE_LOG(LogREBullet, Log, TEXT("[RE] DebugScreenshot: 요청 (tick=%d live=%d ui=%d)"),
+				ShotTick, M, bShowUI ? 1 : 0);
+		}
+	}
+
+	// 프로브: 인스턴스 수 == live 탄환 수 추종 확인 (매 30틱 1회, 로그 과다 방지).
+	static int32 ProbeTick = 0;
+	if (((ProbeTick++) % 30) == 0)
+	{
+		UE_LOG(LogREBullet, Log, TEXT("[RE] RenderProbe: live=%d ISM.Count=%d"), M, ISM->GetInstanceCount());
+	}
+}
