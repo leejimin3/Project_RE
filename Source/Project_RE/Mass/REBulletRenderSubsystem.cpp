@@ -6,7 +6,6 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "GameFramework/Actor.h"
 #include "Engine/World.h"
-#include "REExplosionFx.h"
 #include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
@@ -18,12 +17,6 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	{
 		return;
 	}
-
-	// 폭발 에셋 선로드 (#107). 첫 폭발에서 동기 로드가 걸리면 ~290ms 멈추고,
-	// 그 히치가 대쉬 구간에 겹치면 이동거리까지 틀어졌다(#106). 시작 시 한 번에 끝낸다.
-	// 여기가 적기다 — 위 가드가 데디서버·비게임월드를 이미 걸러냈고, 레벨 로드 중이라
-	// 로드 비용이 눈에 띄지 않는다.
-	REExplosionFx::Preload(&InWorld);
 
 	Holder = InWorld.SpawnActor<AActor>();
 	if (!Holder)
@@ -124,6 +117,54 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	else
 	{
 		UE_LOG(LogREBullet, Error, TEXT("[RE] M_ArenaMarker 로드 실패 — 마커가 기본 머티리얼로 렌더된다 (#122)"));
+	}
+
+	// ===== 폭발 (#149) =====
+	// 폭발 1개 = 코어 구체 1 + 수평 링 1. 컴포넌트를 만들지 않으므로 드로우콜이
+	// 동시 폭발 개수와 무관하다 — 이전 구조(개별 Niagara 컴포넌트)는 컴포넌트당
+	// 4.9 드로우콜로 개수에 선형이었다(#147).
+	// 커스텀데이터는 슬롯 1개: [0]=진행도(0→1). 두 통이 같은 값을 받고 각자 해석한다.
+	ExplosionCoreISM = NewObject<UInstancedStaticMeshComponent>(Holder);
+	ExplosionCoreISM->SetupAttachment(ISM);
+	ExplosionCoreISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ExplosionCoreISM->bAffectDynamicIndirectLighting = false;
+	ExplosionCoreISM->bAffectDistanceFieldLighting = false;
+	ExplosionCoreISM->SetCastShadow(false);   // 탄환과 같은 이유 (#95)
+	ExplosionCoreISM->RegisterComponent();
+	if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
+	{
+		ExplosionCoreISM->SetStaticMesh(Mesh);
+	}
+	ExplosionCoreISM->SetNumCustomDataFloats(1);
+	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_REExplosionCore.M_REExplosionCore")))
+	{
+		ExplosionCoreISM->SetMaterial(0, Base);
+	}
+	else
+	{
+		// 조용한 폴백 금지 — 기본 머티리얼로 렌더되면 회색 구체가 떠서 원인을 찾기 어렵다.
+		UE_LOG(LogREBullet, Error, TEXT("[RE] M_REExplosionCore 로드 실패 — 폭발 코어가 기본 머티리얼로 렌더된다 (#149)"));
+	}
+
+	ExplosionRingISM = NewObject<UInstancedStaticMeshComponent>(Holder);
+	ExplosionRingISM->SetupAttachment(ISM);
+	ExplosionRingISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ExplosionRingISM->bAffectDynamicIndirectLighting = false;
+	ExplosionRingISM->bAffectDistanceFieldLighting = false;
+	ExplosionRingISM->SetCastShadow(false);
+	ExplosionRingISM->RegisterComponent();
+	if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane")))
+	{
+		ExplosionRingISM->SetStaticMesh(Mesh);
+	}
+	ExplosionRingISM->SetNumCustomDataFloats(1);
+	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_REExplosionRing.M_REExplosionRing")))
+	{
+		ExplosionRingISM->SetMaterial(0, Base);
+	}
+	else
+	{
+		UE_LOG(LogREBullet, Error, TEXT("[RE] M_REExplosionRing 로드 실패 — 폭발 링이 기본 머티리얼로 렌더된다 (#149)"));
 	}
 
 	// 실제 적용된 머티리얼 이름을 찍는다 — CreateDynamicMaterialInstance 가 실패하면

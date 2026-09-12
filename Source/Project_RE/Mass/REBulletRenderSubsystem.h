@@ -24,6 +24,8 @@ public:
 	UInstancedStaticMeshComponent* GetISM() const { return ISM; }
 	UInstancedStaticMeshComponent* GetArcISM() const { return ArcISM; }
 	UInstancedStaticMeshComponent* GetMarkerISM() const { return MarkerISM; }
+	UInstancedStaticMeshComponent* GetExplosionCoreISM() const { return ExplosionCoreISM; }
+	UInstancedStaticMeshComponent* GetExplosionRingISM() const { return ExplosionRingISM; }
 
 private:
 	UPROPERTY()
@@ -37,4 +39,12 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UInstancedStaticMeshComponent> MarkerISM = nullptr;  // 착지 예고(빨강 평면 원)
+
+	// 폭발 (#149) — 폭발 1개 = 아래 두 통에 인스턴스 1개씩. 컴포넌트를 만들지 않으므로
+	// 드로우콜이 동시 폭발 개수와 무관하다(층 수가 상한).
+	UPROPERTY()
+	TObjectPtr<UInstancedStaticMeshComponent> ExplosionCoreISM = nullptr;  // 불덩이(구체)
+
+	UPROPERTY()
+	TObjectPtr<UInstancedStaticMeshComponent> ExplosionRingISM = nullptr;  // 수평 충격파(평면 원환)
 };
