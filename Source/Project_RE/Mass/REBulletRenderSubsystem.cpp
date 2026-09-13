@@ -130,6 +130,9 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	ExplosionCoreISM->bAffectDynamicIndirectLighting = false;
 	ExplosionCoreISM->bAffectDistanceFieldLighting = false;
 	ExplosionCoreISM->SetCastShadow(false);   // 탄환과 같은 이유 (#95)
+	// 정렬 우선순위를 못 박는다 (#151) — 아래 연기 통 주석 참조. 코어가 가장 앞이다:
+	// 불덩이가 언제나 읽혀야 하고, 연기가 그 앞에 오면 45% 알파로 정확히 덮는다.
+	ExplosionCoreISM->SetTranslucentSortPriority(3);
 	ExplosionCoreISM->RegisterComponent();
 	if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
 	{
@@ -152,6 +155,7 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	ExplosionRingISM->bAffectDynamicIndirectLighting = false;
 	ExplosionRingISM->bAffectDistanceFieldLighting = false;
 	ExplosionRingISM->SetCastShadow(false);
+	ExplosionRingISM->SetTranslucentSortPriority(2);   // 연기 앞, 코어 뒤 (#151)
 	ExplosionRingISM->RegisterComponent();
 	if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane")))
 	{
@@ -165,6 +169,38 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	else
 	{
 		UE_LOG(LogREBullet, Error, TEXT("[RE] M_REExplosionRing 로드 실패 — 폭발 링이 기본 머티리얼로 렌더된다 (#149)"));
+	}
+
+	// 연기 대역 (#151) — 세 층 중 가장 크고 어둡다. 코어·링과 같은 설정이고 메시도
+	// 같은 구체다. **등록 순서는 정렬에 관여하지 않는다** — 층 순서를 정하는 것은
+	// 아래 SetTranslucentSortPriority 하나뿐이다(실측, 설계 §9.1).
+	ExplosionSmokeISM = NewObject<UInstancedStaticMeshComponent>(Holder);
+	ExplosionSmokeISM->SetupAttachment(ISM);
+	ExplosionSmokeISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ExplosionSmokeISM->bAffectDynamicIndirectLighting = false;
+	ExplosionSmokeISM->bAffectDistanceFieldLighting = false;
+	ExplosionSmokeISM->SetCastShadow(false);   // 탄환과 같은 이유 (#95)
+	// **반투명 정렬을 거리에 맡기지 않는다 (#151).** 반투명은 프리미티브 단위로 정렬되고
+	// 기준은 컴포넌트 바운즈다. 이 통들의 바운즈는 아레나 전역에 흩어진 인스턴스를 전부
+	// 감싸므로 중심이 매 프레임 흔들리고, 그러면 세 층의 상대 순서가 프레임마다 뒤집힌다.
+	// 연기는 코어를 통째로 감싸는 큰 구체라 앞으로 오는 프레임에만 코어를 덮어 — 화면
+	// 전체가 깜빡였다(실측). 등록 순서로는 안 잡힌다. 우선순위는 낮을수록 먼저(뒤에) 그린다.
+	ExplosionSmokeISM->SetTranslucentSortPriority(1);
+	ExplosionSmokeISM->RegisterComponent();
+	if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
+	{
+		ExplosionSmokeISM->SetStaticMesh(Mesh);
+	}
+	ExplosionSmokeISM->SetNumCustomDataFloats(1);
+	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_REExplosionSmoke.M_REExplosionSmoke")))
+	{
+		ExplosionSmokeISM->SetMaterial(0, Base);
+	}
+	else
+	{
+		// 조용한 폴백 금지 — 기본 머티리얼로 렌더되면 커다란 회색 구체가 떠서
+		// 폭발이 통째로 가려진다.
+		UE_LOG(LogREBullet, Error, TEXT("[RE] M_REExplosionSmoke 로드 실패 — 폭발 연기가 기본 머티리얼로 렌더된다 (#151)"));
 	}
 
 	// 실제 적용된 머티리얼 이름을 찍는다 — CreateDynamicMaterialInstance 가 실패하면
