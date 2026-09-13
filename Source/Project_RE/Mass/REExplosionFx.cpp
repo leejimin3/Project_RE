@@ -47,6 +47,34 @@ namespace
 	/** 살아있는 폭발. 최대 길이가 예산이라 선형 순회로 충분하다. */
 	TArray<REExplosionFx::FLiveExplosion> GLiveExplosions;
 
+	/**
+	 *  만료분 제거 + 남은 것의 Progress 갱신.
+	 *
+	 *  스폰 경로와 렌더 경로가 같이 쓴다. 렌더 프로세서만 프루닝하면, 그 프로세서가
+	 *  돌지 않는 넷모드에서 목록이 영원히 안 비고 예산이 가득 찬 채 잠겨 폭발이 조용히
+	 *  전량 버려진다 — 스폰은 REBulletHitProcessor(AllNetModes)가 부르는데 렌더
+	 *  프로세서는 Standalone|Client 라 리슨 서버에서 갈린다. 구 구조는 예산 확인이
+	 *  곧 프루닝이라 이 틈이 없었다.
+	 */
+	void PruneExpiredExplosions(float NowSeconds)
+	{
+		// 뒤에서부터 돌며 RemoveAtSwap 한다. 마지막 원소가 i 로 들어오는데 그 원소의 원래
+		// 인덱스는 항상 i 보다 크므로 이미 검사된 것이다 — 건너뛰는 항목이 없다.
+		for (int32 i = GLiveExplosions.Num() - 1; i >= 0; --i)
+		{
+			const float Age = NowSeconds - GLiveExplosions[i].SpawnTime;
+
+			// Age < 0 은 월드가 바뀌어 게임 시간이 되감긴 경우다. 그대로 두면 새 월드에서
+			// 0.8초가 지날 때까지 유령 폭발이 남고 예산도 그만큼 먹는다.
+			if (Age >= ExplosionLifeSec || Age < 0.f)
+			{
+				GLiveExplosions.RemoveAtSwap(i);
+				continue;
+			}
+			GLiveExplosions[i].Progress = Age / ExplosionLifeSec;
+		}
+	}
+
 	/** ExplosionProbe 누적 — 이름을 다른 파일과 겹치지 않게 둔다(유니티 빌드 C4459). */
 	int32 GExplosionSpawnedSinceLog = 0;
 	int32 GExplosionDroppedSinceLog = 0;
@@ -63,6 +91,10 @@ void REExplosionFx::SpawnBulletExplosion(const UWorld* World, const FVector& Loc
 	{
 		return;
 	}
+
+	// 예산을 재기 전에 만료분을 턴다. 렌더 프로세서가 돌지 않는 넷모드(리슨 서버)에서
+	// 목록이 잠기는 것을 막는다 — 자세한 이유는 PruneExpiredExplosions 주석.
+	PruneExpiredExplosions(World->GetTimeSeconds());
 
 	// 오버드로우 안전망 (#149). 드로우콜은 이 값과 무관하다.
 	const int32 Budget = CVarExplosionBudget.GetValueOnGameThread();
@@ -81,21 +113,7 @@ void REExplosionFx::SpawnBulletExplosion(const UWorld* World, const FVector& Loc
 
 const TArray<REExplosionFx::FLiveExplosion>& REExplosionFx::PruneAndGetLive(float NowSeconds)
 {
-	// 뒤에서부터 돌며 RemoveAtSwap 한다. 마지막 원소가 i 로 들어오는데 그 원소의 원래
-	// 인덱스는 항상 i 보다 크므로 이미 검사된 것이다 — 건너뛰는 항목이 없다.
-	for (int32 i = GLiveExplosions.Num() - 1; i >= 0; --i)
-	{
-		const float Age = NowSeconds - GLiveExplosions[i].SpawnTime;
-
-		// Age < 0 은 월드가 바뀌어 게임 시간이 되감긴 경우다. 그대로 두면 새 월드에서
-		// 0.8초가 지날 때까지 유령 폭발이 남고 예산도 그만큼 먹는다.
-		if (Age >= ExplosionLifeSec || Age < 0.f)
-		{
-			GLiveExplosions.RemoveAtSwap(i);
-			continue;
-		}
-		GLiveExplosions[i].Progress = Age / ExplosionLifeSec;
-	}
+	PruneExpiredExplosions(NowSeconds);
 
 	// 프로브 — 1초에 1줄. 창 길이(Window)를 같이 찍는다: 프레임 간격이 일정하지 않으면
 	// 실제 창이 1초보다 길다. 버린 수를 안 찍으면 예산이 걸린 것과 애초에 요청이 적은

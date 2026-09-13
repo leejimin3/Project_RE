@@ -29,6 +29,9 @@ namespace REExplosionFx
 	/**
 	 *  폭발 요청. 예산(re.Fx.ExplosionBudget)이 차 있으면 조용히 버린다 —
 	 *  버린 수는 ExplosionProbe 로그가 센다.
+	 *
+	 *  예산을 재기 전에 만료분을 턴다. 렌더 프로세서가 돌지 않는 넷모드에서도
+	 *  목록이 잠기지 않는다.
 	 */
 	void SpawnBulletExplosion(const UWorld* World, const FVector& Location);
 
