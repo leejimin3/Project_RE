@@ -167,6 +167,32 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		UE_LOG(LogREBullet, Error, TEXT("[RE] M_REExplosionRing 로드 실패 — 폭발 링이 기본 머티리얼로 렌더된다 (#149)"));
 	}
 
+	// 연기 대역 (#151) — 세 층 중 가장 크고 어둡다. 코어·링과 같은 설정이고 메시도
+	// 같은 구체다. 등록 순서가 코어 → 링 → 연기인 것은 의도다: 반투명 정렬이 컴포넌트
+	// 단위라 순서가 화면에 남는다(연기가 코어를 삼키면 이 순서부터 본다).
+	ExplosionSmokeISM = NewObject<UInstancedStaticMeshComponent>(Holder);
+	ExplosionSmokeISM->SetupAttachment(ISM);
+	ExplosionSmokeISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ExplosionSmokeISM->bAffectDynamicIndirectLighting = false;
+	ExplosionSmokeISM->bAffectDistanceFieldLighting = false;
+	ExplosionSmokeISM->SetCastShadow(false);   // 탄환과 같은 이유 (#95)
+	ExplosionSmokeISM->RegisterComponent();
+	if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
+	{
+		ExplosionSmokeISM->SetStaticMesh(Mesh);
+	}
+	ExplosionSmokeISM->SetNumCustomDataFloats(1);
+	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_REExplosionSmoke.M_REExplosionSmoke")))
+	{
+		ExplosionSmokeISM->SetMaterial(0, Base);
+	}
+	else
+	{
+		// 조용한 폴백 금지 — 기본 머티리얼로 렌더되면 커다란 회색 구체가 떠서
+		// 폭발이 통째로 가려진다.
+		UE_LOG(LogREBullet, Error, TEXT("[RE] M_REExplosionSmoke 로드 실패 — 폭발 연기가 기본 머티리얼로 렌더된다 (#151)"));
+	}
+
 	// 실제 적용된 머티리얼 이름을 찍는다 — CreateDynamicMaterialInstance 가 실패하면
 	// 로드는 성공했는데도 조용히 기본 머티리얼로 렌더된다(라이팅 음영이 생겨 언릿 의도가 깨진다). (#97)
 	{
