@@ -172,8 +172,8 @@ void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	}
 
 	// 연기 대역 (#151) — 세 층 중 가장 크고 어둡다. 코어·링과 같은 설정이고 메시도
-	// 같은 구체다. 등록 순서가 코어 → 링 → 연기인 것은 의도다: 반투명 정렬이 컴포넌트
-	// 단위라 순서가 화면에 남는다(연기가 코어를 삼키면 이 순서부터 본다).
+	// 같은 구체다. **등록 순서는 정렬에 관여하지 않는다** — 층 순서를 정하는 것은
+	// 아래 SetTranslucentSortPriority 하나뿐이다(실측, 설계 §9.1).
 	ExplosionSmokeISM = NewObject<UInstancedStaticMeshComponent>(Holder);
 	ExplosionSmokeISM->SetupAttachment(ISM);
 	ExplosionSmokeISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);

@@ -57,8 +57,9 @@ namespace
 	constexpr float ExplosionRingRadiusStart = 40.f;
 	constexpr float ExplosionRingRadiusEnd   = 220.f;
 
-	/** 연기 대역(구체) 반경(cm) (#151). 시작은 코어(20)보다 크되 링(40)보다 작게 —
-	 *  스폰 순간 코어를 삼키지 않는다. 끝은 링(220)보다 크게 — 마지막까지 남는 층이다. */
+	/** 연기 대역(구체) 반경(cm) (#151). 전 구간 코어(20~120)보다 크다 — 스폰 순간부터
+	 *  코어를 감싸므로, 코어를 가리지 않는 것은 반경이 아니라 머티리얼의 RampIn
+	 *  페이드-인이 담당한다(설계 §4.4). 끝은 링(220)보다 크게 — 마지막까지 남는 층이다. */
 	constexpr float ExplosionSmokeRadiusStart = 30.f;
 	constexpr float ExplosionSmokeRadiusEnd   = 260.f;
 
