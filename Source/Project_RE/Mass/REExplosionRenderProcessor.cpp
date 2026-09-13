@@ -7,6 +7,7 @@
 #include "MassExecutionContext.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/World.h"
+#include "UnrealClient.h"   // FScreenshotRequest — 시각 검증 (#97)
 #include "ProfilingDebugging/CsvProfiler.h"
 #include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
@@ -14,6 +15,40 @@ CSV_DECLARE_CATEGORY_EXTERN(REBullet);  // 정의는 REBulletSimProcessor.cpp
 
 namespace
 {
+	/**
+	 *  N>0 이면 이 프로세서의 N번째 실행에서 화면을 PNG로 저장한다 (0=끔).
+	 *
+	 *  연출의 시각 결과(색이 읽히는지, 밝기가 톤매퍼에서 씻기는지)는 수치 게이트로
+	 *  판정할 수 없다. 이 CVar가 없으면 매번 사람이 눈으로 봐야 하고, 그 왕복이 렌더
+	 *  작업의 실제 병목이었다. 산출물: Saved/Screenshots/ (#97)
+	 *
+	 *  **탄환 렌더 프로세서가 아니라 여기 있는 이유 (#151):** 저쪽은 FBulletTag 쿼리를
+	 *  들고 있어서 Mass 탄환이 한 발도 없는 패턴에서는 통째로 프루닝돼 Execute 가 안 돈다
+	 *  — Artillery(re.Debug.BossPattern 2)는 FireArtillery() 로 조기 리턴해 Mass 탄환을
+	 *  만들지 않으므로 곡사 화면은 영원히 못 찍혔다. 이 프로세서는 쿼리가 없고
+	 *  QueryBasedPruning=Never 라 패턴과 무관하게 매 프레임 돈다.
+	 *
+	 *  렌더 프로세서는 Standalone|Client 에서만 도므로 데디서버에는 영향이 없다.
+	 */
+	static TAutoConsoleVariable<int32> CVarDebugShotFrame(
+		TEXT("re.Debug.ScreenshotFrame"),
+		0,
+		TEXT("N번째 렌더 프로세서 실행에서 스크린샷 저장 (0=끔). 시각 검증용."),
+		ECVF_Cheat);
+
+	/**
+	 *  스크린샷에 화면공간 UI 를 포함할지 (#100).
+	 *
+	 *  기본 0 은 렌더 검증(#97)용이다 — HUD 가 화면을 가리면 색·밝기 판정을 방해한다.
+	 *  1 로 켜면 HUD 를 포함해 찍는다. 화면공간 위젯은 이걸 안 켜면 PNG 에 아예 안 나온다
+	 *  (월드스페이스 위젯인 보스 체력바는 0 에서도 찍히므로, 안 나오는 이유를 오해하기 쉽다).
+	 */
+	static TAutoConsoleVariable<int32> CVarDebugShotUI(
+		TEXT("re.Debug.ScreenshotUI"),
+		0,
+		TEXT("스크린샷에 화면공간 UI 포함 (0=제외). UI 검증용."),
+		ECVF_Cheat);
+
 	/** 코어(구체) 반경(cm). 탄 지름 50, HitRadius 60 보다 커야 폭발로 읽힌다. */
 	constexpr float ExplosionCoreRadiusStart = 20.f;
 	constexpr float ExplosionCoreRadiusEnd   = 120.f;
@@ -79,6 +114,24 @@ void UREExplosionRenderProcessor::Execute(FMassEntityManager& EntityManager, FMa
 	// 전량 버려진다.
 	const TArray<REExplosionFx::FLiveExplosion>& Live =
 		REExplosionFx::PruneAndGetLive(World->GetTimeSeconds());
+
+	// 시각 검증용 스크린샷 — 지정한 실행 횟수에서 정확히 한 번 (#97).
+	// ISM 확인보다 **먼저** 둔다. 뒤에 두면 통이 하나라도 없는 월드에서 카운터가 아예
+	// 안 돌아 요청 시점이 오지 않는다 — 원래 이 훅이 탄환 프로세서에서 겪던 것과 같은 함정이다.
+	{
+		const int32 ShotAt = CVarDebugShotFrame.GetValueOnGameThread();
+		static int32 ShotTick = 0;
+		++ShotTick;
+		if (ShotAt > 0 && ShotTick == ShotAt)
+		{
+			// 콘솔 HighResShot 은 -game 뷰포트에서 조용히 무시됐다(로그도 PNG도 안 남음).
+			// 직접 요청이 확실하다 — 산출물은 Saved/Screenshots/ 아래.
+			const bool bShowUI = CVarDebugShotUI.GetValueOnGameThread() != 0;
+			FScreenshotRequest::RequestScreenshot(bShowUI);
+			UE_LOG(LogREBullet, Log, TEXT("[RE] DebugScreenshot: 요청 (tick=%d explosions=%d ui=%d)"),
+				ShotTick, Live.Num(), bShowUI ? 1 : 0);
+		}
+	}
 
 	UREBulletRenderSubsystem* RS = World->GetSubsystem<UREBulletRenderSubsystem>();
 	UInstancedStaticMeshComponent* CoreISM = RS ? RS->GetExplosionCoreISM() : nullptr;

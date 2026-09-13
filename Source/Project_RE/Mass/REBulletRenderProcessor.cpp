@@ -9,42 +9,10 @@
 #include "Mass/EntityFragments.h"  // FTransformFragment
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/World.h"
-#include "UnrealClient.h"   // FScreenshotRequest — 시각 검증 (#97)
 #include "ProfilingDebugging/CsvProfiler.h"
 #include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 CSV_DECLARE_CATEGORY_EXTERN(REBullet);  // 정의는 REBulletSimProcessor.cpp
-
-namespace
-{
-	/**
-	 *  N>0 이면 이 프로세서의 N번째 실행에서 화면을 PNG로 저장한다 (0=끔).
-	 *
-	 *  탄막의 시각 결과(색 교차가 읽히는지, 밝기가 블룸으로 씻기는지)는 수치 게이트로
-	 *  판정할 수 없다. 이 CVar가 없으면 매번 사람이 눈으로 봐야 하고, 그 왕복이 렌더
-	 *  작업의 실제 병목이었다. 산출물: Saved/Screenshots/ (#97)
-	 *
-	 *  렌더 프로세서는 Standalone|Client 에서만 도므로 데디서버에는 영향이 없다.
-	 */
-	static TAutoConsoleVariable<int32> CVarDebugShotFrame(
-		TEXT("re.Debug.ScreenshotFrame"),
-		0,
-		TEXT("N번째 렌더 프로세서 실행에서 스크린샷 저장 (0=끔). 시각 검증용."),
-		ECVF_Cheat);
-
-	/**
-	 *  스크린샷에 화면공간 UI 를 포함할지 (#100).
-	 *
-	 *  기본 0 은 탄막 렌더 검증(#97)용이다 — HUD 가 화면을 가리면 탄 색·밝기 판정을 방해한다.
-	 *  1 로 켜면 HUD 를 포함해 찍는다. 화면공간 위젯은 이걸 안 켜면 PNG 에 아예 안 나온다
-	 *  (월드스페이스 위젯인 보스 체력바는 0 에서도 찍히므로, 안 나오는 이유를 오해하기 쉽다).
-	 */
-	static TAutoConsoleVariable<int32> CVarDebugShotUI(
-		TEXT("re.Debug.ScreenshotUI"),
-		0,
-		TEXT("스크린샷에 화면공간 UI 포함 (0=제외). UI 검증용."),
-		ECVF_Cheat);
-}
 
 UREBulletRenderProcessor::UREBulletRenderProcessor()
 	: EntityQuery(*this)
@@ -121,22 +89,6 @@ void UREBulletRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassE
 		ISM->SetCustomData(0, M - 1, Cd, /*bMarkRenderStateDirty=*/false);
 		ISM->BatchUpdateInstancesTransforms(0, Xf, /*bWorldSpace=*/true,
 			/*bMarkRenderStateDirty=*/true, /*bTeleport=*/true);
-	}
-
-	// 시각 검증용 스크린샷 — 지정한 실행 횟수에서 정확히 한 번 (#97).
-	{
-		const int32 ShotAt = CVarDebugShotFrame.GetValueOnGameThread();
-		static int32 ShotTick = 0;
-		++ShotTick;
-		if (ShotAt > 0 && ShotTick == ShotAt)
-		{
-			// 콘솔 HighResShot 은 -game 뷰포트에서 조용히 무시됐다(로그도 PNG도 안 남음).
-			// 직접 요청이 확실하다 — 산출물은 Saved/Screenshots/ 아래.
-			const bool bShowUI = CVarDebugShotUI.GetValueOnGameThread() != 0;
-			FScreenshotRequest::RequestScreenshot(bShowUI);
-			UE_LOG(LogREBullet, Log, TEXT("[RE] DebugScreenshot: 요청 (tick=%d live=%d ui=%d)"),
-				ShotTick, M, bShowUI ? 1 : 0);
-		}
 	}
 
 	// 프로브: 인스턴스 수 == live 탄환 수 추종 확인 (매 30틱 1회, 로그 과다 방지).
