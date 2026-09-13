@@ -57,6 +57,11 @@ namespace
 	constexpr float ExplosionRingRadiusStart = 40.f;
 	constexpr float ExplosionRingRadiusEnd   = 220.f;
 
+	/** 연기 대역(구체) 반경(cm) (#151). 시작은 코어(20)보다 크되 링(40)보다 작게 —
+	 *  스폰 순간 코어를 삼키지 않는다. 끝은 링(220)보다 크게 — 마지막까지 남는 층이다. */
+	constexpr float ExplosionSmokeRadiusStart = 30.f;
+	constexpr float ExplosionSmokeRadiusEnd   = 260.f;
+
 	/** /Engine/BasicShapes/Plane 은 100x100 이라 반경 50. 스케일 = 반경/50.
 	 *  (마커 쪽 CylinderBaseRadius 와 같은 값이지만 이름을 다르게 둔다 — 익명
 	 *  네임스페이스 동명 상수가 유니티 빌드에서 충돌한 전례가 있다.) */
@@ -65,7 +70,8 @@ namespace
 	/** 링 Z 스케일. **1.0 미만으로 두지 말 것** — XY 를 키운 상태에서 Z 를 낮추면
 	 *  인스턴스가 화면에서 통째로 사라진다(마커에서 실RHI 스크린샷 이진탐색으로 확인:
 	 *  0.02/0.15/0.4 전부 무렌더, 등방 2.0 은 정상. ISM 극단 비등방 스케일의 컬링/
-	 *  바운즈 이슈로 추정, 엔진 레벨·원인 미상 — REArcRenderProcessor.cpp 참조). */
+	 *  바운즈 이슈로 추정, 엔진 레벨·원인 미상 — REArcRenderProcessor.cpp 참조).
+	 *  코어와 연기는 등방 구체라 이 함정에 걸리지 않는다. */
 	constexpr float ExplosionRingZScale = 1.0f;
 
 	/** 인스턴스 수를 목표에 맞춘다. 꼬리에서 add/remove 하므로 다른 인덱스가 안 밀린다. */
@@ -134,9 +140,10 @@ void UREExplosionRenderProcessor::Execute(FMassEntityManager& EntityManager, FMa
 	}
 
 	UREBulletRenderSubsystem* RS = World->GetSubsystem<UREBulletRenderSubsystem>();
-	UInstancedStaticMeshComponent* CoreISM = RS ? RS->GetExplosionCoreISM() : nullptr;
-	UInstancedStaticMeshComponent* RingISM = RS ? RS->GetExplosionRingISM() : nullptr;
-	if (!CoreISM || !RingISM)
+	UInstancedStaticMeshComponent* CoreISM  = RS ? RS->GetExplosionCoreISM()  : nullptr;
+	UInstancedStaticMeshComponent* RingISM  = RS ? RS->GetExplosionRingISM()  : nullptr;
+	UInstancedStaticMeshComponent* SmokeISM = RS ? RS->GetExplosionSmokeISM() : nullptr;
+	if (!CoreISM || !RingISM || !SmokeISM)
 	{
 		return;
 	}
@@ -144,15 +151,18 @@ void UREExplosionRenderProcessor::Execute(FMassEntityManager& EntityManager, FMa
 	const int32 M = Live.Num();
 	TArray<FTransform> CoreXf;
 	TArray<FTransform> RingXf;
+	TArray<FTransform> SmokeXf;
 	TArray<float> Cd;
 	CoreXf.Reserve(M);
 	RingXf.Reserve(M);
+	SmokeXf.Reserve(M);
 	Cd.Reserve(M);
 
 	for (const REExplosionFx::FLiveExplosion& E : Live)
 	{
-		const float CoreR = FMath::Lerp(ExplosionCoreRadiusStart, ExplosionCoreRadiusEnd, E.Progress);
-		const float RingR = FMath::Lerp(ExplosionRingRadiusStart, ExplosionRingRadiusEnd, E.Progress);
+		const float CoreR  = FMath::Lerp(ExplosionCoreRadiusStart,  ExplosionCoreRadiusEnd,  E.Progress);
+		const float RingR  = FMath::Lerp(ExplosionRingRadiusStart,  ExplosionRingRadiusEnd,  E.Progress);
+		const float SmokeR = FMath::Lerp(ExplosionSmokeRadiusStart, ExplosionSmokeRadiusEnd, E.Progress);
 
 		// 구체는 등방 스케일이고 회전이 의미 없다. 카메라가 월드 고정(pitch -50 절대)이라
 		// 빌보드 갱신도 필요 없다.
@@ -165,16 +175,23 @@ void UREExplosionRenderProcessor::Execute(FMassEntityManager& EntityManager, FMa
 		RingXf.Add(FTransform(FRotator::ZeroRotator, E.Loc,
 			FVector(RingS, RingS, ExplosionRingZScale)));
 
+		// 연기도 등방 구체라 링과 달리 Z 스케일 함정에 걸리지 않는다 (#151).
+		const float SmokeS = SmokeR / REBulletGeometry::EngineSphereRadius;
+		SmokeXf.Add(FTransform(FRotator::ZeroRotator, E.Loc, FVector(SmokeS)));
+
 		Cd.Add(E.Progress);
 	}
 
-	SyncExplosionISM(CoreISM, CoreXf);
-	SyncExplosionISM(RingISM, RingXf);
+	SyncExplosionISM(CoreISM,  CoreXf);
+	SyncExplosionISM(RingISM,  RingXf);
+	SyncExplosionISM(SmokeISM, SmokeXf);
 
 	// 인스턴스 수를 맞춘 뒤라야 SetCustomData 의 인덱스 범위가 유효하다.
+	// 세 층이 **같은** 진행도를 받고 각자 다르게 해석한다 — 커스텀데이터 슬롯은 1개다.
 	if (M > 0)
 	{
 		CoreISM->SetCustomData(0, M - 1, Cd, /*bMarkRenderStateDirty=*/true);
 		RingISM->SetCustomData(0, M - 1, Cd, /*bMarkRenderStateDirty=*/true);
+		SmokeISM->SetCustomData(0, M - 1, Cd, /*bMarkRenderStateDirty=*/true);
 	}
 }

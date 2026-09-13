@@ -7,10 +7,11 @@
 #include "REExplosionRenderProcessor.generated.h"
 
 /**
- *  폭발 ISM 동기 (#149).
+ *  폭발 ISM 동기 (#149, #151).
  *
- *  REExplosionFx 의 살아있는 목록을 두 ISM(코어 구체 / 수평 링)에 프레임당 한 번
- *  배치 반영한다. 폭발 1개 = 인스턴스 2개이므로 드로우콜이 동시 폭발 개수와 무관하다.
+ *  REExplosionFx 의 살아있는 목록을 세 ISM(코어 구체 / 수평 링 / 연기 구체)에
+ *  프레임당 한 번 배치 반영한다. 폭발 1개 = 인스턴스 3개이므로 드로우콜이 동시 폭발
+ *  개수와 무관하다.
  *
  *  **엔티티를 읽지 않는다 — 쿼리가 없다.** UMassProcessor 를 쓰는 이유는 두 가지다:
  *  (1) ExecutionFlags 로 데디서버 제외가 선언적으로 되고, (2) bRequiresGameThreadExecution
