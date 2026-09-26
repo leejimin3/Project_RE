@@ -53,8 +53,12 @@ public:
 	/** 대쉬 어빌리티가 읽을 목표 방향(로컬이 계산해 서버로 전달한 값). */
 	FVector GetPendingDashDir() const { return PendingDashDir; }
 
-	/** 생존 여부 (#85 보스 타깃 선택). bIsDead는 서버 전용이라 서버에서만 의미 있다. */
-	bool IsAlive() const { return !bIsDead; }
+	/**
+	 *  생존 여부 (#85). 복제되는 Health 로 판정한다 — 서버와 클라 양쪽에서 같은 답이 나와야 한다.
+	 *  전에는 서버 전용 bIsDead 를 봐서 클라에서는 항상 true 였다. 클라 히트 판정(#98)이
+	 *  이걸 쓰므로, 클라 화면에서 시체가 계속 탄을 막고 폭발을 띄웠다(서버에서는 통과).
+	 */
+	bool IsAlive() const { return Health > 0.f; }
 
 	/** 현재/최대 체력 (#100 HUD). Health 는 복제되므로 클라에서도 읽을 수 있다. */
 	float GetHealth() const { return Health; }
@@ -204,7 +208,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stats")
 	float MaxHealth = 100.f;
 
-	/** 사망 여부. 서버 전용 — 클라 시각처리는 스코프 밖이라 비복제. (AREBossCharacter 동일 패턴) */
+	/** 사망 처리 1회 가드. 서버 전용·비복제. 생존 판정은 IsAlive()(복제 Health)를 쓴다. */
 	bool bIsDead = false;
 
 	/** 탑뷰 카메라 붐 (절대 하향 고정) */
