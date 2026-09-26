@@ -26,6 +26,12 @@ public:
 	 */
 	void EndGame(bool bVictory);
 
+	/**
+	 *  보스 스폰 위치. Actor 탄환 비교군(REActorBulletSpawner)이 같은 원점에서 쏴야
+	 *  측정이 비교 가능하므로 공유한다 — 근거는 BeginPlay 의 스폰 주석.
+	 */
+	static const FVector BossSpawnLocation;
+
 	/** 승패 확정 여부 — 게임오버 후 잔여 발사 RPC 무시용 (REPlayerController가 조회). */
 	bool IsGameOver() const { return bGameOver; }
 

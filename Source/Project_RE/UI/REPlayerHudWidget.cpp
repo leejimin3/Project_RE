@@ -19,6 +19,7 @@
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
 #include "Abilities/REGA_Dash.h"
+#include "Abilities/REGE_DashCooldown.h"
 #include "Mass/REBulletRenderSubsystem.h"
 #include "Mass/REBulletPattern.h"
 #include "Core/REBossCharacter.h"
@@ -41,9 +42,6 @@ namespace
 		1,
 		TEXT("HUD 의 현재 보스 패턴 이름 표시 (0=끔)."),
 		ECVF_Cheat);
-
-	/** 대쉬 쿨다운 길이. REGE_DashCooldown 의 DurationMagnitude 와 같아야 한다. */
-	constexpr float DashCooldownSec = 2.0f;
 
 	const FLinearColor ColorHealth(0.90f, 0.25f, 0.25f, 1.f);
 	const FLinearColor ColorDashReady(0.35f, 0.75f, 1.00f, 1.f);
@@ -239,7 +237,7 @@ void UREPlayerHudWidget::RefreshDash()
 		return;
 	}
 
-	DashBar->SetPercent(1.f - FMath::Clamp(Remaining / DashCooldownSec, 0.f, 1.f));
+	DashBar->SetPercent(1.f - FMath::Clamp(Remaining / UREGE_DashCooldown::CooldownSec, 0.f, 1.f));
 	DashBar->SetFillColorAndOpacity(ColorDashCharging);
 	DashText->SetText(FText::FromString(FString::Printf(TEXT("DASH  %.1fs"), Remaining)));
 }

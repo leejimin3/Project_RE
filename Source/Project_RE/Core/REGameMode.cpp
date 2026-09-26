@@ -34,6 +34,8 @@ namespace
 		ECVF_Default);
 }
 
+const FVector AREGameMode::BossSpawnLocation(0.f, 0.f, 90.f);
+
 AREGameMode::AREGameMode()
 {
 	DefaultPawnClass = ARECharacterBase::StaticClass();
@@ -67,11 +69,10 @@ void AREGameMode::BeginPlay()
 	//      겹치면 스폰 즉시 피격으로 프레임 3에 즉사 DEFEAT (#54). 보스는 여전히 플레이어
 	//      기준 +X 600 이라 이격 거리와 상대 배치는 예전과 같다(대쉬·이동 프로브 지오메트리 불변).
 	//      탄속 300×수명 3s = 사거리 900 안쪽이라 위협은 유지, 도달까지 ~2s 회피 여유.
-	//      REActorBulletSpawner::SpawnOrigin(측정 비교군)과 반드시 동일 좌표 유지.
 	FActorSpawnParameters BossSpawnParams;
 	BossSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	if (AREBossCharacter* Boss = World->SpawnActor<AREBossCharacter>(
-			AREBossCharacter::StaticClass(), FVector(0.f, 0.f, 90.f), FRotator::ZeroRotator, BossSpawnParams))
+			AREBossCharacter::StaticClass(), BossSpawnLocation, FRotator::ZeroRotator, BossSpawnParams))
 	{
 		// #64: 발사 주체를 Boss로 이관. 발사 시작은 클라 준비 후 (#84) — 여기서 켜지 않는다.
 		DemoBoss = Boss;

@@ -2,6 +2,7 @@
 
 #include "REActorBulletSpawner.h"
 #include "REBulletActor.h"
+#include "REGameMode.h"                  // BossSpawnLocation — Mass 와 같은 원점 (Boss는 움직이지 않는다)
 #include "REBulletPatternGenerator.h"   // Mass와 공유하는 순수 함수 — 읽기 전용 참조 (복붙 금지)
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/World.h"
@@ -21,9 +22,6 @@ namespace
 
 	/** Mass 데모 발사 주기 (REGameMode.cpp:67 DemoFireTimer). */
 	constexpr float ActorFireIntervalSec = 0.1f;
-
-	/** Mass 스폰 원점 = Boss 스폰 위치 (REGameMode.cpp BeginPlay). Boss는 움직이지 않는다. */
-	const FVector SpawnOrigin(0.f, 0.f, 90.f);
 
 	/** Boss의 SpiralRotationStepDeg (REBossCharacter.h:58). */
 	constexpr float RotationStepDeg = 15.f;
@@ -92,7 +90,7 @@ void UREActorBulletSpawner::Fire()
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	for (const FBulletSpawnParams& P : REBulletPattern::GenerateSpiral(SpawnOrigin, SP))
+	for (const FBulletSpawnParams& P : REBulletPattern::GenerateSpiral(AREGameMode::BossSpawnLocation, SP))
 	{
 		if (AREBulletActor* Bullet = World->SpawnActor<AREBulletActor>(
 				AREBulletActor::StaticClass(), P.Location, FRotator::ZeroRotator, SpawnParams))
