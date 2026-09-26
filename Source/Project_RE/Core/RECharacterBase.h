@@ -85,7 +85,12 @@ public:
 	void ClearMoveTarget();
 
 	bool HasMoveTarget() const { return bHasMoveTarget; }
-	FVector GetMoveTarget() const { return MoveTarget; }
+
+	/**
+	 *  목표 방향으로 이동 입력을 넣는다 — 서버·오너 클라 공용 (#112/#126). 목표가 없거나
+	 *  목표 근처면 아무것도 안 한다. 매 틱 REPlayerController::PlayerTick 이 부른다.
+	 */
+	void AddMoveTargetInput();
 
 	/**
 	 *  전 클라 발사 모션 재생 (M4 #74). 코스메틱 전용 — 판정·데미지·rate limit과 무관.

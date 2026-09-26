@@ -513,6 +513,9 @@ private:
 	/** idle 루프 재생. PlayAnimation이 single-node 모드 전환까지 겸한다. */
 	void PlayIdle();
 
+	/** 램프 진행 중인 지금 외관 (LookFrom → LookTo 를 LookAlpha 로 보간). */
+	FBossLook CurrentLook() const;
+
 	FBossLook LookFrom;
 	FBossLook LookTo;
 	float LookAlpha = 1.f;                                  // 1 = 램프 종료(틱 조기 반환)

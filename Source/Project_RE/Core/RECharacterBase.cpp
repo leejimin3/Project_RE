@@ -81,6 +81,12 @@ static TAutoConsoleVariable<float> CVarFireFxSec(
 	TEXT("발사 빔/섬광 노출 시간(s). 0 이하 = 기본값. 스크린샷 검증용."),
 	ECVF_Cheat);
 
+/**
+ *  이동 입력을 끊는 목표 근접 반경 (#112). 서버가 bHasMoveTarget 을 내리기까지의
+ *  공백에 도착 지점에서 좌우로 떠는 것을 막는다.
+ */
+static constexpr float MoveInputStopRadius = 60.f;
+
 ARECharacterBase::ARECharacterBase()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -432,6 +438,21 @@ void ARECharacterBase::SetMoveTarget(const FVector& InTarget)
 	}
 	MoveTarget = InTarget;
 	bHasMoveTarget = true;
+}
+
+void ARECharacterBase::AddMoveTargetInput()
+{
+	if (!bHasMoveTarget)
+	{
+		return;
+	}
+	const FVector To = MoveTarget - GetActorLocation();
+	const FVector Dir(To.X, To.Y, 0.f);
+	// 목표 근처에서는 입력을 끊는다. 안 그러면 도착 지점에서 좌우로 떤다.
+	if (Dir.SizeSquared() > FMath::Square(MoveInputStopRadius))
+	{
+		AddMovementInput(Dir.GetSafeNormal());
+	}
 }
 
 void ARECharacterBase::ClearMoveTarget()

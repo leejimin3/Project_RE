@@ -8,7 +8,6 @@
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformMisc.h"
 #include "REStatsSettings.h"
-#include "GameFramework/PawnMovementComponent.h"
 #include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 // #46 측정 전용: 1이면 EndGame을 무력화 → 승패 확정이 보스 DemoFireTimer를 끄지 못하게 막는다.
@@ -32,6 +31,12 @@ namespace
 		1,
 		TEXT("협동 시작에 필요한 준비 완료 플레이어 수. 기본 1(싱글 동작 유지)."),
 		ECVF_Default);
+
+	/** 0 이하 입력을 1 로 올린다 — 인원이 0 이면 게이트가 즉시 열린다. */
+	int32 GetExpectedPlayers()
+	{
+		return FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
+	}
 }
 
 const FVector AREGameMode::BossSpawnLocation(0.f, 0.f, 90.f);
@@ -136,7 +141,7 @@ void AREGameMode::NotifyPlayerReady(APlayerController* PC)
 	{
 		ReadyPlayers.Add(PC, &bAlreadyInSet);
 	}
-	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
+	const int32 Expected = GetExpectedPlayers();
 	if (PC && !bAlreadyInSet)
 	{
 		UE_LOG(LogRE, Log, TEXT("[RE] Player ready %d/%d"), ReadyPlayers.Num(), Expected);
@@ -160,12 +165,8 @@ void AREGameMode::NotifyPlayerDied(APlayerController* PC)
 	if (AREPlayerController* REPC = Cast<AREPlayerController>(PC))
 	{
 		REPC->Client_NotifyDeath();
-	}
-	// 서버측: 마지막 이동 명령이 남아 시체가 계속 미끄러지는 것을 막는다.
-	PC->StopMovement();                                        // 우클릭 이동 패스팔로잉 중단
-	if (UPawnMovementComponent* Move = PC->GetPawn() ? PC->GetPawn()->GetMovementComponent() : nullptr)
-	{
-		Move->StopMovementImmediately();                       // 잔여 속도 제거
+		// 서버측: 마지막 이동 명령이 남아 시체가 계속 미끄러지는 것을 막는다.
+		REPC->StopPawnImmediately();
 	}
 
 	UE_LOG(LogRE, Log, TEXT("[RE] Player died %d/%d"), DeadPlayers.Num(), ReadyPlayers.Num());
@@ -203,7 +204,7 @@ void AREGameMode::Logout(AController* Exiting)
 void AREGameMode::NotifyProbeComplete()
 {
 	++CompletedProbes;
-	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
+	const int32 Expected = GetExpectedPlayers();
 	UE_LOG(LogRE, Log, TEXT("[RE] Probe complete %d/%d"), CompletedProbes, Expected);
 
 	if (CompletedProbes >= Expected)
@@ -220,7 +221,7 @@ APawn* AREGameMode::SpawnDefaultPawnAtTransform_Implementation(AController* NewP
 	// 맵에 PlayerStart가 하나뿐이라 N인이면 같은 자리에 겹친다 — 인덱스별로 흩는다 (#85).
 	// +Y인 이유(#56): 보스가 플레이어 기준 +X 600에 있어 +X로 흩으면 플레이어를 탄막 레인에 밀어넣는다.
 	// 1인이면 Half=0, SpawnedPawnCount=0 → 오프셋이 정확히 0이라 싱글 스폰 좌표가 불변이다.
-	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
+	const int32 Expected = GetExpectedPlayers();
 	const float Half = (Expected - 1) * 0.5f;
 	const FVector Offset(0.f, (SpawnedPawnCount - Half) * SpawnSpacing, 0.f);
 	++SpawnedPawnCount;
@@ -236,7 +237,7 @@ APawn* AREGameMode::SpawnDefaultPawnAtTransform_Implementation(AController* NewP
 
 void AREGameMode::TryStartBossFiring()
 {
-	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
+	const int32 Expected = GetExpectedPlayers();
 	if (bFiringStarted || !DemoBoss || ReadyPlayers.Num() < Expected)
 	{
 		return;

@@ -44,6 +44,9 @@ public:
 	UFUNCTION(Client, Reliable)
 	void Client_NotifyDeath();
 
+	/** 폰 즉시 정지 — 패스팔로잉 중단 + 잔여 속도 제거. 서버에서 발사·사망 시 부른다. */
+	void StopPawnImmediately();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
@@ -96,6 +99,9 @@ protected:
 	UInputAction* CheatPanelAction;
 
 private:
+	/** 커서 아래 지면 지점. 못 찾으면 false. 커서/카메라는 로컬 전용이라 로컬에서만 의미 있다. */
+	bool GetCursorGroundPoint(FVector& OutPoint) const;
+
 	/** 폰이 살아있는가. 서버 RPC 가드용 — 클라 DisableInput은 지연·조작에 뚫린다 (#85). */
 	bool IsPawnAlive() const;
 

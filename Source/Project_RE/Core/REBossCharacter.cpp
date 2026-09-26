@@ -163,11 +163,16 @@ void AREBossCharacter::Tick(float DeltaSeconds)
 	}
 
 	LookAlpha = FMath::Min(1.f, LookAlpha + DeltaSeconds / LookIntroSec);
+	ApplyLook(CurrentLook());
+}
+
+AREBossCharacter::FBossLook AREBossCharacter::CurrentLook() const
+{
 	FBossLook Now;
 	Now.Snow = FMath::Lerp(LookFrom.Snow, LookTo.Snow, LookAlpha);
 	Now.Lava = FMath::Lerp(LookFrom.Lava, LookTo.Lava, LookAlpha);
 	Now.Emis = FMath::Lerp(LookFrom.Emis, LookTo.Emis, LookAlpha);
-	ApplyLook(Now);
+	return Now;
 }
 
 void AREBossCharacter::PlayIdle()
@@ -200,13 +205,8 @@ void AREBossCharacter::StartPatternLook(EBulletPattern Pattern)
 
 	// 진행 중이던 램프의 현재 값을 시작점으로 굳힌다. 페이즈가 램프보다 빨리 바뀌어도
 	// 색이 이전 목표로 튀지 않고 보이던 자리에서 이어진다.
-	FBossLook Now;
-	Now.Snow = FMath::Lerp(LookFrom.Snow, LookTo.Snow, LookAlpha);
-	Now.Lava = FMath::Lerp(LookFrom.Lava, LookTo.Lava, LookAlpha);
-	Now.Emis = FMath::Lerp(LookFrom.Emis, LookTo.Emis, LookAlpha);
-
+	LookFrom = CurrentLook();
 	LookPattern = Pattern;
-	LookFrom = Now;
 	LookTo = LookForPattern(Pattern);
 	LookAlpha = 0.f;
 }

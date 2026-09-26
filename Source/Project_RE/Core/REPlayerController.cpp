@@ -61,12 +61,6 @@ namespace
 	 *  패널은 원래도 키를 눌러야 뜨지만, 촬영 중 실수로 한 번 누르면 그대로 찍힌다.
 	 */
 	/**
-	 *  클라 이동 입력을 끊는 목표 근접 반경 (#112). 서버가 bHasMoveTarget 을 내리기까지의
-	 *  공백에 도착 지점에서 좌우로 떠는 것을 막는다.
-	 */
-	constexpr float MoveInputStopRadius = 60.f;
-
-	/**
 	 *  이동 재요청을 허용하는 최소 목표 변화량 (#126). 홀드 중 커서가 이만큼 움직여야 다시 보낸다.
 	 *  ponytail: 드래그가 빠르면 이 값을 넘겨 재요청이 나가고 그 순간 속도가 한 번 리셋된다.
 	 *  완전히 없애려면 SimpleMoveToLocation 대신 PathFollowingComponent::RequestMove 를
@@ -208,16 +202,8 @@ void AREPlayerController::PlayerTick(float DeltaTime)
 			// ABP_Unarmed 의 ShouldMove 는 GroundSpeed 와 함께 GetCurrentAcceleration() != 0 을 보므로,
 			// 입력이 없으면 속도가 600 이어도 Idle 상태에 머물러 캐릭터가 포즈 고정인 채 미끄러진다.
 			//
-			// 클라(아래 :215)가 이미 같은 입력을 넣고 있었다 — 서버만 빠져 있었다.
-			if (RC->HasMoveTarget())
-			{
-				const FVector To = RC->GetMoveTarget() - RC->GetActorLocation();
-				const FVector Dir = FVector(To.X, To.Y, 0.f);
-				if (Dir.SizeSquared() > FMath::Square(MoveInputStopRadius))
-				{
-					RC->AddMovementInput(Dir.GetSafeNormal());
-				}
-			}
+			// 클라(아래)가 이미 같은 입력을 넣고 있었다 — 서버만 빠져 있었다.
+			RC->AddMoveTargetInput();
 
 			if (RC->HasMoveTarget())
 			{
@@ -260,17 +246,7 @@ void AREPlayerController::PlayerTick(float DeltaTime)
 	// 없어 실질적으로 항상 직선이다.
 	if (ARECharacterBase* RC = Cast<ARECharacterBase>(Char))
 	{
-		if (RC->HasMoveTarget())
-		{
-			const FVector To = RC->GetMoveTarget() - Char->GetActorLocation();
-			const FVector Dir = FVector(To.X, To.Y, 0.f);
-			// 목표 근처에서는 입력을 끊는다. 안 그러면 도착 지점에서 좌우로 떤다.
-			// 서버가 bHasMoveTarget 을 내릴 때까지의 공백을 여기서 메운다.
-			if (Dir.SizeSquared() > FMath::Square(MoveInputStopRadius))
-			{
-				Char->AddMovementInput(Dir.GetSafeNormal());
-			}
-		}
+		RC->AddMoveTargetInput();
 	}
 
 	// 발사 직후 락 구간에는 커서 회전을 매 틱 다시 세운다.
@@ -307,8 +283,8 @@ void AREPlayerController::PlayerTick(float DeltaTime)
 void AREPlayerController::OnClickMove(const FInputActionValue& Value)
 {
 	// 클릭 검출은 로컬(커서/카메라는 로컬 전용). 해석된 월드 좌표만 서버로.
-	FHitResult Hit;
-	if (!GetHitResultUnderCursor(ECC_Visibility, false, Hit) || !Hit.bBlockingHit)
+	FVector Cursor;
+	if (!GetCursorGroundPoint(Cursor))
 	{
 		return;
 	}
@@ -319,30 +295,50 @@ void AREPlayerController::OnClickMove(const FInputActionValue& Value)
 	// 이동 중일 때만 억제한다. 도착한 뒤 같은 지점을 다시 클릭하는 경로까지 막으면 안 된다.
 	const ARECharacterBase* RC = Cast<ARECharacterBase>(GetPawn());
 	if (RC && RC->HasMoveTarget()
-		&& FVector::DistSquared2D(Hit.ImpactPoint, LastMoveRequest) < FMath::Square(MoveRequestMinDelta))
+		&& FVector::DistSquared2D(Cursor, LastMoveRequest) < FMath::Square(MoveRequestMinDelta))
 	{
 		return;
 	}
 
-	LastMoveRequest = Hit.ImpactPoint;
-	Server_RequestMove(Hit.ImpactPoint);
+	LastMoveRequest = Cursor;
+	Server_RequestMove(Cursor);
 }
 
 void AREPlayerController::OnDash(const FInputActionValue& Value)
 {
 	// 커서 아래 지점 방향을 로컬에서 계산(폰→커서 XY). 서버로 방향만 전달.
 	APawn* P = GetPawn();
-	FHitResult Hit;
-	if (!P || !GetHitResultUnderCursor(ECC_Visibility, false, Hit) || !Hit.bBlockingHit)
+	FVector Cursor;
+	if (!P || !GetCursorGroundPoint(Cursor))
 	{
 		return;
 	}
-	const FVector Dir = (Hit.ImpactPoint - P->GetActorLocation()).GetSafeNormal2D();
+	const FVector Dir = (Cursor - P->GetActorLocation()).GetSafeNormal2D();
 	if (!Dir.IsNearlyZero())
 	{
 		// 입력 시각 기준점 — 서버 [Dash] activate ok / 클라 [Dash] anim 로그와의 타임스탬프 차가 곧 입력→대쉬 지연(#75 측정).
 		UE_LOG(LogRE, Log, TEXT("[Dash] input sent (local)"));
 		Server_Dash(Dir);
+	}
+}
+
+bool AREPlayerController::GetCursorGroundPoint(FVector& OutPoint) const
+{
+	FHitResult Hit;
+	if (!GetHitResultUnderCursor(ECC_Visibility, false, Hit) || !Hit.bBlockingHit)
+	{
+		return false;
+	}
+	OutPoint = Hit.ImpactPoint;
+	return true;
+}
+
+void AREPlayerController::StopPawnImmediately()
+{
+	StopMovement();                                            // 우클릭 이동 패스팔로잉 중단
+	if (UPawnMovementComponent* Move = GetPawn() ? GetPawn()->GetMovementComponent() : nullptr)
+	{
+		Move->StopMovementImmediately();                       // 잔여 속도 제거
 	}
 }
 
@@ -395,12 +391,12 @@ void AREPlayerController::OnFire(const FInputActionValue& Value)
 	}
 
 	// 커서 방향 계산은 로컬(커서/카메라는 로컬 전용) — 방향만 서버로 (OnDash 동일 패턴).
-	FHitResult Hit;
-	if (!GetHitResultUnderCursor(ECC_Visibility, false, Hit) || !Hit.bBlockingHit)
+	FVector Cursor;
+	if (!GetCursorGroundPoint(Cursor))
 	{
 		return;
 	}
-	const FVector Dir = (Hit.ImpactPoint - P->GetActorLocation()).GetSafeNormal2D();
+	const FVector Dir = (Cursor - P->GetActorLocation()).GetSafeNormal2D();
 	if (Dir.IsNearlyZero())
 	{
 		return;
@@ -562,12 +558,8 @@ void AREPlayerController::Server_RequestFire_Implementation(FVector Dir)
 
 	if (Attack->FireInDirection(Dir2D))
 	{
-		// 발사 성공 시에만 정지+회전 — rate limit에 걸린 스팸 RPC가 이동을 끊지 못하게.
-		StopMovement();                                        // 우클릭 이동 패스팔로잉 중단
-		if (UPawnMovementComponent* Move = P->GetMovementComponent())
-		{
-			Move->StopMovementImmediately();                   // 잔여 속도 제거 (로아 평타 정지)
-		}
+		// 발사 성공 시에만 정지+회전 — rate limit에 걸린 스팸 RPC가 이동을 끊지 못하게 (로아 평타 정지).
+		StopPawnImmediately();
 		// 사격 모션이 끝날 때까지 이동 잠금. 연사 중에는 매 발사가 락을 갱신해 계속 잠긴다.
 		MoveLockUntil = GetWorld()->GetTimeSeconds() + Attack->GetFireLockSec();
 
