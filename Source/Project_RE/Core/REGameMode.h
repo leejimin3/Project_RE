@@ -95,4 +95,10 @@ private:
 
 	/** 준비 신호와 보스 스폰이 모두 끝났으면 발사 시작. 둘의 순서는 보장되지 않는다. */
 	void TryStartBossFiring();
+
+	/** 실제 발사 개시. re.Coop.StartDelay 가 0이면 즉시, 아니면 그 초만큼 뒤 타이머로 불린다. */
+	void StartBossFiring();
+
+	/** re.Coop.StartDelay 유예 타이머. */
+	FTimerHandle StartDelayTimer;
 };
