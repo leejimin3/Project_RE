@@ -11,17 +11,19 @@
 #include "GameFramework/PawnMovementComponent.h"
 #include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
+// #46 측정 전용: 1이면 EndGame을 무력화 → 승패 확정이 보스 DemoFireTimer를 끄지 못하게 막는다.
+// (자동사격이 보스를 ~2.5s에 죽이거나(VICTORY) 정지 플레이어가 탄막에 죽으면(DEFEAT)
+//  발사가 중단돼 Mass 탄환이 목표 수까지 못 차 측정이 무효화됨.)
+// 프로파일링에서만 켠다(scripts/profile.ps1). 기본 0 = 게임 플레이 영향 없음.
+// 보스·HUD 도 읽으므로 extern 이다(Project_RE.h).
+TAutoConsoleVariable<int32> CVarProfilingKeepFiring(
+	TEXT("re.Profiling.KeepFiring"),
+	0,
+	TEXT("측정 전용: 1이면 게임오버를 무시하고 보스 탄막 발사를 계속 유지."),
+	ECVF_Cheat);
+
 namespace
 {
-	// #46 측정 전용: 1이면 EndGame을 무력화 → 승패 확정이 보스 DemoFireTimer를 끄지 못하게 막는다.
-	// (자동사격이 보스를 ~2.5s에 죽이거나(VICTORY) 정지 플레이어가 탄막에 죽으면(DEFEAT)
-	//  발사가 중단돼 Mass 탄환이 목표 수까지 못 차 측정이 무효화됨.)
-	// 프로파일링에서만 켠다(scripts/profile.ps1). 기본 0 = 게임 플레이 영향 없음.
-	static TAutoConsoleVariable<int32> CVarProfilingKeepFiring(
-		TEXT("re.Profiling.KeepFiring"),
-		0,
-		TEXT("측정 전용: 1이면 게임오버를 무시하고 보스 탄막 발사를 계속 유지."),
-		ECVF_Cheat);
 	// #85 협동 인원. ready가 이 수를 채우면 보스 발사 시작(RPG 던전 입장 모델).
 	// ini가 아니라 CVar인 이유: 스테이징 Config는 pak 안에 들어가서 ini면 인원을 바꿀 때마다
 	// 재쿡해야 한다. CVar면 서버 커맨드라인(-ExecCmds)으로 넘길 수 있어 데디 검증이 재쿡 없이 돈다.

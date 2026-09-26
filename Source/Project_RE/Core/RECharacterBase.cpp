@@ -29,7 +29,8 @@
 #include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 // 치트: 1이면 플레이어 무적(TakeDamage 무피해). 데브 전용, 클라 로컬(ECVF_Cheat).
-static TAutoConsoleVariable<int32> CVarPlayerInvincible(
+// 치트 패널·HUD 도 읽으므로 extern 이다(Project_RE.h).
+TAutoConsoleVariable<int32> CVarPlayerInvincible(
 	TEXT("re.Cheat.PlayerInvincible"),
 	0,
 	TEXT("1 = player takes no damage (dev cheat, client-local)"),

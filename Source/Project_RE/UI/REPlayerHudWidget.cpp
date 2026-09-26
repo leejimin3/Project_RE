@@ -23,6 +23,7 @@
 #include "Mass/REBulletPattern.h"
 #include "Core/REBossCharacter.h"
 #include "HAL/IConsoleManager.h"
+#include "Project_RE.h"                              // CVarPlayerInvincible / CVarProfilingKeepFiring
 #include "EngineUtils.h"                                    // TActorIterator
 
 namespace
@@ -50,17 +51,6 @@ namespace
 	const FLinearColor ColorLabel(0.85f, 0.87f, 0.92f, 1.f);
 	/** 치트 줄은 평상시 상태가 아니라는 걸 색으로 먼저 알린다. */
 	const FLinearColor ColorCheat(1.00f, 0.55f, 0.15f, 1.f);
-
-	/**
-	 *  다른 번역 단위에 정의된 CVar 를 이름으로 조회한다. 보스의 KeepFiring 조회와 같은 방식이다 —
-	 *  static TAutoConsoleVariable 은 그 파일 밖에서 심볼로 참조할 수 없다.
-	 *  못 찾으면(등록 전) 꺼진 것으로 본다.
-	 */
-	bool IsCVarOn(const TCHAR* Name)
-	{
-		const IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(Name);
-		return CVar && CVar->GetInt() != 0;
-	}
 
 	UTextBlock* MakeLabel(UWidgetTree* Tree, const TCHAR* Name, int32 Size)
 	{
@@ -342,13 +332,13 @@ void UREPlayerHudWidget::RefreshCheats()
 	// 플레이어 무적. CVar 가 클라 로컬이라 PIE·단독 실행에서만 유효하고 데디에서는 치트
 	// 자체가 안 먹는다(RECharacterBase::TakeDamage 주석) — 여기서 로컬 값을 읽는 것은
 	// 치트의 유효 범위와 정확히 같다.
-	if (IsCVarOn(TEXT("re.Cheat.PlayerInvincible")))
+	if (CVarPlayerInvincible.GetValueOnGameThread() != 0)
 	{
 		On.Add(TEXT("INVINCIBLE"));
 	}
 	// 측정 하네스용. 보스 TakeDamage 를 0 으로 만들어 보스도 같이 무적이 된다 (#46) —
 	// 안 띄우면 "보스가 왜 안 죽지"로 시간을 버린다.
-	if (IsCVarOn(TEXT("re.Profiling.KeepFiring")))
+	if (CVarProfilingKeepFiring.GetValueOnGameThread() != 0)
 	{
 		On.Add(TEXT("BOSS INVULN"));
 	}

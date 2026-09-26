@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "HAL/IConsoleManager.h"
 
 /** Main log category used across the project */
 DECLARE_LOG_CATEGORY_EXTERN(LogProject_RE, Log, All);
@@ -26,6 +27,14 @@ DECLARE_LOG_CATEGORY_EXTERN(LogRE, Log, All);
 DECLARE_LOG_CATEGORY_EXTERN(LogREBullet, Log, All);
 /** 복제·RPC 경로 — Multicast 구현, 서버 RPC, 헤드리스 프로브. */
 DECLARE_LOG_CATEGORY_EXTERN(LogRENet, Log, All);
+
+/**
+ *  여러 파일이 읽는 CVar 는 심볼로 공유한다. 전에는 `FindConsoleVariable(TEXT("..."))` 로
+ *  이름 문자열을 다섯 곳에서 조회했는데, 오타가 나면 nullptr → **조용히 꺼진 것으로** 처리됐다.
+ *  심볼이면 오타가 링크 에러다. 정의는 주석의 파일에 있다.
+ */
+extern TAutoConsoleVariable<int32> CVarProfilingKeepFiring;   // re.Profiling.KeepFiring   — REGameMode.cpp
+extern TAutoConsoleVariable<int32> CVarPlayerInvincible;      // re.Cheat.PlayerInvincible — RECharacterBase.cpp
 
 /**
  *  이 모듈의 **실패 처리 규약** (#141 R-03).

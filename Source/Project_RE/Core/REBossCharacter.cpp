@@ -241,13 +241,12 @@ void AREBossCharacter::BeginPhase()
 	// StartFiring 시점(BeginPlay)엔 ExecCmds가 아직 CVar를 안 세팅했을 수 있어
 	// 여기(타이머 재진입 콜백)에서 매번 조회한다. 첫 페이즈 Spiral 고정이
 	// profiling 시작 오염 창을 닫는다.
-	static IConsoleVariable* KeepFiring = IConsoleManager::Get().FindConsoleVariable(TEXT("re.Profiling.KeepFiring"));
 	// **패턴을 고정했으면 이 우회를 타지 않는다.** 안 그러면 BossPattern 을 뭘로 주든 Spiral 이
 	// 측정된다 — 패턴별 p99 를 낼 수 없었던 이유가 이것이다.
 	// 고정 시에는 페이즈 구조(발사 구간 + Rest)를 그대로 돌린다: 폭풍의 스윕 인덱스처럼
 	// 페이즈 단위로 리셋되는 상태가 있어, 우회하면 그 상태가 눌어붙어 실제 플레이와 다른 것을 잰다.
 	// Rest 프레임이 섞이지만 값이 싸서 p99(상위 1%)에는 사실상 영향이 없다.
-	if (KeepFiring && KeepFiring->GetInt() != 0
+	if (CVarProfilingKeepFiring.GetValueOnGameThread() != 0
 		&& CVarBossPattern.GetValueOnGameThread() < 0)
 	{
 		CurrentPhasePattern = EBulletPattern::Spiral;
@@ -1030,8 +1029,7 @@ float AREBossCharacter::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 {
 	// #46 측정 모드: 플레이어 자동사격(10dmg/0.25s)이 보스를 ~2.5s에 죽인다 →
 	// 발사가 끊겨 Mass 탄환이 목표 수까지 못 찬다. 프로파일링 중에는 보스를 무적으로.
-	static IConsoleVariable* KeepFiring = IConsoleManager::Get().FindConsoleVariable(TEXT("re.Profiling.KeepFiring"));
-	if (KeepFiring && KeepFiring->GetInt() != 0)
+	if (CVarProfilingKeepFiring.GetValueOnGameThread() != 0)
 	{
 		return 0.f;
 	}

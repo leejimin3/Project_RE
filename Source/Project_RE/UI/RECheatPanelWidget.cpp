@@ -12,7 +12,7 @@
 #include "Components/TextBlock.h"
 #include "Styling/CoreStyle.h"
 #include "Styling/SlateTypes.h"
-#include "HAL/IConsoleManager.h"
+#include "Project_RE.h"                              // CVarPlayerInvincible
 
 bool URECheatPanelWidget::Initialize()
 {
@@ -59,8 +59,7 @@ bool URECheatPanelWidget::Initialize()
 	// C++ 생성 UCheckBox는 스타일이 비어 안 보임 → 엔진 기본 체크박스 스타일 주입.
 	InvincibleCheck->SetWidgetStyle(FCoreStyle::Get().GetWidgetStyle<FCheckBoxStyle>("Checkbox"));
 	// 초기 상태 = CVar 현재값.
-	static IConsoleVariable* Inv = IConsoleManager::Get().FindConsoleVariable(TEXT("re.Cheat.PlayerInvincible"));
-	InvincibleCheck->SetIsChecked(Inv && Inv->GetInt() != 0);
+	InvincibleCheck->SetIsChecked(CVarPlayerInvincible.GetValueOnGameThread() != 0);
 	InvincibleCheck->OnCheckStateChanged.AddDynamic(this, &URECheatPanelWidget::OnInvincibleChanged);
 	Row->AddChild(InvincibleCheck);
 
@@ -79,9 +78,5 @@ bool URECheatPanelWidget::Initialize()
 
 void URECheatPanelWidget::OnInvincibleChanged(bool bIsChecked)
 {
-	static IConsoleVariable* Inv = IConsoleManager::Get().FindConsoleVariable(TEXT("re.Cheat.PlayerInvincible"));
-	if (Inv)
-	{
-		Inv->Set(bIsChecked ? 1 : 0);
-	}
+	CVarPlayerInvincible->Set(bIsChecked ? 1 : 0);
 }
