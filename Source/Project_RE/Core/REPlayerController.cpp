@@ -57,10 +57,6 @@ namespace
 namespace
 {
 	/**
-	 *  치트 패널 표시 허용 (#100). 0 이면 토글 키를 눌러도 뜨지 않는다.
-	 *  패널은 원래도 키를 눌러야 뜨지만, 촬영 중 실수로 한 번 누르면 그대로 찍힌다.
-	 */
-	/**
 	 *  이동 재요청을 허용하는 최소 목표 변화량 (#126). 홀드 중 커서가 이만큼 움직여야 다시 보낸다.
 	 *  ponytail: 드래그가 빠르면 이 값을 넘겨 재요청이 나가고 그 순간 속도가 한 번 리셋된다.
 	 *  완전히 없애려면 SimpleMoveToLocation 대신 PathFollowingComponent::RequestMove 를
@@ -68,6 +64,10 @@ namespace
 	 */
 	constexpr float MoveRequestMinDelta = 100.f;
 
+	/**
+	 *  치트 패널 표시 허용 (#100). 0 이면 토글 키를 눌러도 뜨지 않는다.
+	 *  패널은 원래도 키를 눌러야 뜨지만, 촬영 중 실수로 한 번 누르면 그대로 찍힌다.
+	 */
 	static TAutoConsoleVariable<int32> CVarCheatPanel(
 		TEXT("re.Debug.CheatPanel"),
 		1,

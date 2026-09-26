@@ -20,10 +20,14 @@ namespace
 		TEXT("Actor 탄환 동시 유지 목표 수 (0=비활성). Mass 비교군 — 측정 전용."),
 		ECVF_Cheat);
 
-	/** Mass 데모 발사 주기 (REGameMode.cpp:67 DemoFireTimer). */
+	/**
+	 *  발사 주기. M3 측정 당시 Mass 데모 주기(0.1s)를 옮겨 둔 값이다.
+	 *  **현재 보스(ini BossFireInterval 0.15s)와 다르다** — 비교군 수치 재현성을 위해
+	 *  값은 그대로 두고 참조만 바로잡았다. 비교를 다시 잴 때 맞출지 결정하라.
+	 */
 	constexpr float ActorFireIntervalSec = 0.1f;
 
-	/** Boss의 SpiralRotationStepDeg (REBossCharacter.h:58). */
+	/** 링 회전. M3 당시 보스 값(15°). 현재 보스 SpiralRotationStepDeg 는 137.5° 다(#64) — 위와 같은 이유로 그대로 둔다. */
 	constexpr float RotationStepDeg = 15.f;
 }
 

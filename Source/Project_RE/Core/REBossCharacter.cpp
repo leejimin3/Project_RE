@@ -260,7 +260,8 @@ void AREBossCharacter::BeginPhase()
 	// Homing은 백로그 스텁이라 풀에서 제외.
 	// 로테이션 풀은 테이블에서 파생한다 — 손으로 나열하지 않는다 (#141).
 	// static 지역: 첫 호출에 1회 구성. 테이블이 constexpr 이라 결과가 불변이다.
-	// 순서는 테이블 순서(= enum 순서)이고, 이것이 re.Debug.BossPattern 의 인덱스다.
+	// 순서는 테이블 순서(= enum 순서)에서 로테이션 제외 행(Homing)을 뺀 것이고,
+	// 이것이 re.Debug.BossPattern 의 인덱스다 — 그래서 Artillery 가 3 이 아니라 2 다.
 	static const TArray<EBulletPattern> Pool = []()
 	{
 		TArray<EBulletPattern> P;
