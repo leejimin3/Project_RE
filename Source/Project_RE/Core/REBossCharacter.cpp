@@ -3,7 +3,6 @@
 #include "REBossCharacter.h"
 #include "REBulletSpawnSubsystem.h"
 #include "REBulletPatternGenerator.h"
-#include "Net/UnrealNetwork.h"
 #include "REHealthBarComponent.h"
 #include "REGameMode.h"
 #include "RECharacterBase.h"
@@ -66,9 +65,9 @@ AREBossCharacter::AREBossCharacter()
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 
-	// 체력 초기화 — Settings 단일 출처 (M3.5 ③, RECharacterBase 동일 패턴).
-	MaxHealth = GetDefault<UREStatsSettings>()->BossMaxHealth;
-	Health = MaxHealth;
+	// 체력 — Settings 단일 출처 (M3.5 ③, RECharacterBase 와 같은 컴포넌트).
+	HealthComponent = CreateDefaultSubobject<UREHealthComponent>(TEXT("HealthComponent"));
+	HealthComponent->Init(GetDefault<UREStatsSettings>()->BossMaxHealth);
 
 	// HP바 (#29) — 보스 빨강.
 	HealthBar = CreateDefaultSubobject<UREHealthBarComponent>(TEXT("HealthBar"));
@@ -347,7 +346,7 @@ float AREBossCharacter::FireIntervalFor(EBulletPattern P)
 
 void AREBossCharacter::FireCurrentPattern()
 {
-	if (bIsDead)
+	if (!HealthComponent->IsAlive())
 	{
 		return;
 	}
@@ -443,7 +442,7 @@ const APawn* AREBossCharacter::FindNearestLivingPlayerPawn() const
 
 void AREBossCharacter::FireArtillery()
 {
-	if (bIsDead)
+	if (!HealthComponent->IsAlive())
 	{
 		return;
 	}
@@ -1042,12 +1041,9 @@ float AREBossCharacter::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 	}
 
 	const float Applied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
-	Health = FMath::Clamp(Health - Applied, 0.f, MaxHealth);
-	OnRep_Health(); // 서버/싱글 경로 — 복제 OnRep은 원격 클라 전용이라 직접 호출
 
-	if (Health <= 0.f && !bIsDead)
+	if (HealthComponent->ApplyDamage(Applied))
 	{
-		bIsDead = true;
 		UE_LOG(LogRE, Log, TEXT("[RE] Boss died (Health<=0)"));
 		// 월드 부재는 부류 2(스폰된 액터에선 불가능). GM 부재는 부류 1 —
 		// 클라에는 AuthGameMode 가 없는 것이 정상이고, 승리 판정은 서버만 한다.
@@ -1065,16 +1061,3 @@ float AREBossCharacter::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 	return Applied;
 }
 
-void AREBossCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
-{
-	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME(AREBossCharacter, Health);
-}
-
-void AREBossCharacter::OnRep_Health()
-{
-	if (HealthBar)
-	{
-		HealthBar->SetHealthPercent(MaxHealth > 0.f ? Health / MaxHealth : 0.f);
-	}
-}

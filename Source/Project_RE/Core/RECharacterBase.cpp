@@ -96,9 +96,9 @@ ARECharacterBase::ARECharacterBase()
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationRoll = false;
 
-	// 체력 초기화 — Settings 단일 출처 (M3.5 ③).
-	MaxHealth = GetDefault<UREStatsSettings>()->PlayerMaxHealth;
-	Health = MaxHealth;
+	// 체력 — Settings 단일 출처 (M3.5 ③).
+	HealthComponent = CreateDefaultSubobject<UREHealthComponent>(TEXT("HealthComponent"));
+	HealthComponent->Init(GetDefault<UREStatsSettings>()->PlayerMaxHealth);
 
 	// GAS: ASC 부착 — Pawn 소유, 복제 켜고 Mixed 모드(오너 클라만 GE 복제).
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
@@ -395,13 +395,10 @@ float ARECharacterBase::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 	}
 
 	const float Applied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
-	Health = FMath::Clamp(Health - Applied, 0.f, MaxHealth);
-	OnRep_Health(); // 서버/싱글 경로 — 복제 OnRep은 원격 클라 전용이라 직접 호출
 
-	// 패배 판정 — 이미 HasAuthority 가드 안. 사망 후에도 뜬 탄환이 계속 때리므로 bIsDead로 재진입 차단.
-	if (Health <= 0.f && !bIsDead)
+	// 패배 판정 — 이미 HasAuthority 가드 안. 사망 후 재진입은 컴포넌트가 막는다(1회만 true).
+	if (HealthComponent->ApplyDamage(Applied))
 	{
-		bIsDead = true;
 		UE_LOG(LogRE, Log, TEXT("[RE] Player died (Health<=0)"));
 		// 월드 부재는 부류 2(소유된 폰에선 불가능). GM 부재는 부류 1 —
 		// 클라에는 AuthGameMode 가 없는 것이 정상이다.
@@ -423,8 +420,6 @@ float ARECharacterBase::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 void ARECharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME(ARECharacterBase, Health);
-
 	// 이동 목표는 본인만 필요하다 (#112) — 남의 폰 예측에는 쓰지 않는다.
 	DOREPLIFETIME_CONDITION(ARECharacterBase, MoveTarget, COND_AutonomousOnly);
 	DOREPLIFETIME_CONDITION(ARECharacterBase, bHasMoveTarget, COND_AutonomousOnly);
@@ -553,10 +548,3 @@ void ARECharacterBase::Multicast_PlayFire_Implementation(UAnimSequence* FireAnim
 	}
 }
 
-void ARECharacterBase::OnRep_Health()
-{
-	if (HealthBar)
-	{
-		HealthBar->SetHealthPercent(MaxHealth > 0.f ? Health / MaxHealth : 0.f);
-	}
-}

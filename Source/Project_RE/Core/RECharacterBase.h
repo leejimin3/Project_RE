@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
 #include "GameplayAbilitySpecHandle.h"
+#include "REHealthComponent.h"
 #include "RECharacterBase.generated.h"
 
 class USpringArmComponent;
@@ -22,7 +23,7 @@ class UStaticMeshComponent;
 /**
  *  탑뷰 쿼터뷰 플레이어 폰 베이스.
  *  캐릭터 부착 SpringArm + Camera를 절대회전으로 고정한다.
- *  HP는 서버 권위(Replicated) — 데미지 적용은 TakeDamage HasAuthority 가드 경유.
+ *  HP는 UREHealthComponent(서버 권위, 복제) — 데미지 적용은 TakeDamage HasAuthority 가드 경유.
  */
 UCLASS()
 class ARECharacterBase : public ACharacter, public IAbilitySystemInterface
@@ -55,14 +56,13 @@ public:
 
 	/**
 	 *  생존 여부 (#85). 복제되는 Health 로 판정한다 — 서버와 클라 양쪽에서 같은 답이 나와야 한다.
-	 *  전에는 서버 전용 bIsDead 를 봐서 클라에서는 항상 true 였다. 클라 히트 판정(#98)이
-	 *  이걸 쓰므로, 클라 화면에서 시체가 계속 탄을 막고 폭발을 띄웠다(서버에서는 통과).
+	 *  클라 히트 판정(#98)이 이걸 쓴다. 서버 전용 플래그로 판정하면 클라 화면에서 시체가 탄을 막는다.
 	 */
-	bool IsAlive() const { return Health > 0.f; }
+	bool IsAlive() const { return HealthComponent->IsAlive(); }
 
 	/** 현재/최대 체력 (#100 HUD). Health 는 복제되므로 클라에서도 읽을 수 있다. */
-	float GetHealth() const { return Health; }
-	float GetMaxHealth() const { return MaxHealth; }
+	float GetHealth() const { return HealthComponent->GetHealth(); }
+	float GetMaxHealth() const { return HealthComponent->GetMaxHealth(); }
 
 	/**
 	 *  서버 패스팔로잉의 현재 목표 (#112). 오너 클라만 받는다.
@@ -140,9 +140,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI", meta = (AllowPrivateAccess = "true"))
 	UREHealthBarComponent* HealthBar;
 
-	/** Health 복제 도착(클라) / 서버 직접 호출 공용 — HP바 갱신. */
-	UFUNCTION()
-	void OnRep_Health();
+	/** 체력 (서버 권위, 복제). HP바 갱신도 여기서 한다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UREHealthComponent> HealthComponent;
 
 	/** 부여된 대쉬 어빌리티 스펙 핸들(서버). */
 	FGameplayAbilitySpecHandle DashAbilityHandle;
@@ -199,17 +199,6 @@ protected:
 
 	/** ASC ActorInfo 초기화 공용 헬퍼 (서버/클라 양쪽에서 호출). */
 	void InitASCActorInfo();
-
-	/** 현재 체력. 서버 권위, 클라 복제. 변경 시 OnRep_Health로 HP바 갱신. */
-	UPROPERTY(ReplicatedUsing = OnRep_Health, VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
-	float Health = 100.f;
-
-	/** 최대 체력. 비복제 — 서버/클라 모두 생성자에서 같은 ini(UREStatsSettings)를 읽고 런타임 변경 코드가 없다 (#73). */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stats")
-	float MaxHealth = 100.f;
-
-	/** 사망 처리 1회 가드. 서버 전용·비복제. 생존 판정은 IsAlive()(복제 Health)를 쓴다. */
-	bool bIsDead = false;
 
 	/** 탑뷰 카메라 붐 (절대 하향 고정) */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
