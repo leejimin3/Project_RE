@@ -31,6 +31,13 @@ namespace
 		1,
 		TEXT("협동 시작에 필요한 준비 완료 플레이어 수. 기본 1(싱글 동작 유지)."),
 		ECVF_Default);
+	// 전원 준비 후 보스 발사까지의 유예(초). 영상 녹화처럼 시작 전에 창을 정리할 시간이 필요할 때 쓴다.
+	// 기본 0 = 즉시 발사 → 기존 프로브/데디 검증 타이밍 불변.
+	static TAutoConsoleVariable<float> CVarStartDelay(
+		TEXT("re.Coop.StartDelay"),
+		0.f,
+		TEXT("전원 준비 후 보스 발사까지 대기할 초. 기본 0(즉시)."),
+		ECVF_Default);
 
 	/** 0 이하 입력을 1 로 올린다 — 인원이 0 이면 게이트가 즉시 열린다. */
 	int32 GetExpectedPlayers()
@@ -242,7 +249,26 @@ void AREGameMode::TryStartBossFiring()
 	{
 		return;
 	}
+	// 유예 중에도 게이트를 닫아둔다 — 뒤늦은 ready RPC가 타이머를 두 번 걸지 못하게.
 	bFiringStarted = true;
+
+	const float Delay = FMath::Max(0.f, CVarStartDelay.GetValueOnGameThread());
+	if (Delay <= 0.f)
+	{
+		StartBossFiring();
+		return;
+	}
+	UE_LOG(LogRE, Log, TEXT("[RE] All %d/%d ready — boss firing in %.1fs"), ReadyPlayers.Num(), Expected, Delay);
+	GetWorldTimerManager().SetTimer(StartDelayTimer, this, &AREGameMode::StartBossFiring, Delay, false);
+}
+
+void AREGameMode::StartBossFiring()
+{
+	if (!DemoBoss)
+	{
+		return;
+	}
+	const int32 Expected = GetExpectedPlayers();
 	// 시드는 서버 전용 PhaseRng 초기화용 — 네트워크에 나가지 않는다 (#84).
 	DemoBoss->StartFiring(/*Seed=*/FMath::Rand());
 	UE_LOG(LogRE, Log, TEXT("[RE] Boss firing started (%d/%d ready)"), ReadyPlayers.Num(), Expected);
