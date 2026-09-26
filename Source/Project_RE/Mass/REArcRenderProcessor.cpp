@@ -3,6 +3,7 @@
 #include "REArcRenderProcessor.h"
 #include "REBulletFragments.h"
 #include "REBulletRenderSubsystem.h"
+#include "REBulletGeometry.h"                              // EnginePlaneHalfExtent / ArcGroundZOffset
 #include "MassExecutionContext.h"
 #include "Mass/EntityFragments.h"  // FTransformFragment
 #include "Components/InstancedStaticMeshComponent.h"
@@ -22,13 +23,6 @@ namespace
 	 *  #122 이후 메시가 Plane 으로 바뀌어 '두께'라는 개념 자체가 없어졌다(마커는 이제 머티리얼
 	 *  링 마스크로 그린다). 그래도 위의 비등방 스케일 함정을 다시 밟지 않도록 1.0 을 유지한다. */
 	constexpr float MarkerThickness = 1.0f;
-	/** 마커 메시 기본 반경(cm) — /Engine/BasicShapes/Plane 은 100x100 이라 반경 50. 스케일 = Radius/50. */
-	constexpr float CylinderBaseRadius = 50.f;
-	/** 마커 바닥 오프셋(cm) — Target.Z에서 띄워 바닥 매몰/Z-fighting 방지.
-	 *  10 이었을 때는 마커가 높이 100 짜리 Cylinder 라 아래가 묻혀도 윗부분이 삐져나와 보였다.
-	 *  #122 에서 두께 없는 Plane 으로 바꾸자 그대로 바닥 속에 묻혀 화면에서 사라졌다 -
-	 *  Main 레벨 바닥 윗면이 Z=40 이라 그보다 위여야 한다. */
-	constexpr float MarkerZOffset = 55.f;
 	/**
 	 *  마커가 완성 크기까지 자라는 시간(s). 탄 위치는 Elapsed 의 함수라 서브샷 어긋내기가
 	 *  그대로 먹지만, 마커 위치는 Target 이라 어긋내기가 안 먹는다 — 그냥 두면 한 프레임에
@@ -66,12 +60,6 @@ void UREArcRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 		return;  // 데디서버 등 ISM 없으면 no-op
 	}
 
-	// 스폰 팝 지속시간(s). 직선탄과 같은 값 — 수명 페이드는 넣지 않는다 (#97).
-	// 이름을 직선탄 쪽 PopDuration 과 다르게 둔다: 익명 네임스페이스 동명 상수가
-	// 유니티 빌드에서 C4459 로 충돌한 전례가 있다 — 그 전례였던 BulletScale /
-	// ActorBulletScale 쌍은 REBulletGeometry.h 로 합쳐 원인을 없앴다 (#141).
-	constexpr float ArcPopDuration = 0.1f;
-
 	// 1) live arc탄 → 탄 트랜스폼 + 마커 트랜스폼 + 스폰 팝 수집.
 	TArray<FTransform> BulletXf;
 	TArray<FTransform> MarkerXf;
@@ -90,40 +78,25 @@ void UREArcRenderProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 			// 곡사탄은 Elapsed 가 곧 나이다(0 에서 시작해 FlightTime 까지 증가).
 			// 커스텀데이터는 인스턴스당 [0]=스폰팝, [1]=색선택 으로 인터리브된다.
 			// 곡사탄은 색 교차를 쓰지 않으므로 항상 0 — 두 색을 같게 둬서 단색으로 보인다 (#97).
-			BulletPop.Add(FMath::Clamp(A[i].Elapsed / ArcPopDuration, 0.f, 1.f));
+			BulletPop.Add(FMath::Clamp(A[i].Elapsed / UREBulletRenderSubsystem::SpawnPopSec, 0.f, 1.f));
 			BulletPop.Add(0.f);
 
 			// 마커: Target 바닥, 반경=Radius(Cylinder 스케일), 낮은 원판.
 			// 갓 생긴 마커는 작게 시작해 자란다(위 MarkerGrowSec 주석).
 			const float Grow = FMath::Clamp(A[i].Elapsed / MarkerGrowSec, 0.f, 1.f);
-			const float RadScale = A[i].Radius / CylinderBaseRadius * Grow;
+			const float RadScale = A[i].Radius / REBulletGeometry::EnginePlaneHalfExtent * Grow;
 			FTransform M;
-			M.SetLocation(FVector(A[i].Target.X, A[i].Target.Y, A[i].Target.Z + MarkerZOffset));
+			M.SetLocation(FVector(A[i].Target.X, A[i].Target.Y, A[i].Target.Z + REBulletGeometry::ArcGroundZOffset));
 			M.SetScale3D(FVector(RadScale, RadScale, MarkerThickness));
 			MarkerXf.Add(M);
 		}
 	});
 
-	// 2) 두 ISM 인스턴스 수를 각각 맞춤(꼬리 add/remove → 타 인덱스 불변).
-	auto SyncISM = [](UInstancedStaticMeshComponent* ISM, const TArray<FTransform>& Xf)
-	{
-		const int32 M = Xf.Num();
-		int32 Count = ISM->GetInstanceCount();
-		while (Count < M) { ISM->AddInstance(FTransform::Identity, /*bWorldSpace=*/true); ++Count; }
-		while (Count > M) { ISM->RemoveInstance(Count - 1);                               --Count; }
-		// 배열째 한 번에 — 인스턴스당 개별 호출은 개수에 비례해 게임 스레드를 먹는다 (#95).
-		if (M > 0)
-		{
-			ISM->BatchUpdateInstancesTransforms(0, Xf, /*bWorldSpace=*/true,
-				/*bMarkRenderStateDirty=*/true, /*bTeleport=*/true);
-		}
-	};
-	SyncISM(ArcISM, BulletXf);
-	SyncISM(MarkerISM, MarkerXf);
+	// 2) 두 ISM 을 각각 맞춤.
+	UREBulletRenderSubsystem::SyncInstances(ArcISM, BulletXf);
+	UREBulletRenderSubsystem::SyncInstances(MarkerISM, MarkerXf);
 
 	// 팝은 곡사탄에만. 마커는 바닥 디스크라 커스텀데이터를 쓰지 않는다 (#97).
-	// SyncISM 이 인스턴스 수를 맞춘 뒤라야 SetCustomData 의 인덱스 범위가 유효하다.
-	// 트랜스폼 배치가 이미 끝나 뒤따르는 플러시가 없으므로 dirty 를 여기서 true 로 준다.
 	if (BulletXf.Num() > 0)
 	{
 		ArcISM->SetCustomData(0, BulletXf.Num() - 1, BulletPop, /*bMarkRenderStateDirty=*/true);

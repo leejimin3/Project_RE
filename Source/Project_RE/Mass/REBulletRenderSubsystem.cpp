@@ -8,6 +8,19 @@
 #include "Engine/World.h"
 #include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
+void UREBulletRenderSubsystem::SyncInstances(UInstancedStaticMeshComponent* ISM, const TArray<FTransform>& Xf)
+{
+	const int32 M = Xf.Num();
+	int32 Count = ISM->GetInstanceCount();
+	while (Count < M) { ISM->AddInstance(FTransform::Identity, /*bWorldSpace=*/true); ++Count; }
+	while (Count > M) { ISM->RemoveInstance(Count - 1);                               --Count; }
+	if (M > 0)
+	{
+		ISM->BatchUpdateInstancesTransforms(0, Xf, /*bWorldSpace=*/true,
+			/*bMarkRenderStateDirty=*/true, /*bTeleport=*/true);
+	}
+}
+
 void UREBulletRenderSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);

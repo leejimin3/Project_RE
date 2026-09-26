@@ -21,6 +21,21 @@ class UREBulletRenderSubsystem : public UWorldSubsystem
 public:
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 
+	/**
+	 *  ISM 인스턴스를 트랜스폼 배열에 맞춘다 — 렌더 프로세서 셋(탄/곡사/폭발) 공용.
+	 *  꼬리에서 add/remove 하므로 다른 인덱스가 안 밀린다(swap 없음). 트랜스폼은 배열째
+	 *  한 번에 넘긴다 — 인스턴스당 개별 호출은 개수에 비례해 게임 스레드를 먹었다 (#95).
+	 *  커스텀데이터는 이 호출 **뒤에** 써야 인덱스 범위가 유효하다.
+	 */
+	static void SyncInstances(UInstancedStaticMeshComponent* ISM, const TArray<FTransform>& Xf);
+
+	/**
+	 *  스폰 팝 지속시간(s). 태어난 직후만 밝기가 솟았다가 정상으로 붙는다 — 직선탄·곡사탄 공용.
+	 *  수명 페이드는 넣지 않는다: 죽기 직전 탄이 흐려지면 여전히 치명적인데 사라지는 중으로
+	 *  오독되고, 탄막에서 히트박스 가독성은 공정성 문제다 (#97).
+	 */
+	static constexpr float SpawnPopSec = 0.1f;
+
 	UInstancedStaticMeshComponent* GetISM() const { return ISM; }
 	UInstancedStaticMeshComponent* GetArcISM() const { return ArcISM; }
 	UInstancedStaticMeshComponent* GetMarkerISM() const { return MarkerISM; }
