@@ -23,7 +23,6 @@ void UREBulletSpawnSubsystem::EnsureArchetype(FMassEntityManager& EntityManager)
 	BulletArchetype = EntityManager.CreateArchetype({
 		FTransformFragment::StaticStruct(),
 		FBulletSimFragment::StaticStruct(),
-		FBulletRenderFragment::StaticStruct(),
 		FBulletTag::StaticStruct() });
 }
 
@@ -44,7 +43,6 @@ FMassEntityHandle UREBulletSpawnSubsystem::SpawnBullet(FVector Location, FVector
 	Sim.Velocity = Velocity;
 	Sim.Lifetime = Lifetime;
 	Sim.ColorSel = ColorSel;
-	// FBulletRenderFragment.InstanceIndex는 기본값 INDEX_NONE 유지 (#17에서 할당).
 
 	return Entity;
 }
@@ -66,7 +64,6 @@ void UREBulletSpawnSubsystem::EnsureArcArchetype(FMassEntityManager& EntityManag
 	ArcArchetype = EntityManager.CreateArchetype({
 		FTransformFragment::StaticStruct(),
 		FArcBulletFragment::StaticStruct(),
-		FBulletRenderFragment::StaticStruct(),
 		FArcBulletTag::StaticStruct() });
 }
 

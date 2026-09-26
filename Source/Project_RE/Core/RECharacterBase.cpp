@@ -29,7 +29,8 @@
 #include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
 
 // 치트: 1이면 플레이어 무적(TakeDamage 무피해). 데브 전용, 클라 로컬(ECVF_Cheat).
-static TAutoConsoleVariable<int32> CVarPlayerInvincible(
+// 치트 패널·HUD 도 읽으므로 extern 이다(Project_RE.h).
+TAutoConsoleVariable<int32> CVarPlayerInvincible(
 	TEXT("re.Cheat.PlayerInvincible"),
 	0,
 	TEXT("1 = player takes no damage (dev cheat, client-local)"),
@@ -80,6 +81,12 @@ static TAutoConsoleVariable<float> CVarFireFxSec(
 	TEXT("발사 빔/섬광 노출 시간(s). 0 이하 = 기본값. 스크린샷 검증용."),
 	ECVF_Cheat);
 
+/**
+ *  이동 입력을 끊는 목표 근접 반경 (#112). 서버가 bHasMoveTarget 을 내리기까지의
+ *  공백에 도착 지점에서 좌우로 떠는 것을 막는다.
+ */
+static constexpr float MoveInputStopRadius = 60.f;
+
 ARECharacterBase::ARECharacterBase()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -89,9 +96,9 @@ ARECharacterBase::ARECharacterBase()
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationRoll = false;
 
-	// 체력 초기화 — Settings 단일 출처 (M3.5 ③).
-	MaxHealth = GetDefault<UREStatsSettings>()->PlayerMaxHealth;
-	Health = MaxHealth;
+	// 체력 — Settings 단일 출처 (M3.5 ③).
+	HealthComponent = CreateDefaultSubobject<UREHealthComponent>(TEXT("HealthComponent"));
+	HealthComponent->Init(GetDefault<UREStatsSettings>()->PlayerMaxHealth);
 
 	// GAS: ASC 부착 — Pawn 소유, 복제 켜고 Mixed 모드(오너 클라만 GE 복제).
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
@@ -388,13 +395,10 @@ float ARECharacterBase::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 	}
 
 	const float Applied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
-	Health = FMath::Clamp(Health - Applied, 0.f, MaxHealth);
-	OnRep_Health(); // 서버/싱글 경로 — 복제 OnRep은 원격 클라 전용이라 직접 호출
 
-	// 패배 판정 — 이미 HasAuthority 가드 안. 사망 후에도 뜬 탄환이 계속 때리므로 bIsDead로 재진입 차단.
-	if (Health <= 0.f && !bIsDead)
+	// 패배 판정 — 이미 HasAuthority 가드 안. 사망 후 재진입은 컴포넌트가 막는다(1회만 true).
+	if (HealthComponent->ApplyDamage(Applied))
 	{
-		bIsDead = true;
 		UE_LOG(LogRE, Log, TEXT("[RE] Player died (Health<=0)"));
 		// 월드 부재는 부류 2(소유된 폰에선 불가능). GM 부재는 부류 1 —
 		// 클라에는 AuthGameMode 가 없는 것이 정상이다.
@@ -416,8 +420,6 @@ float ARECharacterBase::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 void ARECharacterBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME(ARECharacterBase, Health);
-
 	// 이동 목표는 본인만 필요하다 (#112) — 남의 폰 예측에는 쓰지 않는다.
 	DOREPLIFETIME_CONDITION(ARECharacterBase, MoveTarget, COND_AutonomousOnly);
 	DOREPLIFETIME_CONDITION(ARECharacterBase, bHasMoveTarget, COND_AutonomousOnly);
@@ -431,6 +433,21 @@ void ARECharacterBase::SetMoveTarget(const FVector& InTarget)
 	}
 	MoveTarget = InTarget;
 	bHasMoveTarget = true;
+}
+
+void ARECharacterBase::AddMoveTargetInput()
+{
+	if (!bHasMoveTarget)
+	{
+		return;
+	}
+	const FVector To = MoveTarget - GetActorLocation();
+	const FVector Dir(To.X, To.Y, 0.f);
+	// 목표 근처에서는 입력을 끊는다. 안 그러면 도착 지점에서 좌우로 떤다.
+	if (Dir.SizeSquared() > FMath::Square(MoveInputStopRadius))
+	{
+		AddMovementInput(Dir.GetSafeNormal());
+	}
 }
 
 void ARECharacterBase::ClearMoveTarget()
@@ -531,10 +548,3 @@ void ARECharacterBase::Multicast_PlayFire_Implementation(UAnimSequence* FireAnim
 	}
 }
 
-void ARECharacterBase::OnRep_Health()
-{
-	if (HealthBar)
-	{
-		HealthBar->SetHealthPercent(MaxHealth > 0.f ? Health / MaxHealth : 0.f);
-	}
-}

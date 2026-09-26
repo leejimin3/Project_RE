@@ -2,6 +2,7 @@
 
 #include "REActorBulletSpawner.h"
 #include "REBulletActor.h"
+#include "REGameMode.h"                  // BossSpawnLocation — Mass 와 같은 원점 (Boss는 움직이지 않는다)
 #include "REBulletPatternGenerator.h"   // Mass와 공유하는 순수 함수 — 읽기 전용 참조 (복붙 금지)
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/World.h"
@@ -19,13 +20,14 @@ namespace
 		TEXT("Actor 탄환 동시 유지 목표 수 (0=비활성). Mass 비교군 — 측정 전용."),
 		ECVF_Cheat);
 
-	/** Mass 데모 발사 주기 (REGameMode.cpp:67 DemoFireTimer). */
+	/**
+	 *  발사 주기. M3 측정 당시 Mass 데모 주기(0.1s)를 옮겨 둔 값이다.
+	 *  **현재 보스(ini BossFireInterval 0.15s)와 다르다** — 비교군 수치 재현성을 위해
+	 *  값은 그대로 두고 참조만 바로잡았다. 비교를 다시 잴 때 맞출지 결정하라.
+	 */
 	constexpr float ActorFireIntervalSec = 0.1f;
 
-	/** Mass 스폰 원점 = Boss 스폰 위치 (REGameMode.cpp BeginPlay). Boss는 움직이지 않는다. */
-	const FVector SpawnOrigin(0.f, 0.f, 90.f);
-
-	/** Boss의 SpiralRotationStepDeg (REBossCharacter.h:58). */
+	/** 링 회전. M3 당시 보스 값(15°). 현재 보스 SpiralRotationStepDeg 는 137.5° 다(#64) — 위와 같은 이유로 그대로 둔다. */
 	constexpr float RotationStepDeg = 15.f;
 }
 
@@ -92,7 +94,7 @@ void UREActorBulletSpawner::Fire()
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	for (const FBulletSpawnParams& P : REBulletPattern::GenerateSpiral(SpawnOrigin, SP))
+	for (const FBulletSpawnParams& P : REBulletPattern::GenerateSpiral(AREGameMode::BossSpawnLocation, SP))
 	{
 		if (AREBulletActor* Bullet = World->SpawnActor<AREBulletActor>(
 				AREBulletActor::StaticClass(), P.Location, FRotator::ZeroRotator, SpawnParams))

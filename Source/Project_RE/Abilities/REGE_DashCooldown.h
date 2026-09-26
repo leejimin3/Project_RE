@@ -24,4 +24,7 @@ public:
 	 *  ("NewObject with empty name can't be used to create default subobjects" — 실측 크래시).
 	 */
 	UREGE_DashCooldown(const FObjectInitializer& ObjectInitializer);
+
+	/** 쿨다운 길이(s). HUD 의 쿨다운 바(#100)가 분모로 같이 쓴다 — 여기 하나만 고친다. */
+	static constexpr float CooldownSec = 2.0f;
 };

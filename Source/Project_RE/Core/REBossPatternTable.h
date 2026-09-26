@@ -195,16 +195,8 @@ namespace REBoss
 	//  팩 MI 프리셋에서 그대로 가져온 값 — MI_Stone_Golem_Inst1(Snow) / Inst2(Lava).
 	//  패턴이 16개다. 질감 3종 × 색으로도 슬슬 빠듯하다 — **(질감, 이미시브 색) 쌍**이
 	//  유일하도록 배분했다. 색만으로는 안 갈린다.
-	inline constexpr float FanSnowAmount       = 1.34f;
-	inline constexpr float ArtilleryLavaAmount = 2.47f;
-	inline constexpr float StormLavaAmount     = 2.47f;
-	inline constexpr float CardioidSnowAmount  = 1.34f;
-	inline constexpr float RoseFieldLavaAmount = 2.47f;
-	inline constexpr float DomeSnowAmount      = 1.34f;
-	inline constexpr float SpiroLavaAmount     = 2.47f;
-	inline constexpr float MicroSnowAmount     = 1.34f;
-	inline constexpr float LissaLavaAmount     = 2.47f;
-	inline constexpr float VortexSnowAmount    = 1.34f;
+	inline constexpr float SnowAmount          = 1.34f;   // MI_Stone_Golem_Inst1 — 흰 화강암
+	inline constexpr float LavaAmount          = 2.47f;   // MI_Stone_Golem_Inst2 — 용암
 
 	//========================================================================================
 	//  테이블. 인덱스 == (int32)EBulletPattern — 아래 static_assert 가 강제한다.
@@ -221,7 +213,7 @@ namespace REBoss
 		//  (Artillery)과도 계열이 겹친다. 청록으로 가른다.
 		{ EBulletPattern::Fan, EFamily::Direct, TEXT("Fan"),
 		  FanPhaseSec, FanFireIntervalSec, true, {},
-		  { FanSnowAmount, 0.f, FLinearColor(0.15f, 0.70f, 1.0f, 1.0f) } },
+		  { SnowAmount, 0.f, FLinearColor(0.15f, 0.70f, 1.0f, 1.0f) } },
 
 		//~ 2 Homing — #67 백로그 스텁. 로테이션 풀에 없고 re.Debug.BossPattern 도 풀 인덱스로
 		//  클램프하므로 **도달 불가**다. PhaseSec/Name 이 Spiral 인 것은 현행 동작 그대로다:
@@ -234,14 +226,14 @@ namespace REBoss
 		{ EBulletPattern::Artillery, EFamily::Arc, TEXT("Artillery"),
 		  ArtilleryPhaseSec, ArtilleryFireInterval, true,
 		  { ArtilleryFlightTime, ArtilleryMaxHeight, ArtilleryCount },
-		  { 0.f, ArtilleryLavaAmount, FLinearColor(1.f, 0.f, 0.f, 1.f) } },
+		  { 0.f, LavaAmount, FLinearColor(1.f, 0.f, 0.f, 1.f) } },
 
 		//~ 4 ArtilleryStorm — 용암은 Artillery 와 같은 값이라 그것만으론 두 곡사 페이즈가
 		//  구분되지 않는다. 이미시브를 금색으로 올려 가른다 — Fan(청록)/Spiral(빨강)과도 안 겹친다.
 		{ EBulletPattern::ArtilleryStorm, EFamily::Arc, TEXT("ArtilleryStorm"),
 		  StormPhaseSec, StormFireInterval, true,
 		  { StormFlightTime, StormMaxHeight, StormCount },
-		  { 0.f, StormLavaAmount, FLinearColor(1.0f, 0.85f, 0.2f, 1.0f) } },
+		  { 0.f, LavaAmount, FLinearColor(1.0f, 0.85f, 0.2f, 1.0f) } },
 
 		//~ 5 RoseEnvelope — 질감 축(Snow/Lava)에는 남는 조합이 없다. Fan 이 Snow, 곡사 둘이
 		//  Lava 를 쓴다. Spiral 과 같은 화강암에 이미시브만 보라로 가른다.
@@ -254,19 +246,19 @@ namespace REBoss
 		//  질감까지 흰 화강암으로 바꾼다(흰 화강암 + 주황은 남는 조합이다).
 		{ EBulletPattern::Cardioid, EFamily::Direct, TEXT("Cardioid"),
 		  CardioidPhaseSec, -1.f, true, {},
-		  { CardioidSnowAmount, 0.f, FLinearColor(1.0f, 0.45f, 0.05f, 1.0f) } },
+		  { SnowAmount, 0.f, FLinearColor(1.0f, 0.45f, 0.05f, 1.0f) } },
 
 		//~ 7 LissajousStorm — 용암 + 연두.
 		{ EBulletPattern::LissajousStorm, EFamily::Arc, TEXT("LissajousStorm"),
 		  LissaPhaseSec, LissaFireInterval, true,
 		  { LissaFlightTime, LissaMaxHeight, LissaCount },
-		  { 0.f, LissaLavaAmount, FLinearColor(0.55f, 1.0f, 0.20f, 1.0f) } },
+		  { 0.f, LavaAmount, FLinearColor(0.55f, 1.0f, 0.20f, 1.0f) } },
 
 		//~ 8 BezierVortex — 흰 화강암 + 진파랑. 고도는 탄마다 덮어써 층을 만든다(ShapeArcShots).
 		{ EBulletPattern::BezierVortex, EFamily::Arc, TEXT("BezierVortex"),
 		  VortexPhaseSec, VortexFireInterval, true,
 		  { VortexFlightTime, VortexMaxHeight, VortexCount },
-		  { VortexSnowAmount, 0.f, FLinearColor(0.10f, 0.25f, 1.0f, 1.0f) } },
+		  { SnowAmount, 0.f, FLinearColor(0.10f, 0.25f, 1.0f, 1.0f) } },
 
 		//~ 9~11 블룸 3종은 질감을 안 쓴다(회색 화강암) — 색만으로 가른다. 위에서 회색 화강암을
 		//  쓰는 건 Spiral(빨강)과 RoseEnvelope(보라)뿐이라 아래 셋과 안 겹친다.
@@ -284,25 +276,25 @@ namespace REBoss
 		{ EBulletPattern::RoseField, EFamily::Arc, TEXT("RoseField"),
 		  RoseFieldPhaseSec, RoseFieldFireInterval, true,
 		  { RoseFieldFlightTime, RoseFieldMaxHeight, RoseFieldCount },
-		  { 0.f, RoseFieldLavaAmount, FLinearColor(0.20f, 0.35f, 1.0f, 1.0f) } },
+		  { 0.f, LavaAmount, FLinearColor(0.20f, 0.35f, 1.0f, 1.0f) } },
 
 		//~ 13 AerialDome — 흰 화강암 + 자홍.
 		{ EBulletPattern::AerialDome, EFamily::Arc, TEXT("AerialDome"),
 		  DomePhaseSec, DomeFireInterval, true,
 		  { DomeFlightTime, DomeMaxHeight, DomeCount },
-		  { DomeSnowAmount, 0.f, FLinearColor(1.0f, 0.20f, 0.70f, 1.0f) } },
+		  { SnowAmount, 0.f, FLinearColor(1.0f, 0.20f, 0.70f, 1.0f) } },
 
 		//~ 14 Spirograph — 용암 + 청록.
 		{ EBulletPattern::Spirograph, EFamily::Arc, TEXT("Spirograph"),
 		  SpiroPhaseSec, SpiroFireInterval, true,
 		  { SpiroFlightTime, SpiroMaxHeight, SpiroCount },
-		  { 0.f, SpiroLavaAmount, FLinearColor(0.15f, 0.80f, 0.95f, 1.0f) } },
+		  { 0.f, LavaAmount, FLinearColor(0.15f, 0.80f, 0.95f, 1.0f) } },
 
 		//~ 15 MicroMissile — 흰 화강암 + 경고등 빨강.
 		{ EBulletPattern::MicroMissile, EFamily::Arc, TEXT("MicroMissile"),
 		  MicroPhaseSec, MicroFireInterval, true,
 		  { MicroFlightTime, MicroMaxHeight, MicroCount },
-		  { MicroSnowAmount, 0.f, FLinearColor(1.0f, 0.15f, 0.10f, 1.0f) } },
+		  { SnowAmount, 0.f, FLinearColor(1.0f, 0.15f, 0.10f, 1.0f) } },
 	};
 
 	inline constexpr int32 PatternTableNum = (int32)UE_ARRAY_COUNT(PatternTable);

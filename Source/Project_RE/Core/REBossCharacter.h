@@ -7,6 +7,7 @@
 #include "REBulletPattern.h"
 #include "REBossPatternTable.h"
 #include "REBulletPatternGenerator.h"   // FArcBulletSpawnParams — ShapeArcShots 시그니처 (#141)
+#include "REHealthComponent.h"
 #include "REBossCharacter.generated.h"
 
 class UREHealthBarComponent;
@@ -16,7 +17,7 @@ class UMaterialInstanceDynamic;
 /**
  *  보스 폰. 탄막 패턴 발사 진입점을 가진다.
  *  ACharacter 직접 상속 — ARECharacterBase는 카메라 붐 달린 플레이어 폰이라 부적합.
- *  HP는 서버 권위(Replicated) — 데미지 적용은 TakeDamage HasAuthority 가드 경유 (RECharacterBase 동일 패턴).
+ *  HP는 UREHealthComponent(서버 권위, 복제) — RECharacterBase 와 같은 컴포넌트를 쓴다.
  */
 UCLASS()
 class AREBossCharacter : public ACharacter
@@ -68,29 +69,19 @@ public:
 	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent,
 	                         AController* EventInstigator, AActor* DamageCauser) override;
 
-	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-
 protected:
 	//~ 코스메틱 초기화(MID 생성 + idle 재생). 데디 서버에서는 통째로 생략한다.
 	virtual void BeginPlay() override;
 	//~ 외관 램프 전용. 데디 서버에서는 BeginPlay가 틱을 켜지 않는다.
 	virtual void Tick(float DeltaSeconds) override;
 
-	/** 현재 체력. 서버 권위, 클라 복제. 변경 시 OnRep_Health로 HP바 갱신. */
-	UPROPERTY(ReplicatedUsing = OnRep_Health, VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
-	float Health = 100.f;
-
-	/** 최대 체력. 비복제 — 서버/클라 모두 생성자에서 같은 ini(UREStatsSettings)를 읽고 런타임 변경 코드가 없다 (#73). */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stats")
-	float MaxHealth = 100.f;
+	/** 체력 (서버 권위, 복제). HP바 갱신도 여기서 한다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UREHealthComponent> HealthComponent;
 
 	/** 머리 위 HP바 (#29). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI", meta = (AllowPrivateAccess = "true"))
 	UREHealthBarComponent* HealthBar;
-
-	/** Health 복제 도착(클라) / 서버 직접 호출 공용 — HP바 갱신. */
-	UFUNCTION()
-	void OnRep_Health();
 
 private:
 	/** Spiral 호출마다 누적되는 시작각. 연속 트리거 시 링이 회전한다. */
@@ -128,9 +119,6 @@ private:
 	 *  두 곳에 각각 스위치를 두면 패턴을 늘릴 때 한쪽만 고쳐 조용히 어긋난다.
 	 */
 	static float FireIntervalFor(EBulletPattern P);
-
-	/** 사망 여부. 서버 전용 — 클라 시각처리는 스코프 밖이라 비복제. */
-	bool bIsDead = false;
 
 	//~ 패턴 로테이션 페이즈 스케줄러 (#64). 발사 주체 = Boss (M5 RPC 확장 대비).
 	void BeginPhase();          // 다음 패턴 선택 + 발사 타이머 세팅 + 페이즈 종료 예약
@@ -212,14 +200,13 @@ private:
 	//  비용도 같이 내려간다: 착지율 60/0.5 = 120/s 로 폭풍(160/s, 9.23ms)보다 싸다.
 	//  착지 프레임마다 도는 폭발 Niagara 가 이 패턴 비용의 대부분이었다(Draws 1723).
 	/**
-	 *  매듭의 반폭(uu). 아레나 반경 2000 안쪽이면 착지점이 바닥 위이긴 하나 그것만으론 부족하다 —
-	 *  1100 은 화면(가로 약 3000uu)에 다 안 들어와 무늬가 잘렸다. 750 이면 통째로 보이고
-	 *  같은 표본 수로 점 간격도 좁아진다.
+	 *  매듭의 반폭(uu). #139 에서 750 → ArenaRadius 로 넓혀 필드 전체를 덮는다.
+	 *  750 은 매듭이 화면에 통째로 들어와 무늬는 잘 읽혔지만 필드 바깥쪽을 덮지 못했다.
 	 */
 	static constexpr float LissaExtent       = ArenaRadius;
 	/**
 	 *  폭발·마커 반경(uu). Artillery 의 120 을 그대로 쓰면 마커 지름(240)이 매듭의 로브
-	 *  간격(≈E/2 = 375)에 육박해 안쪽이 메워지고 무늬가 둥근 사각형 덩어리로 보인다 —
+	 *  간격(E=750 이던 #139 이전 기준 ≈E/2 = 375)에 육박해 안쪽이 메워지고 무늬가 둥근 사각형 덩어리로 보인다 —
 	 *  실제로 그랬다. 곡선이 읽히려면 **선 굵기가 로브 간격보다 충분히 얇아야** 한다.
 	 *  덤으로 마커 면적이 1/4 이 되어 Draw 오버드로도 같이 내려간다.
 	 */
@@ -265,12 +252,9 @@ private:
 	 *  7초면 165·(1+1.7·7) = 2,100uu 로 아레나 가장자리에 닿으며 소멸한다.
 	 */
 	static constexpr float BloomLifetime = 7.f;
-	/**
-	 *  도형 회전(deg/s). 커버리지를 만드는 것이 이 값이다: 반경 r 의 탄은 (r/R₀−1)/Rate 초 전에
-	 *  발사됐으므로 바깥일수록 더 돌아가 있고, 팔이 나선으로 감긴다(장미와 같은 원리).
-	 *  수명 7초 × 55°/s = 385° 라 한 바퀴를 넘겨 가장자리에 각도 구멍이 남지 않는다.
-	 */
-	//~ 도형 회전(deg/s) — 도형마다 다르다. 두 요구가 반대로 당긴다:
+	//~ 도형 회전(deg/s) — 커버리지를 만드는 것이 이 값이다: 반경 r 의 탄은 (r/R₀−1)/Rate 초 전에
+	//  발사됐으므로 바깥일수록 더 돌아가 있고, 팔이 나선으로 감긴다(장미와 같은 원리).
+	//  도형마다 다르다. 두 요구가 반대로 당긴다:
 	//    · 너무 빠르면 겹쳐 보이는 복사본이 제각기 다른 각으로 누워 도형이 뭉갠다.
 	//      (55°/s 는 수명 7초 동안 385°를 훑어 실제로 통째로 뭉갰다.)
 	//    · 너무 느리면 도형의 각도 구멍이 제자리에 남아 거기 선 플레이어가 영영 안전하다.
@@ -513,16 +497,17 @@ private:
 	/** idle 루프 재생. PlayAnimation이 single-node 모드 전환까지 겸한다. */
 	void PlayIdle();
 
+	/** 램프 진행 중인 지금 외관 (LookFrom → LookTo 를 LookAlpha 로 보간). */
+	FBossLook CurrentLook() const;
+
 	FBossLook LookFrom;
 	FBossLook LookTo;
 	float LookAlpha = 1.f;                                  // 1 = 램프 종료(틱 조기 반환)
 	EBulletPattern LookPattern = EBulletPattern::Spiral;    // 현재 목표 패턴
 
-	//~ 팩 MI 프리셋에서 그대로 가져온 값 — MI_Stone_Golem_Inst1(Snow) / Inst2(Lava).
-	//~ 패턴이 9개라 질감 축(Snow/Lava)만으로는 안 갈린다. **(질감, 이미시브 색) 쌍**이
-	//  유일하도록 배분한다 — LookForPattern 의 각 case 가 그 쌍 하나씩을 집는다.
-	//~ 패턴이 16개다. 질감 3종 × 색으로도 슬슬 빠듯하다 — 새 패턴을 더 늘리면 외관 축을
-	//  하나 더 찾아야 한다(스케일·회전·발광 주기 등). 지금은 (질감, 색) 쌍 유일성으로 버틴다.
+	//~ 패턴별 질감·이미시브 값과 그 배분 원칙은 REBossPatternTable.h 외관 절에 있다.
+	//  새 패턴을 더 늘리면 (질감, 색) 쌍으로는 빠듯하다 — 외관 축을 하나 더 찾아야 한다
+	//  (스케일·회전·발광 주기 등).
 	/**
 	 *  페이즈 인트로 길이(s). 외관 램프 시간이자 첫 발사 지연이다.
 	 *  도약 애님(0.47s)보다 길어 애님도 이 안에서 끝난다.

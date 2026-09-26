@@ -3,30 +3,26 @@
 #include "REGameMode.h"
 #include "RECharacterBase.h"
 #include "REPlayerController.h"
-#include "MassEntitySubsystem.h"
-#include "MassEntityManager.h"
-#include "REBulletSimProcessor.h"
-#include "REBulletRenderProcessor.h"
 #include "REBossCharacter.h"
-#include "REBulletPatternGenerator.h"
 #include "TimerManager.h"
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformMisc.h"
 #include "REStatsSettings.h"
-#include "GameFramework/PawnMovementComponent.h"
 #include "Project_RE.h"                              // LogRE / LogREBullet / LogRENet
+
+// #46 측정 전용: 1이면 EndGame을 무력화 → 승패 확정이 보스 DemoFireTimer를 끄지 못하게 막는다.
+// (자동사격이 보스를 ~2.5s에 죽이거나(VICTORY) 정지 플레이어가 탄막에 죽으면(DEFEAT)
+//  발사가 중단돼 Mass 탄환이 목표 수까지 못 차 측정이 무효화됨.)
+// 프로파일링에서만 켠다(scripts/profile.ps1). 기본 0 = 게임 플레이 영향 없음.
+// 보스·HUD 도 읽으므로 extern 이다(Project_RE.h).
+TAutoConsoleVariable<int32> CVarProfilingKeepFiring(
+	TEXT("re.Profiling.KeepFiring"),
+	0,
+	TEXT("측정 전용: 1이면 게임오버를 무시하고 보스 탄막 발사를 계속 유지."),
+	ECVF_Cheat);
 
 namespace
 {
-	// #46 측정 전용: 1이면 EndGame을 무력화 → 승패 확정이 보스 DemoFireTimer를 끄지 못하게 막는다.
-	// (자동사격이 보스를 ~2.5s에 죽이거나(VICTORY) 정지 플레이어가 탄막에 죽으면(DEFEAT)
-	//  발사가 중단돼 Mass 탄환이 목표 수까지 못 차 측정이 무효화됨.)
-	// 프로파일링에서만 켠다(scripts/profile.ps1). 기본 0 = 게임 플레이 영향 없음.
-	static TAutoConsoleVariable<int32> CVarProfilingKeepFiring(
-		TEXT("re.Profiling.KeepFiring"),
-		0,
-		TEXT("측정 전용: 1이면 게임오버를 무시하고 보스 탄막 발사를 계속 유지."),
-		ECVF_Cheat);
 	// #85 협동 인원. ready가 이 수를 채우면 보스 발사 시작(RPG 던전 입장 모델).
 	// ini가 아니라 CVar인 이유: 스테이징 Config는 pak 안에 들어가서 ini면 인원을 바꿀 때마다
 	// 재쿡해야 한다. CVar면 서버 커맨드라인(-ExecCmds)으로 넘길 수 있어 데디 검증이 재쿡 없이 돈다.
@@ -35,7 +31,15 @@ namespace
 		1,
 		TEXT("협동 시작에 필요한 준비 완료 플레이어 수. 기본 1(싱글 동작 유지)."),
 		ECVF_Default);
+
+	/** 0 이하 입력을 1 로 올린다 — 인원이 0 이면 게이트가 즉시 열린다. */
+	int32 GetExpectedPlayers()
+	{
+		return FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
+	}
 }
+
+const FVector AREGameMode::BossSpawnLocation(0.f, 0.f, 90.f);
 
 AREGameMode::AREGameMode()
 {
@@ -55,31 +59,12 @@ void AREGameMode::BeginPlay()
 			Stats->BossMaxHealth, Stats->BulletSpeed, Stats->BulletLifetime, Stats->BossFireInterval, Stats->BulletsPerShot);
 	}
 
-	// 부류 2 — GameMode 는 월드 없이 존재할 수 없다. 아래 세 곳이 같은 월드를 쓴다.
+	// 부류 2 — GameMode 는 월드 없이 존재할 수 없다.
 	UWorld* World = GetWorld();
 	if (!ensureMsgf(World, TEXT("[RE] GameMode: World 없음 — GameMode 는 월드 없이 존재할 수 없다")))
 	{
 		return;
 	}
-
-	// Mass 스모크 테스트: 서브시스템 얻고 엔티티 1개 생성 → 로그.
-	// GameMode는 서버 권위라 HasAuthority 가드 불필요.
-	if (UMassEntitySubsystem* Mass = World->GetSubsystem<UMassEntitySubsystem>())
-	{
-		FMassEntityManager& EM = Mass->GetMutableEntityManager();
-		FMassArchetypeHandle Arch = EM.CreateArchetype({ FRETestFragment::StaticStruct() });
-		FMassEntityHandle E = EM.CreateEntity(Arch);
-		UE_LOG(LogRE, Log, TEXT("[RE] Mass entity created: Index=%d Serial=%d"), E.Index, E.SerialNumber);
-	}
-	else
-	{
-		UE_LOG(LogRE, Warning, TEXT("[RE] UMassEntitySubsystem NULL"));
-	}
-
-	// #4 검증: 두 Processor CDO의 ExecutionFlags 확인. Sim=7(AllNetModes), Render=5(Standalone|Client).
-	const uint8 SimFlags    = (uint8)GetDefault<UREBulletSimProcessor>()->GetExecutionFlags();
-	const uint8 RenderFlags = (uint8)GetDefault<UREBulletRenderProcessor>()->GetExecutionFlags();
-	UE_LOG(LogRE, Log, TEXT("[RE] SimProcessor flags=%d  RenderProcessor flags=%d"), SimFlags, RenderFlags);
 
 	// #5 검증: 보스 스폰 후 탄막 트리거 → 싱글 경로 스폰 카운트 실증.
 	// AlwaysSpawn: 캡슐 충돌로 스폰 실패하는 것 방지.
@@ -89,29 +74,13 @@ void AREGameMode::BeginPlay()
 	//      겹치면 스폰 즉시 피격으로 프레임 3에 즉사 DEFEAT (#54). 보스는 여전히 플레이어
 	//      기준 +X 600 이라 이격 거리와 상대 배치는 예전과 같다(대쉬·이동 프로브 지오메트리 불변).
 	//      탄속 300×수명 3s = 사거리 900 안쪽이라 위협은 유지, 도달까지 ~2s 회피 여유.
-	//      REActorBulletSpawner::SpawnOrigin(측정 비교군)과 반드시 동일 좌표 유지.
 	FActorSpawnParameters BossSpawnParams;
 	BossSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	if (AREBossCharacter* Boss = World->SpawnActor<AREBossCharacter>(
-			AREBossCharacter::StaticClass(), FVector(0.f, 0.f, 90.f), FRotator::ZeroRotator, BossSpawnParams))
+			AREBossCharacter::StaticClass(), BossSpawnLocation, FRotator::ZeroRotator, BossSpawnParams))
 	{
 		// #64: 발사 주체를 Boss로 이관. 발사 시작은 클라 준비 후 (#84) — 여기서 켜지 않는다.
 		DemoBoss = Boss;
-	}
-
-	// #16 프로브: 패턴 제너레이터 수학 단위 검증 (순수 함수, 프레임 무관).
-	{
-		using namespace REBulletPattern;
-		const TArray<FBulletSpawnParams> Sp = GenerateSpiral(FVector::ZeroVector, FSpiralParams{});
-		const float SA0 = FMath::RadiansToDegrees(FMath::Atan2(Sp[0].Velocity.Y, Sp[0].Velocity.X));
-		const float SA1 = FMath::RadiansToDegrees(FMath::Atan2(Sp[1].Velocity.Y, Sp[1].Velocity.X));
-		UE_LOG(LogRE, Log, TEXT("[RE] SpiralProbe: N=%d |V0|=%.1f ang0=%.1f ang1=%.1f"),
-			Sp.Num(), Sp[0].Velocity.Size(), SA0, SA1);
-
-		const TArray<FBulletSpawnParams> Fn = GenerateFan(FVector::ZeroVector, FFanParams{});
-		const float FA0 = FMath::RadiansToDegrees(FMath::Atan2(Fn[0].Velocity.Y, Fn[0].Velocity.X));
-		const float FAL = FMath::RadiansToDegrees(FMath::Atan2(Fn.Last().Velocity.Y, Fn.Last().Velocity.X));
-		UE_LOG(LogRE, Log, TEXT("[RE] FanProbe: N=%d ang_first=%.1f ang_last=%.1f"), Fn.Num(), FA0, FAL);
 	}
 
 	// 준비 신호가 이미 와 있었다면 여기서 켜진다 — PC BeginPlay와 GameMode BeginPlay는 순서가 보장되지 않는다.
@@ -172,7 +141,7 @@ void AREGameMode::NotifyPlayerReady(APlayerController* PC)
 	{
 		ReadyPlayers.Add(PC, &bAlreadyInSet);
 	}
-	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
+	const int32 Expected = GetExpectedPlayers();
 	if (PC && !bAlreadyInSet)
 	{
 		UE_LOG(LogRE, Log, TEXT("[RE] Player ready %d/%d"), ReadyPlayers.Num(), Expected);
@@ -196,12 +165,8 @@ void AREGameMode::NotifyPlayerDied(APlayerController* PC)
 	if (AREPlayerController* REPC = Cast<AREPlayerController>(PC))
 	{
 		REPC->Client_NotifyDeath();
-	}
-	// 서버측: 마지막 이동 명령이 남아 시체가 계속 미끄러지는 것을 막는다.
-	PC->StopMovement();                                        // 우클릭 이동 패스팔로잉 중단
-	if (UPawnMovementComponent* Move = PC->GetPawn() ? PC->GetPawn()->GetMovementComponent() : nullptr)
-	{
-		Move->StopMovementImmediately();                       // 잔여 속도 제거
+		// 서버측: 마지막 이동 명령이 남아 시체가 계속 미끄러지는 것을 막는다.
+		REPC->StopPawnImmediately();
 	}
 
 	UE_LOG(LogRE, Log, TEXT("[RE] Player died %d/%d"), DeadPlayers.Num(), ReadyPlayers.Num());
@@ -239,7 +204,7 @@ void AREGameMode::Logout(AController* Exiting)
 void AREGameMode::NotifyProbeComplete()
 {
 	++CompletedProbes;
-	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
+	const int32 Expected = GetExpectedPlayers();
 	UE_LOG(LogRE, Log, TEXT("[RE] Probe complete %d/%d"), CompletedProbes, Expected);
 
 	if (CompletedProbes >= Expected)
@@ -256,7 +221,7 @@ APawn* AREGameMode::SpawnDefaultPawnAtTransform_Implementation(AController* NewP
 	// 맵에 PlayerStart가 하나뿐이라 N인이면 같은 자리에 겹친다 — 인덱스별로 흩는다 (#85).
 	// +Y인 이유(#56): 보스가 플레이어 기준 +X 600에 있어 +X로 흩으면 플레이어를 탄막 레인에 밀어넣는다.
 	// 1인이면 Half=0, SpawnedPawnCount=0 → 오프셋이 정확히 0이라 싱글 스폰 좌표가 불변이다.
-	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
+	const int32 Expected = GetExpectedPlayers();
 	const float Half = (Expected - 1) * 0.5f;
 	const FVector Offset(0.f, (SpawnedPawnCount - Half) * SpawnSpacing, 0.f);
 	++SpawnedPawnCount;
@@ -272,7 +237,7 @@ APawn* AREGameMode::SpawnDefaultPawnAtTransform_Implementation(AController* NewP
 
 void AREGameMode::TryStartBossFiring()
 {
-	const int32 Expected = FMath::Max(1, CVarExpectedPlayers.GetValueOnGameThread());
+	const int32 Expected = GetExpectedPlayers();
 	if (bFiringStarted || !DemoBoss || ReadyPlayers.Num() < Expected)
 	{
 		return;

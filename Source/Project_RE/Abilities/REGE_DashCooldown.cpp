@@ -7,9 +7,9 @@
 UREGE_DashCooldown::UREGE_DashCooldown(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	// 지속형(HasDuration) — 2.0초 후 자동 소멸.
+	// 지속형(HasDuration) — CooldownSec 후 자동 소멸.
 	DurationPolicy = EGameplayEffectDurationType::HasDuration;
-	DurationMagnitude = FGameplayEffectModifierMagnitude(FScalableFloat(2.0f));
+	DurationMagnitude = FGameplayEffectModifierMagnitude(FScalableFloat(CooldownSec));
 
 	// 이 GE가 대상에 부여하는 태그 = Cooldown.Dash. GAS가 GetCooldownTags로 읽어 재활성 차단.
 	//

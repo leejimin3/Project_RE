@@ -63,32 +63,12 @@ namespace
 	constexpr float ExplosionSmokeRadiusStart = 30.f;
 	constexpr float ExplosionSmokeRadiusEnd   = 260.f;
 
-	/** /Engine/BasicShapes/Plane 은 100x100 이라 반경 50. 스케일 = 반경/50.
-	 *  (마커 쪽 CylinderBaseRadius 와 같은 값이지만 이름을 다르게 둔다 — 익명
-	 *  네임스페이스 동명 상수가 유니티 빌드에서 충돌한 전례가 있다.) */
-	constexpr float ExplosionPlaneBaseRadius = 50.f;
-
 	/** 링 Z 스케일. **1.0 미만으로 두지 말 것** — XY 를 키운 상태에서 Z 를 낮추면
 	 *  인스턴스가 화면에서 통째로 사라진다(마커에서 실RHI 스크린샷 이진탐색으로 확인:
 	 *  0.02/0.15/0.4 전부 무렌더, 등방 2.0 은 정상. ISM 극단 비등방 스케일의 컬링/
 	 *  바운즈 이슈로 추정, 엔진 레벨·원인 미상 — REArcRenderProcessor.cpp 참조).
 	 *  코어와 연기는 등방 구체라 이 함정에 걸리지 않는다. */
 	constexpr float ExplosionRingZScale = 1.0f;
-
-	/** 인스턴스 수를 목표에 맞춘다. 꼬리에서 add/remove 하므로 다른 인덱스가 안 밀린다. */
-	void SyncExplosionISM(UInstancedStaticMeshComponent* ISM, const TArray<FTransform>& Xf)
-	{
-		int32 Count = ISM->GetInstanceCount();
-		const int32 N = Xf.Num();
-		while (Count < N) { ISM->AddInstance(FTransform::Identity, /*bWorldSpace=*/true); ++Count; }
-		while (Count > N) { ISM->RemoveInstance(Count - 1);                               --Count; }
-		if (N > 0)
-		{
-			// 인스턴스당 개별 UpdateInstanceTransform 은 개수에 비례해 GT 를 먹는다 (#95).
-			ISM->BatchUpdateInstancesTransforms(0, Xf, /*bWorldSpace=*/true,
-				/*bMarkRenderStateDirty=*/true, /*bTeleport=*/true);
-		}
-	}
 }
 
 UREExplosionRenderProcessor::UREExplosionRenderProcessor()
@@ -172,7 +152,7 @@ void UREExplosionRenderProcessor::Execute(FMassEntityManager& EntityManager, FMa
 
 		// Plane 은 XY 평면(법선 +Z)이라 회전 없이 그대로 수평 원판이다.
 		// Z 는 1.0 고정 — 위 ExplosionRingZScale 주석의 함정.
-		const float RingS = RingR / ExplosionPlaneBaseRadius;
+		const float RingS = RingR / REBulletGeometry::EnginePlaneHalfExtent;
 		RingXf.Add(FTransform(FRotator::ZeroRotator, E.Loc,
 			FVector(RingS, RingS, ExplosionRingZScale)));
 
@@ -183,9 +163,9 @@ void UREExplosionRenderProcessor::Execute(FMassEntityManager& EntityManager, FMa
 		Cd.Add(E.Progress);
 	}
 
-	SyncExplosionISM(CoreISM,  CoreXf);
-	SyncExplosionISM(RingISM,  RingXf);
-	SyncExplosionISM(SmokeISM, SmokeXf);
+	UREBulletRenderSubsystem::SyncInstances(CoreISM,  CoreXf);
+	UREBulletRenderSubsystem::SyncInstances(RingISM,  RingXf);
+	UREBulletRenderSubsystem::SyncInstances(SmokeISM, SmokeXf);
 
 	// 인스턴스 수를 맞춘 뒤라야 SetCustomData 의 인덱스 범위가 유효하다.
 	// 세 층이 **같은** 진행도를 받고 각자 다르게 해석한다 — 커스텀데이터 슬롯은 1개다.

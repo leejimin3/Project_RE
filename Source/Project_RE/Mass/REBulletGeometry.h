@@ -24,6 +24,17 @@ namespace REBulletGeometry
 	/** /Engine/BasicShapes/Sphere 원본 반경(cm). 지름 100cm 구. */
 	inline constexpr float EngineSphereRadius = 50.f;
 
+	/** /Engine/BasicShapes/Plane 원본 반폭(cm). 100x100 이라 50 — 원판 스케일 = 반경/50. */
+	inline constexpr float EnginePlaneHalfExtent = 50.f;
+
+	/**
+	 *  곡사 착지점 → 표시 높이 오프셋(cm). 착지 마커와 착지 폭발이 같이 쓴다.
+	 *  착지점(Z 2)이 Main 레벨 바닥 윗면(Z 40)보다 아래라 그대로 두면 바닥에 묻힌다.
+	 *  10 이었을 때는 마커가 높이 100 짜리 Cylinder 라 아래가 묻혀도 윗부분이 삐져나와 보였다.
+	 *  #122 에서 두께 없는 Plane 으로 바꾸자 그대로 바닥 속에 묻혀 화면에서 사라졌다.
+	 */
+	inline constexpr float ArcGroundZOffset = 55.f;
+
 	/**
 	 *  탄환 인스턴스 스케일 — 엔진 Sphere 를 지름 50cm 로. #17: 0.2 는 카메라 거리서
 	 *  sub-pixel 이라 0.5 로 상향.

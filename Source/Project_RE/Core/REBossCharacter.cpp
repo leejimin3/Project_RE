@@ -3,7 +3,6 @@
 #include "REBossCharacter.h"
 #include "REBulletSpawnSubsystem.h"
 #include "REBulletPatternGenerator.h"
-#include "Net/UnrealNetwork.h"
 #include "REHealthBarComponent.h"
 #include "REGameMode.h"
 #include "RECharacterBase.h"
@@ -66,9 +65,9 @@ AREBossCharacter::AREBossCharacter()
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 
-	// 체력 초기화 — Settings 단일 출처 (M3.5 ③, RECharacterBase 동일 패턴).
-	MaxHealth = GetDefault<UREStatsSettings>()->BossMaxHealth;
-	Health = MaxHealth;
+	// 체력 — Settings 단일 출처 (M3.5 ③, RECharacterBase 와 같은 컴포넌트).
+	HealthComponent = CreateDefaultSubobject<UREHealthComponent>(TEXT("HealthComponent"));
+	HealthComponent->Init(GetDefault<UREStatsSettings>()->BossMaxHealth);
 
 	// HP바 (#29) — 보스 빨강.
 	HealthBar = CreateDefaultSubobject<UREHealthBarComponent>(TEXT("HealthBar"));
@@ -163,11 +162,16 @@ void AREBossCharacter::Tick(float DeltaSeconds)
 	}
 
 	LookAlpha = FMath::Min(1.f, LookAlpha + DeltaSeconds / LookIntroSec);
+	ApplyLook(CurrentLook());
+}
+
+AREBossCharacter::FBossLook AREBossCharacter::CurrentLook() const
+{
 	FBossLook Now;
 	Now.Snow = FMath::Lerp(LookFrom.Snow, LookTo.Snow, LookAlpha);
 	Now.Lava = FMath::Lerp(LookFrom.Lava, LookTo.Lava, LookAlpha);
 	Now.Emis = FMath::Lerp(LookFrom.Emis, LookTo.Emis, LookAlpha);
-	ApplyLook(Now);
+	return Now;
 }
 
 void AREBossCharacter::PlayIdle()
@@ -200,13 +204,8 @@ void AREBossCharacter::StartPatternLook(EBulletPattern Pattern)
 
 	// 진행 중이던 램프의 현재 값을 시작점으로 굳힌다. 페이즈가 램프보다 빨리 바뀌어도
 	// 색이 이전 목표로 튀지 않고 보이던 자리에서 이어진다.
-	FBossLook Now;
-	Now.Snow = FMath::Lerp(LookFrom.Snow, LookTo.Snow, LookAlpha);
-	Now.Lava = FMath::Lerp(LookFrom.Lava, LookTo.Lava, LookAlpha);
-	Now.Emis = FMath::Lerp(LookFrom.Emis, LookTo.Emis, LookAlpha);
-
+	LookFrom = CurrentLook();
 	LookPattern = Pattern;
-	LookFrom = Now;
 	LookTo = LookForPattern(Pattern);
 	LookAlpha = 0.f;
 }
@@ -241,13 +240,12 @@ void AREBossCharacter::BeginPhase()
 	// StartFiring 시점(BeginPlay)엔 ExecCmds가 아직 CVar를 안 세팅했을 수 있어
 	// 여기(타이머 재진입 콜백)에서 매번 조회한다. 첫 페이즈 Spiral 고정이
 	// profiling 시작 오염 창을 닫는다.
-	static IConsoleVariable* KeepFiring = IConsoleManager::Get().FindConsoleVariable(TEXT("re.Profiling.KeepFiring"));
 	// **패턴을 고정했으면 이 우회를 타지 않는다.** 안 그러면 BossPattern 을 뭘로 주든 Spiral 이
 	// 측정된다 — 패턴별 p99 를 낼 수 없었던 이유가 이것이다.
 	// 고정 시에는 페이즈 구조(발사 구간 + Rest)를 그대로 돌린다: 폭풍의 스윕 인덱스처럼
 	// 페이즈 단위로 리셋되는 상태가 있어, 우회하면 그 상태가 눌어붙어 실제 플레이와 다른 것을 잰다.
 	// Rest 프레임이 섞이지만 값이 싸서 p99(상위 1%)에는 사실상 영향이 없다.
-	if (KeepFiring && KeepFiring->GetInt() != 0
+	if (CVarProfilingKeepFiring.GetValueOnGameThread() != 0
 		&& CVarBossPattern.GetValueOnGameThread() < 0)
 	{
 		CurrentPhasePattern = EBulletPattern::Spiral;
@@ -261,7 +259,8 @@ void AREBossCharacter::BeginPhase()
 	// Homing은 백로그 스텁이라 풀에서 제외.
 	// 로테이션 풀은 테이블에서 파생한다 — 손으로 나열하지 않는다 (#141).
 	// static 지역: 첫 호출에 1회 구성. 테이블이 constexpr 이라 결과가 불변이다.
-	// 순서는 테이블 순서(= enum 순서)이고, 이것이 re.Debug.BossPattern 의 인덱스다.
+	// 순서는 테이블 순서(= enum 순서)에서 로테이션 제외 행(Homing)을 뺀 것이고,
+	// 이것이 re.Debug.BossPattern 의 인덱스다 — 그래서 Artillery 가 3 이 아니라 2 다.
 	static const TArray<EBulletPattern> Pool = []()
 	{
 		TArray<EBulletPattern> P;
@@ -347,7 +346,7 @@ float AREBossCharacter::FireIntervalFor(EBulletPattern P)
 
 void AREBossCharacter::FireCurrentPattern()
 {
-	if (bIsDead)
+	if (!HealthComponent->IsAlive())
 	{
 		return;
 	}
@@ -443,7 +442,7 @@ const APawn* AREBossCharacter::FindNearestLivingPlayerPawn() const
 
 void AREBossCharacter::FireArtillery()
 {
-	if (bIsDead)
+	if (!HealthComponent->IsAlive())
 	{
 		return;
 	}
@@ -1030,8 +1029,7 @@ float AREBossCharacter::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 {
 	// #46 측정 모드: 플레이어 자동사격(10dmg/0.25s)이 보스를 ~2.5s에 죽인다 →
 	// 발사가 끊겨 Mass 탄환이 목표 수까지 못 찬다. 프로파일링 중에는 보스를 무적으로.
-	static IConsoleVariable* KeepFiring = IConsoleManager::Get().FindConsoleVariable(TEXT("re.Profiling.KeepFiring"));
-	if (KeepFiring && KeepFiring->GetInt() != 0)
+	if (CVarProfilingKeepFiring.GetValueOnGameThread() != 0)
 	{
 		return 0.f;
 	}
@@ -1043,12 +1041,9 @@ float AREBossCharacter::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 	}
 
 	const float Applied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
-	Health = FMath::Clamp(Health - Applied, 0.f, MaxHealth);
-	OnRep_Health(); // 서버/싱글 경로 — 복제 OnRep은 원격 클라 전용이라 직접 호출
 
-	if (Health <= 0.f && !bIsDead)
+	if (HealthComponent->ApplyDamage(Applied))
 	{
-		bIsDead = true;
 		UE_LOG(LogRE, Log, TEXT("[RE] Boss died (Health<=0)"));
 		// 월드 부재는 부류 2(스폰된 액터에선 불가능). GM 부재는 부류 1 —
 		// 클라에는 AuthGameMode 가 없는 것이 정상이고, 승리 판정은 서버만 한다.
@@ -1066,16 +1061,3 @@ float AREBossCharacter::TakeDamage(float DamageAmount, const FDamageEvent& Damag
 	return Applied;
 }
 
-void AREBossCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
-{
-	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME(AREBossCharacter, Health);
-}
-
-void AREBossCharacter::OnRep_Health()
-{
-	if (HealthBar)
-	{
-		HealthBar->SetHealthPercent(MaxHealth > 0.f ? Health / MaxHealth : 0.f);
-	}
-}
