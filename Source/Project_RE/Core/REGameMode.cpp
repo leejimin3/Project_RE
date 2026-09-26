@@ -3,12 +3,7 @@
 #include "REGameMode.h"
 #include "RECharacterBase.h"
 #include "REPlayerController.h"
-#include "MassEntitySubsystem.h"
-#include "MassEntityManager.h"
-#include "REBulletSimProcessor.h"
-#include "REBulletRenderProcessor.h"
 #include "REBossCharacter.h"
-#include "REBulletPatternGenerator.h"
 #include "TimerManager.h"
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformMisc.h"
@@ -55,31 +50,12 @@ void AREGameMode::BeginPlay()
 			Stats->BossMaxHealth, Stats->BulletSpeed, Stats->BulletLifetime, Stats->BossFireInterval, Stats->BulletsPerShot);
 	}
 
-	// 부류 2 — GameMode 는 월드 없이 존재할 수 없다. 아래 세 곳이 같은 월드를 쓴다.
+	// 부류 2 — GameMode 는 월드 없이 존재할 수 없다.
 	UWorld* World = GetWorld();
 	if (!ensureMsgf(World, TEXT("[RE] GameMode: World 없음 — GameMode 는 월드 없이 존재할 수 없다")))
 	{
 		return;
 	}
-
-	// Mass 스모크 테스트: 서브시스템 얻고 엔티티 1개 생성 → 로그.
-	// GameMode는 서버 권위라 HasAuthority 가드 불필요.
-	if (UMassEntitySubsystem* Mass = World->GetSubsystem<UMassEntitySubsystem>())
-	{
-		FMassEntityManager& EM = Mass->GetMutableEntityManager();
-		FMassArchetypeHandle Arch = EM.CreateArchetype({ FRETestFragment::StaticStruct() });
-		FMassEntityHandle E = EM.CreateEntity(Arch);
-		UE_LOG(LogRE, Log, TEXT("[RE] Mass entity created: Index=%d Serial=%d"), E.Index, E.SerialNumber);
-	}
-	else
-	{
-		UE_LOG(LogRE, Warning, TEXT("[RE] UMassEntitySubsystem NULL"));
-	}
-
-	// #4 검증: 두 Processor CDO의 ExecutionFlags 확인. Sim=7(AllNetModes), Render=5(Standalone|Client).
-	const uint8 SimFlags    = (uint8)GetDefault<UREBulletSimProcessor>()->GetExecutionFlags();
-	const uint8 RenderFlags = (uint8)GetDefault<UREBulletRenderProcessor>()->GetExecutionFlags();
-	UE_LOG(LogRE, Log, TEXT("[RE] SimProcessor flags=%d  RenderProcessor flags=%d"), SimFlags, RenderFlags);
 
 	// #5 검증: 보스 스폰 후 탄막 트리거 → 싱글 경로 스폰 카운트 실증.
 	// AlwaysSpawn: 캡슐 충돌로 스폰 실패하는 것 방지.
@@ -97,21 +73,6 @@ void AREGameMode::BeginPlay()
 	{
 		// #64: 발사 주체를 Boss로 이관. 발사 시작은 클라 준비 후 (#84) — 여기서 켜지 않는다.
 		DemoBoss = Boss;
-	}
-
-	// #16 프로브: 패턴 제너레이터 수학 단위 검증 (순수 함수, 프레임 무관).
-	{
-		using namespace REBulletPattern;
-		const TArray<FBulletSpawnParams> Sp = GenerateSpiral(FVector::ZeroVector, FSpiralParams{});
-		const float SA0 = FMath::RadiansToDegrees(FMath::Atan2(Sp[0].Velocity.Y, Sp[0].Velocity.X));
-		const float SA1 = FMath::RadiansToDegrees(FMath::Atan2(Sp[1].Velocity.Y, Sp[1].Velocity.X));
-		UE_LOG(LogRE, Log, TEXT("[RE] SpiralProbe: N=%d |V0|=%.1f ang0=%.1f ang1=%.1f"),
-			Sp.Num(), Sp[0].Velocity.Size(), SA0, SA1);
-
-		const TArray<FBulletSpawnParams> Fn = GenerateFan(FVector::ZeroVector, FFanParams{});
-		const float FA0 = FMath::RadiansToDegrees(FMath::Atan2(Fn[0].Velocity.Y, Fn[0].Velocity.X));
-		const float FAL = FMath::RadiansToDegrees(FMath::Atan2(Fn.Last().Velocity.Y, Fn.Last().Velocity.X));
-		UE_LOG(LogRE, Log, TEXT("[RE] FanProbe: N=%d ang_first=%.1f ang_last=%.1f"), Fn.Num(), FA0, FAL);
 	}
 
 	// 준비 신호가 이미 와 있었다면 여기서 켜진다 — PC BeginPlay와 GameMode BeginPlay는 순서가 보장되지 않는다.

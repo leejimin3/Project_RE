@@ -17,15 +17,6 @@ struct FBulletSimFragment : public FMassFragment
 	float   ColorSel = 0.f;
 };
 
-/** 탄막 렌더 상태. M1에서 ISM 인스턴스 인덱스로 사용한다. */
-USTRUCT()
-struct FBulletRenderFragment : public FMassFragment
-{
-	GENERATED_BODY()
-
-	int32 InstanceIndex = INDEX_NONE;
-};
-
 /** 탄환 식별 태그. Query 필터 전용(데이터 없음). 후속 Processor가 이 태그로 탄환만 선별. */
 USTRUCT()
 struct FBulletTag : public FMassTag
